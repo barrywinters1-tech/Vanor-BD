@@ -28,9 +28,9 @@ export async function serverClient() {
 }
 
 export function serviceClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   // SUPABASE_SECRET_KEY is the name the Supabase→Vercel integration syncs.
-  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const key = (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '').replace(/\s+/g, '');
   if (!url || !key) throw new Error('Server database credentials are not configured.');
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
