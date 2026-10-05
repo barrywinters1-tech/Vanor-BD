@@ -173,6 +173,22 @@ function createServer() {
     return out(await summary(id), 'Assessment saved as a suggestion for founder review.');
   });
 
+  server.registerTool('record_fit_batch', {
+    title: 'Record buyer fit for many contacts',
+    description: 'Bulk-save buyer fit (0-2), sector and a short reason for up to 200 contacts at once. Only touches fit fields; never founder evidence. Use for scoring passes.',
+    inputSchema: { items: z.array(z.object({ id: z.string(), fit: score, sector: z.string().max(40), reason: z.string().max(200) })).min(1).max(200) },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ items }) => {
+    let saved = 0; const missing: string[] = [];
+    for (const item of items) {
+      try {
+        await updateEntity('source', item.id, r => ({ ...r, fitScore: item.fit, fitSector: item.sector, fitReason: item.reason, assessedAt: r.assessedAt || new Date().toISOString() }));
+        saved++;
+      } catch { missing.push(item.id); }
+    }
+    return out({ saved, missing }, `Saved fit for ${saved} contact(s).`);
+  });
+
   server.registerTool('add_lead', {
     title: 'Add a new lead',
     description: 'Add a person who is not yet in Vanor BD (from email, a meeting, news, planning or administration research). It lands in the review queue as "New"; it does not go on the board. Duplicates are refused.',

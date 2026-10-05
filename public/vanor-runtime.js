@@ -38,7 +38,7 @@
   function owner(v) {v=clean(v);return v==='Barry'||v==='Graeme'?v:'';}
   function route(v) {v=clean(v).toLowerCase();return /introduc|referr/.test(v)?'Introducer':/white|subconsult|partner/.test(v)?'Delivery partner':'Direct buyer';}
   function sourceHash(r) {
-    const omit=new Set(['raw','hash','priority','suggestedOwner','suggestedScores','suggestedBlocker','suggestedAction','suggestionOrigin','suggestedEvidence','fitScore','fitReason','enrichment','assessedAt','_rev','_etag','_spId']);
+    const omit=new Set(['raw','hash','priority','suggestedOwner','suggestedScores','suggestedBlocker','suggestedAction','suggestionOrigin','suggestedEvidence','fitScore','fitReason','fitSector','enrichment','assessedAt','_rev','_etag','_spId']);
     return JSON.stringify(Object.fromEntries(Object.keys(r).filter(k=>!omit.has(k)).sort().map(k=>[k,r[k]])));
   }
   function seedCheck(seed) {

@@ -32,7 +32,7 @@ export const validDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && new Dat
 
 /** Same fingerprint as the UI: a change here flips a reviewed contact to "Changed". */
 export function sourceHash(r: Rec) {
-  const omit = new Set(['raw', 'hash', 'priority', 'suggestedOwner', 'suggestedScores', 'suggestedBlocker', 'suggestedAction', 'suggestionOrigin', 'suggestedEvidence', 'fitScore', 'fitReason', 'enrichment', 'assessedAt', '_rev', '_etag', '_spId']);
+  const omit = new Set(['raw', 'hash', 'priority', 'suggestedOwner', 'suggestedScores', 'suggestedBlocker', 'suggestedAction', 'suggestionOrigin', 'suggestedEvidence', 'fitScore', 'fitReason', 'fitSector', 'enrichment', 'assessedAt', '_rev', '_etag', '_spId']);
   return JSON.stringify(Object.fromEntries(Object.keys(r).filter(k => !omit.has(k)).sort().map(k => [k, r[k]])));
 }
 
