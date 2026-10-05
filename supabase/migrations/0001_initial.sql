@@ -98,6 +98,10 @@ create policy metadata_write on public.workspace_metadata for all to authenticat
   using (public.has_tenant_role(tenant_id, array['admin','editor']))
   with check (public.has_tenant_role(tenant_id, array['admin','editor']));
 
+-- Explicit table privileges (RLS above still decides which rows).
+grant select on public.tenants, public.tenant_members to authenticated;
+grant select, insert, update on public.entities, public.workspace_metadata to authenticated;
+
 -- ---------------------------------------------------------------------------
 -- Vanor workspace bootstrap: one workspace, two named members.
 -- Anyone else who requests a sign-in link gets an account but no access.
