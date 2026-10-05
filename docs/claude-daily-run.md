@@ -11,11 +11,12 @@ These are the prompts for Claude's scheduled tasks. They need the **Vanor BD** c
 >    - `find_contact_by_email`. If found, `log_interaction` with a 2–4 sentence factual summary. Capture any project, problem, decision-maker, fee or timing they mention.
 >    - If they're not found and are a plausible buyer or introducer for Vanor's services (owner-side PM/EA, programme management, project recovery and assurance, fund monitoring and technical DD), use `add_lead` with source "Outlook". Otherwise skip them.
 >    - If anyone committed to something, or a reply is owed, use `set_next_action`.
-> 2. **Meeting notes.** In SharePoint, open the Pocket notes folder (`<FOLDER — Barry to confirm>`) and read notes created in the same window. For each meeting:
->    - match attendees with `search_contacts`
->    - `log_interaction` (kind meeting) with decisions, needs, objections and next steps
->    - `set_next_action`
->    - create an **Outlook draft** follow-up in Barry's voice: short, specific, one clear ask. Never send it.
+> 2. **Meeting notes.** In SharePoint (VanorAdvisoryCore site), find files modified in the same window in `04_BUSINESS_DEVELOPMENT/05 MEEETINGS` (including its company subfolders) and `04_BUSINESS_DEVELOPMENT/06 NETWORKING EVENTS`. Read `.txt`, `.pdf` and `.docx` files; these are mostly raw Pocket transcripts with noisy speech-to-text and "Speaker 0/1" labels, and Barry is usually Speaker 1. Pocket `.zip` exports and audio (`.wma`, `.m4a`) can't be read: list them in the briefing as "not processed" and don't guess their content. For each meeting:
+>    - work out who was met from the file name and the conversation, and match them with `search_contacts`. If they're not found and they're a plausible buyer or introducer, use `add_lead` with source "Pocket meeting"
+>    - `log_interaction` (kind meeting) with: their projects, problems, decision-makers, fees or budgets mentioned, timing, introductions offered, and what Barry promised to do
+>    - `set_next_action` for the follow-up Barry committed to
+>    - create an **Outlook draft** follow-up to the contact if their email is known: short, specific, one clear ask, in Barry's plain direct voice. Never send it.
+>    - don't record gossip, opinions about third parties, or personal remarks
 > 3. **Re-score.** For every contact touched today, `get_contact`, then `record_assessment` if the new evidence changes any of the seven conditions. Score only from evidence you can quote.
 > 4. **Brief Barry.** Run `pipeline_overview`. Email Barry a short briefing (as a draft to himself, subject "BD today – <date>") covering:
 >    - overdue and due-today cards with the ask for each
