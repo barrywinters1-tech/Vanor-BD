@@ -4,10 +4,13 @@ import { categoriseLead } from '../../../../lib/lead-categorisation';
 import { workspaceAccess } from '../../../../lib/workspace-auth';
 import { issueTicket } from '../../../../lib/import-backup';
 import { researchCompany, normCompany } from '../../../../lib/company-intel';
-import { saveIntel } from '../../../../lib/company-intel-store';
+import { saveIntel, researchBatch } from '../../../../lib/company-intel-store';
+import { runIntel } from '../../../../lib/intel-ingest';
+import { runBackup } from '../../../../lib/backup-job';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 type Entity = { id: string; _rev?: number; [key: string]: any };
 type Access = Awaited<ReturnType<typeof workspaceAccess>>;
@@ -187,8 +190,11 @@ export async function GET(request: NextRequest, context: Context) {
 export async function POST(request: NextRequest, context: Context) {
   try {
     const action = await actionFor(context);
-    const access = await workspaceAccess(action === 'restore' || action === 'import-ticket' ? 'admin' : 'editor');
+    const access = await workspaceAccess(['restore', 'import-ticket', 'run-scan', 'run-research', 'run-backup'].includes(action) ? 'admin' : 'editor');
     if (action === 'import-ticket') return reply({ ticket: await issueTicket(access.tenantId) });
+    if (action === 'run-scan') return reply(await runIntel({ write: true }));
+    if (action === 'run-research') return reply(await researchBatch({ limit: 25, budgetMs: 45000 }));
+    if (action === 'run-backup') return reply(await runBackup());
     const body: any = await request.json();
     if (action === 'research') {
       const name = String(body?.company || '').trim();
