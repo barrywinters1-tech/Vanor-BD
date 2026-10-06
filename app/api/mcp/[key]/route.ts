@@ -15,6 +15,7 @@ import {
 import { lookupPerson } from '../../../../lib/rocketreach';
 import { runIntel } from '../../../../lib/intel-ingest';
 import { priorityList } from '../../../../lib/priority';
+import { logOutcome, funnel, STEPS } from '../../../../lib/funnel';
 import { researchCompany, normCompany } from '../../../../lib/company-intel';
 import { researchBatch, saveIntel, signalContacts } from '../../../../lib/company-intel-store';
 
@@ -270,6 +271,24 @@ function createServer() {
     inputSchema: { cell: z.enum(['All', 'A1', 'A2', 'A3', 'B1', 'B2', 'B3', 'T1']).optional(), limit: z.number().int().min(1).max(100).optional() },
     annotations: { readOnlyHint: true },
   }, async ({ cell, limit }) => out(await priorityList({ cell: cell || 'All', limit: limit || 30 }), 'Priority list.'));
+
+  server.registerTool('log_outcome', {
+    title: 'Log an outreach outcome (closes the loop)',
+    description: 'Record a funnel step against a contact: sent (an email Barry/Graeme actually sent, from Outlook Sent Items), reply (the contact wrote back), meeting_booked (calendar event with them), meeting_held, proposal, won. '
+      + 'Pass ref = the Outlook message id or calendar event id so the same thing is never counted twice. trigger = the signal that led to the outreach (lending, property, planning, distress, new_spv, new_director, scan, warm, none). Drafts are NOT sent; never log a draft as sent.',
+    inputSchema: {
+      id: z.string(), step: z.enum(STEPS), date, ref: z.string().max(300).optional(), trigger: z.string().max(40).optional(),
+      channel: z.enum(['email', 'call', 'linkedin', 'in_person']).optional(), note: z.string().min(5).max(1000), source: z.string().max(80).optional(),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async (input) => out(await logOutcome(input), 'Outcome logged.'));
+
+  server.registerTool('funnel_report', {
+    title: 'Outreach funnel and what is working',
+    description: 'Counts of sent / replies / meetings / proposals / won over the last N days (default 30), reply and meeting rates, and the same split by trigger type and priority cell so you can see which triggers and plays convert. Use in the Monday brief.',
+    inputSchema: { days: z.number().int().min(7).max(365).optional() },
+    annotations: { readOnlyHint: true },
+  }, async ({ days }) => out(await funnel({ days: days || 30 }), 'Funnel.'));
 
   server.registerTool('fill_contact_details', {
     title: 'Fill missing contact details',

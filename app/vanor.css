@@ -2055,3 +2055,15 @@ html, body {
 }
 /*# sourceMappingURL=VanorBd.module.scss.css.map */
 
+
+/* Outreach funnel (Today) */
+.funnel{display:grid;gap:8px;margin-bottom:12px}
+.funnel-row{display:grid;grid-template-columns:120px 1fr 32px;align-items:center;gap:10px;font-size:12px}
+.funnel-label{color:var(--muted,#5b6b70)}
+.funnel-bar{display:block;height:10px;background:rgba(0,0,0,.06);border-radius:5px;overflow:hidden}
+.funnel-bar i{display:block;height:100%;background:var(--accent);border-radius:5px;min-width:2px}
+.funnel-row b{text-align:right;font-variant-numeric:tabular-nums}
+.funnel-table{width:100%;font-size:12px;border-collapse:collapse}
+.funnel-table th,.funnel-table td{padding:5px 6px;text-align:left;border-top:1px solid rgba(0,0,0,.06)}
+.funnel-table th{font-weight:600;color:var(--muted,#5b6b70);border-top:0}
+@media (max-width:520px){.funnel-row{grid-template-columns:96px 1fr 28px}}
