@@ -3,6 +3,8 @@ import { categoriseLead } from '../../../../lib/lead-categorisation';
 
 import { workspaceAccess } from '../../../../lib/workspace-auth';
 import { issueTicket } from '../../../../lib/import-backup';
+import { researchCompany, normCompany } from '../../../../lib/company-intel';
+import { saveIntel } from '../../../../lib/company-intel-store';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -188,6 +190,14 @@ export async function POST(request: NextRequest, context: Context) {
     const access = await workspaceAccess(action === 'restore' || action === 'import-ticket' ? 'admin' : 'editor');
     if (action === 'import-ticket') return reply({ ticket: await issueTicket(access.tenantId) });
     const body: any = await request.json();
+    if (action === 'research') {
+      const name = String(body?.company || '').trim();
+      if (name.length < 2) return reply({ error: 'Give a company name.' }, 400);
+      const intel = await researchCompany(name);
+      const ids = (await list(access, 'source')).filter(r => normCompany(r.company) === normCompany(name)).map(r => r.id);
+      if (ids.length && body?.save !== false) await saveIntel(ids, intel);
+      return reply({ ...intel, savedOn: body?.save === false ? 0 : ids.length });
+    }
     if (action === 'bootstrap') return reply({ error: 'Import a fresh backup to initialise this workspace.' }, 409);
     if (action === 'import') return reply(await importSource(access, body));
     if (action === 'categorize') {
