@@ -28,7 +28,7 @@ async function ch(path: string) {
   const r = await fetch(`https://api.company-information.service.gov.uk${path}`, {
     headers: { ...UA, Authorization: 'Basic ' + Buffer.from(key + ':').toString('base64') }, signal: AbortSignal.timeout(10000) });
   if (r.status === 404) return null;
-  if (!r.ok) throw new Error(`Companies House HTTP ${r.status}`);
+  if (!r.ok) throw new Error(`Companies House HTTP ${r.status}${r.status === 401 ? ` (key received: ${key.length} chars, ${/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key) ? 'standard key format' : 'not the usual key format'})` : ''}`);
   return r.json();
 }
 
