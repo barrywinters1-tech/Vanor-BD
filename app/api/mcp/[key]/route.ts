@@ -283,6 +283,23 @@ function createServer() {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async (input) => out(await logOutcome(input), 'Outcome logged.'));
 
+  server.registerTool('move_events', {
+    title: 'Move misfiled history to the right contact',
+    description: 'Re-attach Claude-logged interactions/outcomes that were filed against the wrong contact. Moves every Claude-authored event on fromId whose "at" timestamp falls within [fromAt, toAt] to toId. Founder-authored events are never moved. Returns the moved count.',
+    inputSchema: { fromId: z.string(), toId: z.string(), fromAt: z.string().describe('ISO timestamp, inclusive'), toAt: z.string().describe('ISO timestamp, inclusive') },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ fromId, toId, fromAt, toAt }) => {
+    if (!await getOne('source', toId)) throw new Error(`No contact with id ${toId}.`);
+    const events = (await listScope('event')).filter(e => (e.recordId === fromId || e.entityId === fromId) && e.actor === ACTOR && String(e.at) >= fromAt && String(e.at) <= toAt);
+    let moved = 0, latest = '';
+    for (const e of events) {
+      const saved = await saveEntity('event', { ...e, entityId: e.entityId === fromId ? toId : e.entityId, recordId: toId, movedFrom: fromId }, e._rev || 1);
+      if (saved) { moved++; latest = [latest, String(e.date || e.at).slice(0, 10)].sort().pop() || latest; }
+    }
+    if (latest) await updateEntity('source', toId, r => (!r.lastContact || String(r.lastContact).slice(0, 10) < latest) ? { ...r, lastContact: latest } : r);
+    return out({ moved, of: events.length }, `Moved ${moved} events.`);
+  });
+
   server.registerTool('funnel_report', {
     title: 'Outreach funnel and what is working',
     description: 'Counts of sent / replies / meetings / proposals / won over the last N days (default 30), reply and meeting rates, and the same split by trigger type and priority cell so you can see which triggers and plays convert. Use in the Monday brief.',
