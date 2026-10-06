@@ -129,8 +129,8 @@ export async function researchCompany(name: string): Promise<CompanyIntel> {
     if (process.env.PLANIT_KEY) p.set('auth', process.env.PLANIT_KEY);
     const json = await (await fetch(`https://www.planit.org.uk/api/applics/json?${p}`, { headers: UA, signal: AbortSignal.timeout(12000) })).json();
     for (const r of (json.records || []).slice(0, 5)) {
-      const who = `${r.applicant || ''} ${r.agent || ''} ${r.description || ''}`;
-      if (nameMatch(q, who) < 0.5 && !normCompany(who).includes(normCompany(q))) continue;
+      const who = `${r.applicant || ''} ${r.agent || ''}`.trim();
+      if (!who || nameMatch(q, who) < 0.6) continue; // applicant/agent must be the company, not a street or place name
       intel.signals.push({ type: 'planning', date: (r.start_date || r.last_changed || '').slice(0, 10),
         text: `${r.area_name || ''}: ${String(r.description || '').slice(0, 120)} (${r.app_state || 'status unknown'})`, url: r.link || r.url });
     }
