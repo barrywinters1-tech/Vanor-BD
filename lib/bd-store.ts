@@ -1,13 +1,14 @@
 // Server-side data access for automation (Claude connector, cron jobs).
 // Uses the service-role key, so every caller must authenticate first.
-import { serviceClient } from './supabase/server';
+import { serviceClient, serviceKey } from './supabase/server';
 
 export type Entity = { id: string; _rev?: number; [key: string]: any };
 export type Scope = 'source' | 'decision' | 'work' | 'event' | 'planned_event';
 
 const db = () => serviceClient();
 const fail = (error: { message?: string; details?: string }): never => {
-  throw new Error(`Database error: ${error.message || 'unknown'}${error.details ? ' (' + error.details + ')' : ''}`);
+  const keyHint = /api key|jwt|unauthori/i.test(error.message || '') ? ` [keys found: ${serviceKey()?.checked || 'none'}]` : '';
+  throw new Error(`Database error: ${error.message || 'unknown'}${error.details ? ' (' + error.details + ')' : ''}${keyHint}`);
 };
 let cachedTenant = '';
 

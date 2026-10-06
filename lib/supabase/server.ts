@@ -27,10 +27,29 @@ export async function serverClient() {
   );
 }
 
+/** Describes a key's shape without revealing it, so errors can say which variable is wrong. */
+export function keyShape(key: string) {
+  if (key.startsWith('sb_secret_')) return 'secret';
+  if (key.startsWith('sb_publishable_')) return 'publishable';
+  const parts = key.split('.');
+  if (parts.length === 3) {
+    try { return 'jwt:' + (JSON.parse(Buffer.from(parts[1], 'base64url').toString()).role || 'unknown'); } catch { /* fall through */ }
+  }
+  return `unrecognised (${key.length} chars)`;
+}
+
+const KEY_VARS = ['SUPABASE_SECRET_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'Key001'] as const;
+
+/** Picks the first configured variable holding a server key; falls back to the first non-empty one. */
+export function serviceKey() {
+  const found = KEY_VARS.map(name => ({ name, key: (process.env[name] || '').replace(/\s+/g, '') })).filter(k => k.key);
+  const good = found.find(k => ['secret', 'jwt:service_role'].includes(keyShape(k.key))) || found[0];
+  return good ? { ...good, shape: keyShape(good.key), checked: found.map(k => `${k.name}=${keyShape(k.key)}`).join(', ') } : null;
+}
+
 export function serviceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-  // SUPABASE_SECRET_KEY is the name the Supabase→Vercel integration syncs.
-  const key = (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '').replace(/\s+/g, '');
-  if (!url || !key) throw new Error('Server database credentials are not configured.');
-  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  const picked = serviceKey();
+  if (!url || !picked) throw new Error('Server database credentials are not configured.');
+  return createClient(url, picked.key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
