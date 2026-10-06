@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { categoriseLead } from '../../../../lib/lead-categorisation';
 
 import { workspaceAccess } from '../../../../lib/workspace-auth';
+import { issueTicket } from '../../../../lib/import-backup';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -184,7 +185,8 @@ export async function GET(request: NextRequest, context: Context) {
 export async function POST(request: NextRequest, context: Context) {
   try {
     const action = await actionFor(context);
-    const access = await workspaceAccess(action === 'restore' ? 'admin' : 'editor');
+    const access = await workspaceAccess(action === 'restore' || action === 'import-ticket' ? 'admin' : 'editor');
+    if (action === 'import-ticket') return reply({ ticket: await issueTicket(access.tenantId) });
     const body: any = await request.json();
     if (action === 'bootstrap') return reply({ error: 'Import a fresh backup to initialise this workspace.' }, 409);
     if (action === 'import') return reply(await importSource(access, body));
