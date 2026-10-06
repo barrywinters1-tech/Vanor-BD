@@ -72,8 +72,9 @@ export async function researchCompany(name: string): Promise<CompanyIntel> {
   const intel: CompanyIntel = { name, checkedAt: new Date().toISOString(), signals: [], active: 'unknown', need: '', sources: [], errors: [] };
   // Companies House
   try {
-    const found = await ch(`/search/companies?q=${encodeURIComponent(name)}&items_per_page=5`);
-    const best = (found?.items || []).map((i: any) => ({ i, m: nameMatch(name, i.title) })).sort((a: any, b: any) => b.m - a.m)[0];
+    const found = await ch(`/search/companies?q=${encodeURIComponent(name)}&items_per_page=10`);
+    const best = (found?.items || []).map((i: any) => ({ i, m: nameMatch(name, i.title), live: i.company_status === 'active' ? 1 : 0 }))
+      .filter((x: any) => x.m >= 0.6).sort((a: any, b: any) => b.live - a.live || b.m - a.m)[0];
     if (best && best.m >= 0.6) {
       const n = best.i.company_number;
       const [profile, officers, charges] = await Promise.all([ch(`/company/${n}`), ch(`/company/${n}/officers?items_per_page=35`), ch(`/company/${n}/charges?items_per_page=25`)]);
