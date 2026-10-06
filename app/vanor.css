@@ -704,11 +704,16 @@ html, body {
 }
 .vanor .queue-item .queue-meta {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
   font-size: 10px;
   color: var(--muted);
   margin-top: 7px;
 }
+.vanor .queue-item .queue-meta > span:not(.tag) { margin-left: auto; }
+.vanor .queue-item .queue-meta > span:not(.tag) + span:not(.tag) { margin-left: 0; }
+.vanor .queue-item .queue-meta > span:not(.tag) + span:not(.tag)::before { content: '· '; }
 .vanor .queue-pages {
   display: flex;
   align-items: center;
@@ -2096,3 +2101,4 @@ html, body {
   .vanor table.prio-table td:nth-child(5)::before{content:'Way in: ';color:var(--muted);font-size:11px}
   .vanor table.prio-table td:nth-child(6)::before{content:'Owner: ';color:var(--muted);font-size:11px}
 }
+.vanor .avatar.claude{background:#e8eef0;color:#355c62;font-size:10px;letter-spacing:.04em}
