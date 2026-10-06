@@ -2,7 +2,7 @@
 // The Gazette (insolvency). Plain code; produces dated "signals" that say whether a firm is active and has a need.
 import { parseFeed } from './intel.ts';
 
-export type Signal = { type: 'lending' | 'property' | 'planning' | 'distress' | 'new_director' | 'inactive'; date: string; text: string; url?: string };
+export type Signal = { type: 'lending' | 'property' | 'planning' | 'distress' | 'new_director' | 'new_spv' | 'inactive'; date: string; text: string; url?: string };
 export type CompanyIntel = {
   name: string; checkedAt: string; matchedName?: string; companyNumber?: string; status?: string; incorporated?: string;
   sic?: string[]; locality?: string; directors?: string[]; lastAccounts?: string; signals: Signal[];
@@ -54,9 +54,11 @@ export function classifyNeed(signals: Signal[], status?: string) {
   if (status && status !== 'active') return 'Company not active: check before approaching';
   const has = (t: Signal['type']) => signals.some(s => s.type === t);
   if (has('distress')) return 'Distress: possible recovery or completion need';
+  if (has('new_spv') && (has('property') || has('lending'))) return 'New scheme vehicle with funding: delivery or monitoring need likely';
   if (has('property') && has('planning')) return 'Acquired or funded site with planning activity: delivery need likely';
   if (has('lending') || has('property')) return 'New funding in place: lender monitoring or delivery assurance';
   if (has('planning')) return 'Planning activity: delivery need ahead';
+  if (has('new_spv')) return 'New scheme vehicle set up: project starting';
   if (has('new_director')) return 'Leadership change: re-introduce Vanor';
   return 'No live trigger found';
 }
@@ -72,7 +74,7 @@ export async function researchCompany(name: string): Promise<CompanyIntel> {
   const intel: CompanyIntel = { name, checkedAt: new Date().toISOString(), signals: [], active: 'unknown', need: '', sources: [], errors: [] };
   // Companies House
   try {
-    const found = await ch(`/search/companies?q=${encodeURIComponent(name)}&items_per_page=10`);
+    const found = await ch(`/search/companies?q=${encodeURIComponent(name)}&items_per_page=30`);
     const best = (found?.items || []).map((i: any) => ({ i, m: nameMatch(name, i.title), live: i.company_status === 'active' ? 1 : 0 }))
       .filter((x: any) => x.m >= 0.6).sort((a: any, b: any) => b.live - a.live || b.m - a.m)[0];
     if (best && best.m >= 0.6) {
@@ -88,6 +90,18 @@ export async function researchCompany(name: string): Promise<CompanyIntel> {
       if (profile?.company_status && profile.company_status !== 'active')
         intel.signals.push({ type: 'inactive', date: profile.date_of_cessation || intel.checkedAt.slice(0, 10), text: `Companies House status: ${profile.company_status}` });
       intel.sources.push(`https://find-and-update.company-information.service.gov.uk/company/${n}`);
+      // Group/SPV companies (e.g. "Seaforth Land (Kings Cross) Ltd"): loans and site purchases are usually charged there.
+      const tokens = normCompany(name).split(' ').filter(Boolean);
+      const group = (found?.items || []).filter((i: any) => i.company_number !== n && i.company_status === 'active'
+        && tokens.every(tok => normCompany(i.title).split(' ').includes(tok)))
+        .sort((a: any, b: any) => (b.date_of_creation || '').localeCompare(a.date_of_creation || '')).slice(0, 8);
+      for (const g of group) if (g.date_of_creation && monthsAgo(g.date_of_creation) <= 18)
+        intel.signals.push({ type: 'new_spv', date: g.date_of_creation, text: `New group company incorporated: ${g.title}`,
+          url: `https://find-and-update.company-information.service.gov.uk/company/${g.company_number}` });
+      const groupCharges = await Promise.all(group.map(async (g: any) => ({ g, c: await ch(`/company/${g.company_number}/charges?items_per_page=10`).catch(() => null) })));
+      for (const { g, c } of groupCharges) for (const s of chargeSignals(c?.items || []))
+        intel.signals.push({ ...s, text: `${g.title}: ${s.text}`, url: `https://find-and-update.company-information.service.gov.uk/company/${g.company_number}/charges` });
+      (intel as any).groupCompanies = group.length;
     } else if (found) intel.errors.push('Companies House: no confident name match');
   } catch (e) { intel.errors.push(e instanceof Error ? e.message : String(e)); }
   // The Gazette (insolvency notices naming the company)
