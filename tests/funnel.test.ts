@@ -10,3 +10,9 @@ test('funnel steps map from Claude outcomes and founder outcome records', () => 
   assert.equal(stepOf({ id: '5', type: 'Outcome: bogus' }), null);
   assert.equal(STEPS.length, 6);
 });
+
+test('notes logged via log_interaction can carry booked/proposal steps', () => {
+  assert.equal(stepOf({ type: 'Interaction: note', note: 'Meeting booked: Thu 8 Oct 12:00' }), 'meeting_booked');
+  assert.equal(stepOf({ type: 'Interaction: note', note: 'Proposal sent: Kirkstall Road' }), 'proposal');
+  assert.equal(stepOf({ type: 'Interaction: note', note: 'General note' }), null);
+});

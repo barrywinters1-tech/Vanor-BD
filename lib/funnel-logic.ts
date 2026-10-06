@@ -15,5 +15,11 @@ export function stepOf(e: { type?: unknown; [key: string]: unknown }): Step | nu
   if (t === 'Interaction: email out') return 'sent';
   if (t === 'Interaction: email in') return 'reply';
   if (t === 'Interaction: meeting') return 'meeting_held';
+  if (t === 'Interaction: note') {
+    const n = String(e.note || '').toLowerCase();
+    if (n.startsWith('meeting booked')) return 'meeting_booked';
+    if (n.startsWith('proposal sent')) return 'proposal';
+    if (n.startsWith('won:')) return 'won';
+  }
   return null;
 }
