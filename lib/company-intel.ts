@@ -23,7 +23,7 @@ export function nameMatch(ours: string, theirs: string) {
 }
 
 async function ch(path: string) {
-  const key = process.env.COMPANIES_HOUSE_KEY;
+  const key = (process.env.COMPANIES_HOUSE_KEY || '').replace(/\s+/g, '');
   if (!key) throw new Error('no COMPANIES_HOUSE_KEY');
   const r = await fetch(`https://api.company-information.service.gov.uk${path}`, {
     headers: { ...UA, Authorization: 'Basic ' + Buffer.from(key + ':').toString('base64') }, signal: AbortSignal.timeout(10000) });

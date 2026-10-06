@@ -191,7 +191,7 @@ export async function fetchFeeds(errors: string[]): Promise<Signal[]> {
 }
 
 export async function companiesHouseDirectors(name: string) {
-  const key = process.env.COMPANIES_HOUSE_KEY;
+  const key = (process.env.COMPANIES_HOUSE_KEY || '').replace(/\s+/g, '');
   if (!key || !name) return [];
   const auth = { Authorization: 'Basic ' + Buffer.from(key + ':').toString('base64') };
   try {
