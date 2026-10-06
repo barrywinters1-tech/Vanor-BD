@@ -3,7 +3,7 @@
 > **Don't add another brief.** Barry already runs these scheduled tasks: BD follow-up autopilot (Mon/Thu, drafts replies), Construction Distress Watch (weekdays), Monday Market & Trigger Brief, European DC Watch (Thu), plus the Director Brief, Weekly Control, Meeting Briefs and Events emails. Once the Vanor BD connector is live:
 > 1. **Autopilot:** add the connector, plus one step: for every thread it handles, `find_contact_by_email` → `log_interaction` → `set_next_action`.
 > 2. **Distress Watch and Monday Brief:** add the connector, plus one step: every named forced buyer or target goes in via `add_lead` (source = the brief name), so it lands in the review queue rather than only in an email.
-> 3. **New task, Pocket capture only:** section A step 2 below. Nothing else already does this.
+> 3. **Live:** scheduled task "Vanor BD — board sync & meeting capture" (weekdays 08:10 London) does Pocket capture, brief intake into the review queue, and email logging. Existing tasks are untouched.
 > Section A step 1 (email) and step 4 (briefing) are covered by the existing tasks, so skip them.
 
 These are the prompts for Claude's scheduled tasks. They need the **Vanor BD** connector and Microsoft 365 connected.

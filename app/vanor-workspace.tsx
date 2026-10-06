@@ -71,21 +71,27 @@ export default function VanorWorkspace() {
       window.location.reload();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Backup import failed.'); setImporting(false); }
   }
-  if (setup === 'import') return <main className="vanor-load" style={{ maxWidth: 620, margin: '10vh auto', padding: 24 }}>
-    <h1>Set up Vanor BD</h1>
-    <p>Import a fresh full backup from the live app. Review the counts before importing. This workspace must be empty.</p>
-    <input type="file" accept=".json,application/json" onChange={async event => {
-      const file = event.target.files?.[0]; if (!file) return;
-      try {
-        const value = JSON.parse(await file.text());
-        if (value.schemaVersion !== 5 || !Array.isArray(value.records) || !Array.isArray(value.work) || !value.decisions) throw new Error('This is not a Vanor V5 full backup.');
-        setBackup(value); setError('');
-      } catch (cause) { setBackup(null); setError(cause instanceof Error ? cause.message : 'Cannot read backup.'); }
-    }} />
-    {backup && <p role="status">{backup.records.length} source records, {Object.keys(backup.decisions).length} decisions, {backup.work.length} BD positions, {(backup.events || []).length} history events.</p>}
-    {backup && <button disabled={importing} onClick={importBackup}>{importing ? 'Importing…' : 'Import this backup'}</button>}
-    {error && <p role="alert">{error}</p>}
-  </main>;
+  const card: React.CSSProperties = { width: 'min(100%, 460px)', background: '#fff', padding: 28, borderRadius: 16, boxShadow: '0 8px 40px #20303918', fontSize: 16, lineHeight: 1.5 };
+  const page: React.CSSProperties = { minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#f5f5f1', padding: 16 };
+  const btn: React.CSSProperties = { width: '100%', padding: 14, border: 0, borderRadius: 8, color: '#fff', background: '#385d61', fontSize: 16, cursor: 'pointer', marginTop: 12 };
+  if (setup === 'import') return <main style={page}><div style={card}>
+    <h1 style={{ fontSize: 26, marginBottom: 8 }}>Load your BD data</h1>
+    <p style={{ color: '#52646b' }}>One-off step. Choose the backup file exported from the old Vanor BD app (vanor-bd-backup-….json), check the counts, then import.</p>
+    <label style={{ ...btn, display: 'block', textAlign: 'center', background: '#e8eeee', color: '#203039' }}>
+      {backup ? 'Choose a different file' : 'Choose backup file'}
+      <input type="file" accept=".json,application/json" style={{ display: 'none' }} onChange={async event => {
+        const file = event.target.files?.[0]; if (!file) return;
+        try {
+          const value = JSON.parse(await file.text());
+          if (value.schemaVersion !== 5 || !Array.isArray(value.records) || !Array.isArray(value.work) || !value.decisions) throw new Error('That file isn\'t a Vanor BD backup.');
+          setBackup(value); setError('');
+        } catch (cause) { setBackup(null); setError(cause instanceof Error ? cause.message : 'Cannot read that file.'); }
+      }} />
+    </label>
+    {backup && <p role="status" style={{ marginTop: 16 }}><b>{backup.records.length}</b> contacts · <b>{Object.keys(backup.decisions).length}</b> reviews · <b>{backup.work.length}</b> board cards · <b>{(backup.events || []).length}</b> history entries</p>}
+    {backup && <button style={btn} disabled={importing} onClick={importBackup}>{importing ? 'Importing… (up to a minute)' : 'Import'}</button>}
+    {error && <p role="alert" style={{ marginTop: 16, color: '#9b2c2c' }}>{error}</p>}
+  </div></main>;
   if (setup === 'waiting') return <main className="vanor-load"><h1>Vanor BD</h1><p>An administrator must import the workspace backup first.</p></main>;
   return error ? <main className="vanor-load"><h1>Vanor BD</h1><p>{error}</p></main> : <div className="vanor" ref={host} />;
 }
