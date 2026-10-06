@@ -5,7 +5,7 @@ import { listScope, saveEntity, logEvent, type Entity } from './bd-store';
 
 const SOURCE_LABEL: Record<string, string> = {
   planit: 'Planning (PlanIt)', planning_data_gov: 'Planning (planning.data.gov.uk)', construction_enquirer: 'Construction Enquirer', estates_gazette: 'Estates Gazette', property_week: 'Property Week', building: 'Building',
-  hotelowner_admin: 'Hotel Owner', hotelowner_refurb: 'Hotel Owner', gazette_construction: 'The Gazette', hospitalitynet: 'Hospitality Net',
+  hotelowner_admin: 'Hotel Owner', hotelowner_refurb: 'Hotel Owner', gazette_construction: 'The Gazette', gazette_2450: 'The Gazette: winding-up petition', gazette_2441: 'The Gazette: administration', gazette_2410: 'The Gazette: liquidation', hospitalitynet: 'Hospitality Net',
 };
 const norm = (s = '') => s.toLowerCase().replace(/\b(ltd|limited|plc|llp|group|holdings|uk|the)\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
 export const intelId = (link: string) => 'intel:' + createHash('sha1').update(link).digest('hex').slice(0, 16);

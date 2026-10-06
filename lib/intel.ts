@@ -15,7 +15,7 @@ export const CONFIG = {
     'student accommodation', 'office', 'build to rent', 'data centre'],
   planningMinSize: 'Large',
   planningRecentDays: 7,
-  signalWords: ['administrat', 'insolven', 'liquidat', 'notice of intent', 'delay', 'postpone', 'remain closed', 'refurb', 'renovat',
+  signalWords: ['petition to wind up', 'administrat', 'insolven', 'liquidat', 'notice of intent', 'delay', 'postpone', 'remain closed', 'refurb', 'renovat',
     'reopen', 'refinanc', 'loan', 'facility', 'acquire', 'acquisition', 'stalled', 'restart', 'ceased trading', 'collapse'],
   minScore: 30,
   maxPerRun: 15,
@@ -55,7 +55,7 @@ const KEYS: [string, string[]][] = [
 const COMPLEXITY: Record<string, number> = { listed: 10, 'grade ii': 10, 'grade i': 12, heritage: 8, live: 8, phased: 8, occupied: 8, mep: 8, 'm&e': 8,
   mechanical: 6, commissioning: 8, hotel: 6, theatre: 8, hospital: 8, laboratory: 8, basement: 6, 'change of use': 6, conversion: 6, refurb: 6,
   'fit-out': 4, 'data centre': 8, 'student accommodation': 6, 'build to rent': 6 };
-const DISTRESS: Record<string, number> = { administrat: 25, 'notice of intent': 25, insolven: 25, liquidat: 20, delay: 15, postpone: 15,
+const DISTRESS: Record<string, number> = { 'petition to wind up': 30, administrat: 25, 'notice of intent': 25, insolven: 25, liquidat: 20, delay: 15, postpone: 15,
   'remain closed': 20, behind: 10, dispute: 15, adjudicat: 15, terminat: 20, replace: 10, 'new contractor': 15, slipped: 15, 'later than': 10,
   stalled: 15, 'ceased trading': 25, collapse: 20 };
 const MONEY: Record<string, number> = { '£': 4, million: 6, bed: 4, rooms: 4, facility: 6, loan: 6, refinanc: 6, charge: 4, 'sq ft': 4, phase: 3 };
@@ -184,6 +184,25 @@ export async function fetchPlanningDataGov(errors: string[]): Promise<Signal[]> 
   } catch (e) { errors.push(`planning.data.gov.uk: ${e instanceof Error ? e.message : e}`); return []; }
 }
 
+// The Gazette notice-type feeds (thegazette.co.uk/data): titles are company names, so filter to construction/property firms.
+export const GAZETTE_TYPES: Record<string, string> = { '2450': 'Petition to wind up', '2441': 'Appointment of administrators', '2410': 'Appointment of liquidators' };
+const BUILT_ENV = /\b(construct\w*|build\w*|contract\w*|develop\w*|homes?|propert\w*|estates?|interiors?|fit[- ]?out|joinery|scaffold\w*|groundwork\w*|civil\w*|engineering|mechanical|electrical|m ?& ?e|plumbing|roofing|cladding|facades?|steel|concrete|demolition|housing|living|hotels?|hospitality|land|regeneration|refurb\w*|carpentry|brickwork|drylining|partition\w*|glazing|windows)\b/i;
+export function gazetteSignals(xml: string, code: string): Signal[] {
+  const label = GAZETTE_TYPES[code] || 'Insolvency notice';
+  return parseFeed(xml, `gazette_${code}`).filter(n => BUILT_ENV.test(n.title)).map(n => ({
+    ...n, applicant: n.title, title: `${label}: ${n.title}`,
+    summary: `${label} notice in The Gazette for ${n.title}. Contractor or developer distress: projects, employers and funders exposed.`,
+  }));
+}
+export async function fetchGazette(errors: string[]): Promise<Signal[]> {
+  const out: Signal[] = [];
+  await Promise.all(Object.keys(GAZETTE_TYPES).map(async code => {
+    try { out.push(...gazetteSignals(await (await get(`https://www.thegazette.co.uk/insolvency/notice/data.feed?noticetypes=${code}&results-page-size=100`)).text(), code)); }
+    catch (e) { errors.push(`gazette ${code}: ${e instanceof Error ? e.message : e}`); }
+  }));
+  return out;
+}
+
 export async function fetchFeeds(errors: string[]): Promise<Signal[]> {
   const out: Signal[] = [];
   await Promise.all(Object.entries(FEEDS).map(async ([name, url]) => {
@@ -209,7 +228,7 @@ export async function companiesHouseDirectors(name: string) {
 /** Fetch everything, keep real signals, score, dedupe by link, best first. */
 export async function scan(today = new Date()) {
   const errors: string[] = [];
-  const all = (await Promise.all([fetchFeeds(errors), fetchPlanIt(errors), fetchPlanningDataGov(errors)])).flat();
+  const all = (await Promise.all([fetchFeeds(errors), fetchGazette(errors), fetchPlanIt(errors), fetchPlanningDataGov(errors)])).flat();
   const seen = new Set<string>();
   const scored = all.filter(isSignal).filter(s => s.link && !seen.has(s.link) && seen.add(s.link)).map(s => score(s, today))
     .sort((a, b) => b.score - a.score);

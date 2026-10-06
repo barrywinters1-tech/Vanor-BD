@@ -50,3 +50,14 @@ test('helpers', () => {
   const ctx = leadContext(score({ source: 'planit', title: 'T', link: 'z', date: '2026-10-05', summary: 'hotel' }, today), ['A DIRECTOR (director)'], ['Jane (CEO)']);
   assert.match(ctx, /Directors \(Companies House\)/); assert.match(ctx, /Already on the board/);
 });
+
+test('Gazette notice feeds keep built-environment firms and score them as distress', async () => {
+  const { gazetteSignals } = await import('../lib/intel.ts');
+  const xml = `<feed><entry><id>x</id><title>TRIDENT PROPERTY CONSTRUCTION LIMITED</title><link href="https://www.thegazette.co.uk/notice/5224688"/><updated>2026-10-06T12:02:02+01:00</updated></entry>
+    <entry><id>y</id><title>EXHALATION TECHNOLOGY LTD</title><link href="https://www.thegazette.co.uk/notice/2"/><updated>2026-10-06T12:00:00+01:00</updated></entry></feed>`;
+  const s = gazetteSignals(xml, '2450');
+  assert.equal(s.length, 1);
+  assert.match(s[0].title, /^Petition to wind up: TRIDENT/);
+  assert.ok(isSignal(s[0]));
+  assert.ok(score(s[0], today).distress >= 30);
+});
