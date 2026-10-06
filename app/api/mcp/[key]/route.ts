@@ -13,6 +13,7 @@ import {
   findByEmail, getOne, listScope, logEvent, saveEntity, searchSources, updateEntity, type Entity,
 } from '../../../../lib/bd-store';
 import { lookupPerson } from '../../../../lib/rocketreach';
+import { runIntel } from '../../../../lib/intel-ingest';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -215,6 +216,16 @@ function createServer() {
     if (!saved) throw new Error('Could not save the lead. Try again.');
     await logEvent({ entityId: id, recordId: id, type: 'Lead added', note: `${input.source}: ${input.context.slice(0, 200)}` });
     return out({ created: true, id }, 'Lead added to the review queue.');
+  });
+
+  server.registerTool('scan_intel', {
+    title: 'Scan planning, administration and market feeds',
+    description: 'Runs the Vanor intel scanner: PlanIt and planning.data.gov.uk consents, Construction Enquirer, The Gazette insolvency notices, Hotel Owner and Hospitality Net. Scores each signal (complexity, distress, money, timing, buyer type). With write=false it only previews; with write=true the best new signals are added to the review queue as leads (deduplicated, max 15) and existing contacts at the same organisation get a Trigger note. Runs automatically every weekday at 05:40 UTC.',
+    inputSchema: { write: z.boolean().default(false), limit: z.number().int().min(1).max(30).optional(), minScore: z.number().int().min(0).max(100).optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+  }, async ({ write, limit, minScore }) => {
+    const result = await runIntel({ write, limit, minScore });
+    return out(result, write ? 'Scan complete; leads added to the review queue.' : 'Preview only; nothing written.');
   });
 
   server.registerTool('enrich_contact', {

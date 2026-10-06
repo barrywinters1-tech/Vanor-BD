@@ -4,6 +4,7 @@
 > 1. **Autopilot:** add the connector, plus one step: for every thread it handles, `find_contact_by_email` → `log_interaction` → `set_next_action`.
 > 2. **Distress Watch and Monday Brief:** add the connector, plus one step: every named forced buyer or target goes in via `add_lead` (source = the brief name), so it lands in the review queue rather than only in an email.
 > 3. **Live:** scheduled task "Vanor BD — board sync & meeting capture" (weekdays 08:10 London) does Pocket capture, brief intake into the review queue, and email logging. Existing tasks are untouched.
+> 4. **Intel scanner:** built in (`lib/intel.ts`, ported from vanor-intel). Every weekday at 05:40 UTC it scans PlanIt, planning.data.gov.uk, Construction Enquirer, The Gazette, Hotel Owner and Hospitality Net. It scores signals and adds up to 15 new leads (score ≥ 30) to the review queue. Claude can run it on demand with the connector tool `scan_intel` (`write: false` previews it). Optional keys in Vercel: `COMPANIES_HOUSE_KEY` (adds directors to each lead) and `PLANIT_KEY`.
 > Section A step 1 (email) and step 4 (briefing) are covered by the existing tasks, so skip them.
 
 These are the prompts for Claude's scheduled tasks. They need the **Vanor BD** connector and Microsoft 365 connected.
