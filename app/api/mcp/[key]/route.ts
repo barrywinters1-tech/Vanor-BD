@@ -14,6 +14,7 @@ import {
 } from '../../../../lib/bd-store';
 import { lookupPerson } from '../../../../lib/rocketreach';
 import { runIntel } from '../../../../lib/intel-ingest';
+import { priorityList } from '../../../../lib/priority';
 import { researchCompany, normCompany } from '../../../../lib/company-intel';
 import { researchBatch, saveIntel, signalContacts } from '../../../../lib/company-intel-store';
 
@@ -262,6 +263,13 @@ function createServer() {
     inputSchema: { minFit: z.number().int().min(0).max(2).optional(), maxAgeDays: z.number().int().min(7).max(730).optional(), limit: z.number().int().min(1).max(100).optional() },
     annotations: { readOnlyHint: true },
   }, async ({ minFit, maxAgeDays, limit }) => out(await signalContacts({ minFit: minFit ?? 2, maxAgeDays: maxAgeDays ?? 120, limit: limit ?? 40 }), 'Signals listed.'));
+
+  server.registerTool('priority_list', {
+    title: 'Priority matrix: who to work, in order',
+    description: 'The board\'s priority matrix. Grade A/B/C = right buyer (fit); Heat 1-3 = live need (dated signals, fading after 90 days) + relationship (board stage, recent contact, known contact). Cells: A1 pursue now (calls), A2 signal-led email or nurture, A3 watch, B1 ask for intro, B2 keep warm, B3 low, C not buyers; T1 = top 40 grade-A accounts. Returns counts per cell and the ranked contacts for one cell with "why" and "move".',
+    inputSchema: { cell: z.enum(['All', 'A1', 'A2', 'A3', 'B1', 'B2', 'B3', 'T1']).optional(), limit: z.number().int().min(1).max(100).optional() },
+    annotations: { readOnlyHint: true },
+  }, async ({ cell, limit }) => out(await priorityList({ cell: cell || 'All', limit: limit || 30 }), 'Priority list.'));
 
   server.registerTool('fill_contact_details', {
     title: 'Fill missing contact details',
