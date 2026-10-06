@@ -2,26 +2,11 @@
 import { listScope, getOne, logEvent, updateEntity, type Entity } from './bd-store';
 import { priorityList } from './priority';
 
-export const STEPS = ['sent', 'reply', 'meeting_booked', 'meeting_held', 'proposal', 'won'] as const;
-export type Step = typeof STEPS[number];
-export const STEP_LABEL: Record<Step, string> = { sent: 'Outreach sent', reply: 'Reply received', meeting_booked: 'Meeting booked', meeting_held: 'Meeting held', proposal: 'Proposal sent', won: 'Won' };
+export { STEPS, STEP_LABEL, stepOf, type Step } from './funnel-logic';
+import { STEPS, stepOf, type Step } from './funnel-logic';
 const TYPE_PREFIX = 'Outcome: ';
 const DAY = 864e5;
-
 export type Outcome = { id: string; step: Step; date: string; ref?: string; trigger?: string; channel?: string; note: string; source?: string };
-
-/** Board events that count as funnel steps: Claude-logged outcomes plus the founders' own "Record outcome" entries. */
-export function stepOf(e: Entity): Step | null {
-  const t = String(e.type || '');
-  if (t.startsWith(TYPE_PREFIX)) return STEPS.includes(t.slice(TYPE_PREFIX.length) as Step) ? t.slice(TYPE_PREFIX.length) as Step : null;
-  if (t === 'Meeting held') return 'meeting_held';
-  if (t === 'Meeting arranged') return 'meeting_booked';
-  if (t === 'Commercial discussion') return 'proposal';
-  if (t === 'Interaction: email out') return 'sent';
-  if (t === 'Interaction: email in') return 'reply';
-  if (t === 'Interaction: meeting') return 'meeting_held';
-  return null;
-}
 const when = (e: Entity) => String(e.happenedOn || e.date || e.at || '').slice(0, 10);
 
 /** Idempotent: the same Outlook message or calendar event is never counted twice. */

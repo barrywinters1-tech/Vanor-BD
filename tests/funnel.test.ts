@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { stepOf, STEPS } from '../lib/funnel.ts';
+import { stepOf, STEPS } from '../lib/funnel-logic.ts';
 
 test('funnel steps map from Claude outcomes and founder outcome records', () => {
   assert.equal(stepOf({ id: '1', type: 'Outcome: sent' }), 'sent');
