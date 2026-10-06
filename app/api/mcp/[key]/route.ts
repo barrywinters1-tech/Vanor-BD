@@ -181,12 +181,17 @@ function createServer() {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ items }) => {
     let saved = 0; const missing: string[] = [];
-    for (const item of items) {
-      try {
-        await updateEntity('source', item.id, r => ({ ...r, fitScore: item.fit, fitSector: item.sector, fitReason: item.reason, assessedAt: r.assessedAt || new Date().toISOString() }));
-        saved++;
-      } catch { missing.push(item.id); }
-    }
+    const queue = [...items];
+    const worker = async () => {
+      for (let item = queue.shift(); item; item = queue.shift()) {
+        const it = item;
+        try {
+          await updateEntity('source', it.id, r => ({ ...r, fitScore: it.fit, fitSector: it.sector, fitReason: it.reason, assessedAt: r.assessedAt || new Date().toISOString() }));
+          saved++;
+        } catch { missing.push(it.id); }
+      }
+    };
+    await Promise.all(Array.from({ length: 20 }, worker));
     return out({ saved, missing }, `Saved fit for ${saved} contact(s).`);
   });
 
