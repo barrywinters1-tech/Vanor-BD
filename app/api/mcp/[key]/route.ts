@@ -263,6 +263,26 @@ function createServer() {
     annotations: { readOnlyHint: true },
   }, async ({ minFit, maxAgeDays, limit }) => out(await signalContacts({ minFit: minFit ?? 2, maxAgeDays: maxAgeDays ?? 120, limit: limit ?? 40 }), 'Signals listed.'));
 
+  server.registerTool('fill_contact_details', {
+    title: 'Fill missing contact details',
+    description: 'Save an email, phone or LinkedIn found via the RocketReach connector (or another named source) onto a contact. Only fills EMPTY fields; never overwrites what a founder entered. Always say where it came from.',
+    inputSchema: {
+      id: z.string(), email: z.string().email().optional(), phone: z.string().max(40).optional(), linkedin: z.string().url().optional(),
+      jobTitle: z.string().max(120).optional(), source: z.string().min(2).describe('e.g. "RocketReach connector"'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ id, email, phone, linkedin, jobTitle, source }) => {
+    const filled: string[] = [];
+    await updateEntity('source', id, r => {
+      const next = { ...r };
+      for (const [k, v] of Object.entries({ email, phone, linkedin, jobTitle })) if (v && !r[k]) { next[k] = v; filled.push(k); }
+      next.enrichment = { ...(r.enrichment || {}), provider: source, at: new Date().toISOString(), filled };
+      return next;
+    });
+    if (filled.length) await logEvent({ entityId: id, recordId: id, type: 'Details added', note: `${filled.join(', ')} from ${source}` });
+    return out({ filled }, filled.length ? `Filled ${filled.join(', ')}.` : 'Nothing empty to fill.');
+  });
+
   server.registerTool('enrich_contact', {
     title: 'Enrich contact via RocketReach',
     description: 'Look up email, phone and LinkedIn for a contact. Uses RocketReach credit, so only call it for contacts worth chasing (fit 2, or chase score 40+). Fills empty fields only; never overwrites.',
