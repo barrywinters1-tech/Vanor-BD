@@ -4,7 +4,7 @@ import { CONFIG, scan, companiesHouseDirectors, leadContext, type Scored } from 
 import { listScope, saveEntity, logEvent, type Entity } from './bd-store';
 
 const SOURCE_LABEL: Record<string, string> = {
-  planit: 'Planning (PlanIt)', planning_data_gov: 'Planning (planning.data.gov.uk)', construction_enquirer: 'Construction Enquirer',
+  planit: 'Planning (PlanIt)', planning_data_gov: 'Planning (planning.data.gov.uk)', construction_enquirer: 'Construction Enquirer', estates_gazette: 'Estates Gazette', property_week: 'Property Week', building: 'Building',
   hotelowner_admin: 'Hotel Owner', hotelowner_refurb: 'Hotel Owner', gazette_construction: 'The Gazette', hospitalitynet: 'Hospitality Net',
 };
 const norm = (s = '') => s.toLowerCase().replace(/\b(ltd|limited|plc|llp|group|holdings|uk|the)\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim();

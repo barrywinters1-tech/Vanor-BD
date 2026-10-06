@@ -70,12 +70,15 @@ export function activity(signals: Signal[], status?: string, lastAccounts?: stri
   return 'unknown';
 }
 
+export const searchName = (name: string) => name.replace(/\([^)]*\)/g, ' ').split(/\s\/\s|\//)[0].replace(/\s+/g, ' ').trim() || name;
+
 export async function researchCompany(name: string): Promise<CompanyIntel> {
+  const q = searchName(name);
   const intel: CompanyIntel = { name, checkedAt: new Date().toISOString(), signals: [], active: 'unknown', need: '', sources: [], errors: [] };
   // Companies House
   try {
-    const found = await ch(`/search/companies?q=${encodeURIComponent(name)}&items_per_page=30`);
-    const best = (found?.items || []).map((i: any) => ({ i, m: nameMatch(name, i.title), live: i.company_status === 'active' ? 1 : 0 }))
+    const found = await ch(`/search/companies?q=${encodeURIComponent(q)}&items_per_page=30`);
+    const best = (found?.items || []).map((i: any) => ({ i, m: nameMatch(q, i.title), live: i.company_status === 'active' ? 1 : 0 }))
       .filter((x: any) => x.m >= 0.6).sort((a: any, b: any) => b.live - a.live || b.m - a.m)[0];
     if (best && best.m >= 0.6) {
       const n = best.i.company_number;
@@ -91,13 +94,7 @@ export async function researchCompany(name: string): Promise<CompanyIntel> {
         intel.signals.push({ type: 'inactive', date: profile.date_of_cessation || intel.checkedAt.slice(0, 10), text: `Companies House status: ${profile.company_status}` });
       intel.sources.push(`https://find-and-update.company-information.service.gov.uk/company/${n}`);
       // Group/SPV companies (e.g. "Seaforth Land (Kings Cross) Ltd"): loans and site purchases are usually charged there.
-      const tokens = normCompany(name).split(' ').filter(Boolean);
-      const group = (found?.items || []).filter((i: any) => i.company_number !== n && i.company_status === 'active'
-        && tokens.every(tok => normCompany(i.title).split(' ').includes(tok)))
-        .sort((a: any, b: any) => (b.date_of_creation || '').localeCompare(a.date_of_creation || '')).slice(0, 8);
-      for (const g of group) if (g.date_of_creation && monthsAgo(g.date_of_creation) <= 18)
-        intel.signals.push({ type: 'new_spv', date: g.date_of_creation, text: `New group company incorporated: ${g.title}`,
-          url: `https://find-and-update.company-information.service.gov.uk/company/${g.company_number}` });
+      const group: any[] = [];
       // Follow the top directors to their other recent appointments: scheme SPVs often carry different names.
       const linked = new Map<string, any>(group.map((g: any) => [g.company_number, { company_number: g.company_number, title: g.title }]));
       const directorLinks = (officers?.items || []).filter((o: any) => !o.resigned_on && o.officer_role === 'director' && o.links?.officer?.appointments).slice(0, 3);
@@ -106,6 +103,7 @@ export async function researchCompany(name: string): Promise<CompanyIntel> {
         const num = it.appointed_to?.company_number;
         if (!num || num === n || linked.has(num) || it.resigned_on || it.appointed_to?.company_status !== 'active') continue;
         if (!it.appointed_on || monthsAgo(it.appointed_on) > 30) continue;
+        if (/\b(RTM|RESIDENTS?|MANAGEMENT COMPANY|FREEHOLD COMPANY|CHARITY|TRUST|ASSOCIATION|SOCIETY|CLUB)\b/i.test(it.appointed_to?.company_name || '')) continue;
         linked.set(num, { company_number: num, title: it.appointed_to.company_name, appointedOn: it.appointed_on });
       }
       for (const l of [...linked.values()].filter(l => l.appointedOn && monthsAgo(l.appointedOn) <= 18).slice(0, 3))
@@ -120,19 +118,19 @@ export async function researchCompany(name: string): Promise<CompanyIntel> {
   } catch (e) { intel.errors.push(e instanceof Error ? e.message : String(e)); }
   // The Gazette (insolvency notices naming the company)
   try {
-    const q = encodeURIComponent(`"${name.replace(/"/g, '')}"`);
-    const xml = await (await fetch(`https://www.thegazette.co.uk/insolvency/notice/data.feed?text=${q}&results-page-size=5`, { headers: UA, signal: AbortSignal.timeout(10000) })).text();
-    for (const n of parseFeed(xml, 'gazette')) if (Date.parse(n.date) && monthsAgo(n.date) <= 24 && nameMatch(name, n.title) >= 0.5)
+    const gq = encodeURIComponent(`"${q.replace(/"/g, '')}"`);
+    const xml = await (await fetch(`https://www.thegazette.co.uk/insolvency/notice/data.feed?text=${gq}&results-page-size=5`, { headers: UA, signal: AbortSignal.timeout(10000) })).text();
+    for (const n of parseFeed(xml, 'gazette')) if (Date.parse(n.date) && monthsAgo(n.date) <= 24 && nameMatch(q, n.title) >= 0.5)
       intel.signals.push({ type: 'distress', date: n.date.slice(0, 10), text: n.title.slice(0, 160), url: n.link });
   } catch (e) { intel.errors.push('Gazette: ' + (e instanceof Error ? e.message : e)); }
   // Planning (PlanIt free-text search, last 12 months)
   try {
-    const p = new URLSearchParams({ search: `"${name}"`, recent: '365', pg_sz: '10' });
+    const p = new URLSearchParams({ search: `"${q}"`, recent: '365', pg_sz: '10' });
     if (process.env.PLANIT_KEY) p.set('auth', process.env.PLANIT_KEY);
     const json = await (await fetch(`https://www.planit.org.uk/api/applics/json?${p}`, { headers: UA, signal: AbortSignal.timeout(12000) })).json();
     for (const r of (json.records || []).slice(0, 5)) {
       const who = `${r.applicant || ''} ${r.agent || ''} ${r.description || ''}`;
-      if (nameMatch(name, who) < 0.5 && !normCompany(who).includes(normCompany(name))) continue;
+      if (nameMatch(q, who) < 0.5 && !normCompany(who).includes(normCompany(q))) continue;
       intel.signals.push({ type: 'planning', date: (r.start_date || r.last_changed || '').slice(0, 10),
         text: `${r.area_name || ''}: ${String(r.description || '').slice(0, 120)} (${r.app_state || 'status unknown'})`, url: r.link || r.url });
     }

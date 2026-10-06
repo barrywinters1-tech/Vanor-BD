@@ -23,6 +23,9 @@ export const CONFIG = {
 
 export const FEEDS: Record<string, string> = {
   construction_enquirer: 'https://www.constructionenquirer.com/feed/',
+  estates_gazette: 'https://eg.co.uk/feed/',
+  property_week: 'https://www.propertyweek.com/rss',
+  building: 'https://www.building.co.uk/rss/news',
   hotelowner_admin: 'https://www.hotelowner.co.uk/tag/administration/feed/',
   hotelowner_refurb: 'https://www.hotelowner.co.uk/tag/refurbishment/feed/',
   gazette_construction: 'https://www.thegazette.co.uk/insolvency/notice/data.feed?text=construction+OR+fit-out+OR+interiors+OR+mechanical+OR+electrical&results-page-size=50',
