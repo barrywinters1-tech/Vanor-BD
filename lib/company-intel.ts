@@ -1,6 +1,6 @@
 // Company-level intelligence: Companies House (status, directors, charges = lending), PlanIt (planning),
 // The Gazette (insolvency). Plain code; produces dated "signals" that say whether a firm is active and has a need.
-import { parseFeed } from './intel';
+import { parseFeed } from './intel.ts';
 
 export type Signal = { type: 'lending' | 'property' | 'planning' | 'distress' | 'new_director' | 'inactive'; date: string; text: string; url?: string };
 export type CompanyIntel = {
