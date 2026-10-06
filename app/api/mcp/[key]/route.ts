@@ -14,6 +14,8 @@ import {
 } from '../../../../lib/bd-store';
 import { lookupPerson } from '../../../../lib/rocketreach';
 import { runIntel } from '../../../../lib/intel-ingest';
+import { researchCompany, normCompany } from '../../../../lib/company-intel';
+import { researchBatch, saveIntel, signalContacts } from '../../../../lib/company-intel-store';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -232,6 +234,34 @@ function createServer() {
     const result = await runIntel({ write, limit, minScore });
     return out(result, write ? 'Scan complete; leads added to the review queue.' : 'Preview only; nothing written.');
   });
+
+  server.registerTool('research_company', {
+    title: 'Research one company',
+    description: 'Companies House (status, directors, new charges = lending or property purchase, new directors), PlanIt planning applications and Gazette insolvency notices for one company. Saves the result on every contact at that company and returns dated signals plus a one-line "need" read. Give a contact id or a company name.',
+    inputSchema: { id: z.string().optional(), company: z.string().min(2).optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+  }, async ({ id, company }) => {
+    const name = company || (id ? (await getOne('source', id))?.company : '');
+    if (!name) throw new Error('Give a contact id with a company, or a company name.');
+    const intel = await researchCompany(name);
+    const ids = (await listScope('source')).filter(r => normCompany(r.company) === normCompany(name)).map(r => r.id);
+    if (ids.length) await saveIntel(ids, intel);
+    return out({ ...intel, savedOn: ids.length }, `${intel.matchedName || name}: ${intel.need}`);
+  });
+
+  server.registerTool('research_companies_batch', {
+    title: 'Research the next batch of companies',
+    description: 'Researches the highest-fit companies whose research is missing or over 30 days old, until ~40 seconds have passed (about 8-15 companies). Call repeatedly to work through the list; "remaining" says how many are left.',
+    inputSchema: { limit: z.number().int().min(1).max(25).optional(), minFit: z.number().int().min(0).max(2).optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+  }, async ({ limit, minFit }) => out(await researchBatch({ limit: limit || 15, minFit: minFit ?? 1 }), 'Batch researched.'));
+
+  server.registerTool('list_signals', {
+    title: 'Contacts with live buying signals',
+    description: 'Contacts at companies with recent signals (new lending or property charge, planning, insolvency, new director), best fit first, with the company need read and directors. Use to pick who to contact and to draft outreach that references the signal.',
+    inputSchema: { minFit: z.number().int().min(0).max(2).optional(), maxAgeDays: z.number().int().min(7).max(730).optional(), limit: z.number().int().min(1).max(100).optional() },
+    annotations: { readOnlyHint: true },
+  }, async ({ minFit, maxAgeDays, limit }) => out(await signalContacts({ minFit: minFit ?? 2, maxAgeDays: maxAgeDays ?? 120, limit: limit ?? 40 }), 'Signals listed.'));
 
   server.registerTool('enrich_contact', {
     title: 'Enrich contact via RocketReach',

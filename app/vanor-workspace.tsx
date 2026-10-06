@@ -56,7 +56,7 @@ export default function VanorWorkspace() {
       const [ready, user] = await Promise.all([repo.isReady(), fetch('/api/workspace/user').then(r => r.json())]);
       if (!ready) { setSetup(user.role === 'admin' ? 'import' : 'waiting'); return; }
       setSetup('ready');
-      if (!window.VanorWorkbench) await new Promise<void>((resolve, reject) => { const script = document.createElement('script'); script.src = '/vanor-runtime.js?v=15'; script.onload = () => resolve(); script.onerror = () => reject(new Error('The Vanor application failed to load.')); document.head.appendChild(script); });
+      if (!window.VanorWorkbench) await new Promise<void>((resolve, reject) => { const script = document.createElement('script'); script.src = '/vanor-runtime.js?v=16'; script.onload = () => resolve(); script.onerror = () => reject(new Error('The Vanor application failed to load.')); document.head.appendChild(script); });
       if (host.current && window.VanorWorkbench) handle = await window.VanorWorkbench.start({ element: host.current, repo, seed: null, actor: user.actor });
     })().catch(e => setError(e.message || String(e)));
     return () => handle?.dispose();
