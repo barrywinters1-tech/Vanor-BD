@@ -47,7 +47,7 @@ export async function getOne(scope: Scope, id: string): Promise<Entity | null> {
 export async function saveEntity(scope: Scope, entity: Entity, expectedRev: number): Promise<Entity | null> {
   const tenant = await tenantId();
   const now = new Date().toISOString();
-  const payload = { ...strip(entity), updatedAt: now };
+  const payload = scope === 'source' ? strip(entity) : { ...strip(entity), updatedAt: now };
   if (!expectedRev) {
     const { data, error } = await db().from('entities')
       .upsert({ tenant_id: tenant, scope, id: entity.id, payload, revision: 1, updated_at: now },

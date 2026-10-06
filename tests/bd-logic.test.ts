@@ -45,3 +45,8 @@ test('duplicate guard matches email or name+company', () => {
   assert.equal(findDuplicate([rec], { name: 'jane smith', company: 'Acme Debt Fund.' })?.id, 'r1');
   assert.equal(findDuplicate([rec], { name: 'Jane Smith', company: 'Other' }), null);
 });
+
+test('storage timestamps do not flip a reviewed contact to Changed', () => {
+  const decision = { reviewedAt: at, reviewedFingerprint: sourceHash(rec) };
+  assert.equal(reviewStatus({ ...rec, updatedAt: '2026-10-06T11:00:00Z', fitScore: 2 }, decision, at), 'Reviewed');
+});
