@@ -98,10 +98,24 @@ export async function researchCompany(name: string): Promise<CompanyIntel> {
       for (const g of group) if (g.date_of_creation && monthsAgo(g.date_of_creation) <= 18)
         intel.signals.push({ type: 'new_spv', date: g.date_of_creation, text: `New group company incorporated: ${g.title}`,
           url: `https://find-and-update.company-information.service.gov.uk/company/${g.company_number}` });
-      const groupCharges = await Promise.all(group.map(async (g: any) => ({ g, c: await ch(`/company/${g.company_number}/charges?items_per_page=10`).catch(() => null) })));
+      // Follow the top directors to their other recent appointments: scheme SPVs often carry different names.
+      const linked = new Map<string, any>(group.map((g: any) => [g.company_number, { company_number: g.company_number, title: g.title }]));
+      const directorLinks = (officers?.items || []).filter((o: any) => !o.resigned_on && o.officer_role === 'director' && o.links?.officer?.appointments).slice(0, 3);
+      const appts = await Promise.all(directorLinks.map((o: any) => ch(`${o.links.officer.appointments}?items_per_page=50`).catch(() => null)));
+      for (const a of appts) for (const it of a?.items || []) {
+        const num = it.appointed_to?.company_number;
+        if (!num || num === n || linked.has(num) || it.resigned_on || it.appointed_to?.company_status !== 'active') continue;
+        if (!it.appointed_on || monthsAgo(it.appointed_on) > 30) continue;
+        linked.set(num, { company_number: num, title: it.appointed_to.company_name, appointedOn: it.appointed_on });
+      }
+      for (const l of [...linked.values()].filter(l => l.appointedOn && monthsAgo(l.appointedOn) <= 18).slice(0, 3))
+        intel.signals.push({ type: 'new_spv', date: l.appointedOn, text: `Director now also at ${l.title} (appointed ${l.appointedOn})`,
+          url: `https://find-and-update.company-information.service.gov.uk/company/${l.company_number}` });
+      const checkList = [...linked.values()].sort((a, b) => (b.appointedOn || '').localeCompare(a.appointedOn || '')).slice(0, 10);
+      const groupCharges = await Promise.all(checkList.map(async (g: any) => ({ g, c: await ch(`/company/${g.company_number}/charges?items_per_page=10`).catch(() => null) })));
       for (const { g, c } of groupCharges) for (const s of chargeSignals(c?.items || []))
         intel.signals.push({ ...s, text: `${g.title}: ${s.text}`, url: `https://find-and-update.company-information.service.gov.uk/company/${g.company_number}/charges` });
-      (intel as any).groupCompanies = group.length;
+      (intel as any).groupCompanies = checkList.length;
     } else if (found) intel.errors.push('Companies House: no confident name match');
   } catch (e) { intel.errors.push(e instanceof Error ? e.message : String(e)); }
   // The Gazette (insolvency notices naming the company)
