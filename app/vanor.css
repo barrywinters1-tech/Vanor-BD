@@ -2067,3 +2067,32 @@ html, body {
 .funnel-table th,.funnel-table td{padding:5px 6px;text-align:left;border-top:1px solid rgba(0,0,0,.06)}
 .funnel-table th{font-weight:600;color:var(--muted,#5b6b70);border-top:0}
 @media (max-width:520px){.funnel-row{grid-template-columns:96px 1fr 28px}}
+
+/* Priority matrix + funnel + nudges */
+.vanor .funnel-table{min-width:0}
+.vanor .tag{white-space:nowrap}
+.vanor .prio-matrix{display:grid;grid-template-columns:70px repeat(3,1fr);gap:8px;align-items:stretch}
+.vanor .prio-matrix .btn{display:block;width:100%;text-align:left;padding:12px;min-width:0}
+.vanor .prio-matrix .btn b{font-size:20px}
+@media (max-width:600px){
+  .vanor .prio-matrix{grid-template-columns:28px repeat(3,1fr);gap:5px}
+  .vanor .prio-matrix .btn{padding:8px 6px}
+  .vanor .prio-matrix .btn b{font-size:17px}
+  .vanor .prio-matrix .tiny{font-size:10px;line-height:1.25}
+}
+.vanor .prio-matrix .tiny{display:block;white-space:normal;overflow-wrap:anywhere}
+@media (max-width:700px){
+  .vanor table.prio-table{min-width:0;display:block}
+  .vanor table.prio-table thead{display:none}
+  .vanor table.prio-table tbody{display:block}
+  .vanor table.prio-table tr{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;padding:12px 14px;border-bottom:1px solid var(--hair)}
+  .vanor table.prio-table td{display:block;padding:0;border:0;min-width:0}
+  .vanor table.prio-table td:nth-child(2){grid-column:1 / -1;order:-1}
+  .vanor table.prio-table td:nth-child(1){grid-column:1 / -1}
+  .vanor table.prio-table td:nth-child(4){grid-column:1 / -1}
+  .vanor table.prio-table td:nth-child(5){grid-column:1 / -1}
+}
+@media (max-width:700px){
+  .vanor table.prio-table td:nth-child(5)::before{content:'Way in: ';color:var(--muted);font-size:11px}
+  .vanor table.prio-table td:nth-child(6)::before{content:'Owner: ';color:var(--muted);font-size:11px}
+}
