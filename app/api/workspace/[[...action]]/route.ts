@@ -196,7 +196,7 @@ export async function POST(request: NextRequest, context: Context) {
     if (action === 'run-scan') return reply(await runIntel({ write: true }));
     if (action === 'run-research') return reply(await researchBatch({ limit: 25, budgetMs: 45000 }));
     if (action === 'run-backup') return reply(await runBackup());
-    if (action === 'run-drafts') return reply({ classified: await autoClassify({ limit: 300 }), drafts: await generateDrafts({ limit: 60 }) });
+    if (action === 'run-drafts') return reply({ classified: await autoClassify({ limit: 120 }), drafts: await generateDrafts({ limit: 40 }) });
     const body: any = await request.json();
     if (action === 'draft') {
       const id = String(body?.id || '');
