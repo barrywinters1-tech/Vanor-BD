@@ -2102,3 +2102,10 @@ html, body {
   .vanor table.prio-table td:nth-child(6)::before{content:'Owner: ';color:var(--muted);font-size:11px}
 }
 .vanor .avatar.claude{background:#e8eef0;color:#355c62;font-size:10px;letter-spacing:.04em}
+
+/* Today work queue */
+.vanor .stats.five{grid-template-columns:repeat(5,1fr)}
+.vanor .queue-no{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:600;margin-right:8px;vertical-align:middle}
+.vanor .queue-panel .review-line .btn{margin-right:8px}
+@media (max-width:1200px){.vanor .stats.five{grid-template-columns:repeat(3,1fr)}.vanor .stats.five .stat{padding:8px 16px}}
+@media (max-width:600px){.vanor .stats.five{grid-template-columns:repeat(2,1fr);gap:8px 0}.vanor .stats.five .stat{border-right:0;padding:6px 0}}
