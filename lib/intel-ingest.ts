@@ -28,7 +28,7 @@ export async function runIntel({ write, limit = CONFIG.maxPerRun, minScore = CON
     const directors = await companiesHouseDirectors(s.organisation);
     const record: Entity = {
       id, kind: 'lead', origin: 'intel', addedBy: 'Vanor intel scanner',
-      name: s.talkTo, company: (s.organisation || s.title).slice(0, 120), jobTitle: s.talkTo,
+      name: s.talkTo, company: (s.organisation || s.title).slice(0, 120), jobTitle: s.talkTo, title: s.title.slice(0, 160),
       email: '', phone: '', linkedin: '', notes: '',
       context: leadContext(s, directors, known.map(k => `${k.name} (${k.jobTitle || 'role unknown'})`)),
       source: SOURCE_LABEL[s.source] || s.source, sourceUrl: s.link, sourceOwner: '', segment: '', region: '', route: '',

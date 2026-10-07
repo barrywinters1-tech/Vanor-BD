@@ -2109,3 +2109,10 @@ html, body {
 .vanor .queue-panel .review-line .btn{margin-right:8px}
 @media (max-width:1200px){.vanor .stats.five{grid-template-columns:repeat(3,1fr)}.vanor .stats.five .stat{padding:8px 16px}}
 @media (max-width:600px){.vanor .stats.five{grid-template-columns:repeat(2,1fr);gap:8px 0}.vanor .stats.five .stat{border-right:0;padding:6px 0}}
+
+/* Signals feed */
+.vanor .signal-row{padding:14px 21px;border-bottom:1px solid var(--hair)}
+.vanor .signal-row:last-child{border-bottom:0}
+.vanor .signal-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:11px;color:var(--muted);margin-bottom:4px}
+.vanor .signal-row h3{font-size:15px;font-weight:600;margin:0 0 4px;text-wrap:balance}
+.vanor .signal-row p{font-size:12.5px;color:var(--secondary);margin:0 0 8px;line-height:1.55}
