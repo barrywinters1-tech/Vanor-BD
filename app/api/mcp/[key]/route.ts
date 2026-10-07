@@ -17,6 +17,7 @@ import { runIntel } from '../../../../lib/intel-ingest';
 import { priorityList } from '../../../../lib/priority';
 import { logOutcome, funnel, STEPS } from '../../../../lib/funnel';
 import { generateDrafts, approvedDrafts, markDraftPushed, saveDraft, autoClassify } from '../../../../lib/outreach';
+import { signalFeed, setHeadline } from '../../../../lib/signals-feed';
 import { researchCompany, normCompany } from '../../../../lib/company-intel';
 import { researchBatch, saveIntel, signalContacts } from '../../../../lib/company-intel-store';
 
@@ -334,6 +335,20 @@ function createServer() {
     inputSchema: { limit: z.number().int().min(1).max(500).optional() },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ limit }) => out(await autoClassify({ limit: limit || 300 }), 'Classified.'));
+
+  server.registerTool('signal_feed', {
+    title: 'Signals feed (what the board shows under Signals)',
+    description: 'Newest-first list of surfaced leads and company signals: id, key, date, source, headline, why, text, cell, polished (true once a Claude headline exists). Use to polish headlines (set_headline) and for the weekly digest. buyersOnly=false includes grade-C companies (e.g. Gazette insolvencies).',
+    inputSchema: { days: z.number().int().min(1).max(365).optional(), buyersOnly: z.boolean().optional(), limit: z.number().int().min(1).max(200).optional() },
+    annotations: { readOnlyHint: true },
+  }, async ({ days, buyersOnly, limit }) => out({ items: await signalFeed({ days: days ?? 30, buyersOnly: buyersOnly ?? true, limit: limit ?? 60 }) }, 'Signal feed.'));
+
+  server.registerTool('set_headline', {
+    title: 'Polish a signal headline',
+    description: 'Save a news-style headline (max 90 chars, plain, no filing quotes) and one line on why it matters for Vanor (max 160 chars) for a feed item, keyed by its id + key from signal_feed.',
+    inputSchema: { id: z.string(), key: z.string(), headline: z.string().min(8).max(90), why: z.string().min(8).max(160) },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ id, key, headline, why }) => out(await setHeadline(id, key, { headline, why }), 'Headline saved.'));
 
   server.registerTool('funnel_report', {
     title: 'Outreach funnel and what is working',
