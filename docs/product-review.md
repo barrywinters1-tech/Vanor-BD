@@ -36,3 +36,12 @@ Sources: stacksync.com (Attio), lightfield.app (Folk), knowlee.ai (Clay), tomba.
 - The scheduled runs live in Barry's Claude account; a product for other firms needs them server-side on the API with per-customer Microsoft 365 OAuth.
 - Graeme's mailbox is not in the loop.
 - Ten backfilled events were filed against the wrong contacts on 6 Oct; the 08:10 run re-files them with `move_events`.
+
+## 7 October (evening): outreach volume build
+Shipped in 46db26f (runtime v29):
+- Template library: nine editable templates (first_approach, signal_cold, signal_warm, nurture, chase1, chase2, intro_ask, post_meeting, proposal_cover) with placeholders; founders edit them in the new Templates & settings view (sidebar); engine renders every draft from the live template; Reset to default.
+- Touches 2 and 3: chase1 from day 4 after an unanswered send, chase2 day 9–20 after two, then stop. Chases regenerate after each push.
+- Daily quota (default 10) and sent/approved-today counters on Today. Batch approve: "Approve top N polished" only approves drafts Claude polished or a founder edited, never raw engine text; cap per press.
+- Proposals: Claude drafts a staged proposal after a meeting that names a scheme (save_proposal); section 07 on the record; Today section 6 "Proposals to issue"; approved ones go to Outlook Drafts at 08:10 with the cover note.
+- Scheduled runs: 08:10 now pushes proposals, polishes 12 drafts incl. chases, reports quota; Sunday now does RocketReach person_search for two decision-makers per T1/A1/A2 company (cap 200 lookups, 40 new people), polishes 25.
+Not done: Graeme's mailbox; lapsed-consent trigger; server-side runs.
