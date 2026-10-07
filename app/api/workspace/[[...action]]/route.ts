@@ -5,7 +5,7 @@ import { workspaceAccess } from '../../../../lib/workspace-auth';
 import { issueTicket } from '../../../../lib/import-backup';
 import { researchCompany, normCompany } from '../../../../lib/company-intel';
 import { saveIntel, researchBatch } from '../../../../lib/company-intel-store';
-import { autoClassify, generateDrafts } from '../../../../lib/outreach';
+import { autoClassify, generateDrafts, batchApprove, listTemplates, saveTemplate, getSettings } from '../../../../lib/outreach';
 import { runIntel } from '../../../../lib/intel-ingest';
 import { runBackup } from '../../../../lib/backup-job';
 
@@ -172,6 +172,7 @@ export async function GET(request: NextRequest, context: Context) {
       if (error) throw error;
       return reply({ revision: data?.[0]?.updated_at || '' });
     }
+    if (action === 'templates') return reply({ templates: await listTemplates(), settings: await getSettings() });
     if (action === 'entity') {
       const scope = request.nextUrl.searchParams.get('scope') || '';
       const id = request.nextUrl.searchParams.get('id') || '';
@@ -197,7 +198,12 @@ export async function POST(request: NextRequest, context: Context) {
     if (action === 'run-research') return reply(await researchBatch({ limit: 25, budgetMs: 45000 }));
     if (action === 'run-backup') return reply(await runBackup());
     if (action === 'run-drafts') return reply({ classified: await autoClassify({ limit: 120 }), drafts: await generateDrafts({ limit: 40 }) });
+    if (action === 'batch-approve') { const { data } = await access.db.auth.getUser(); const email = data.user?.email || ''; return reply(await batchApprove({ actor: /graeme/i.test(email) ? 'Graeme' : 'Barry' })); }
     const body: any = await request.json();
+    if (action === 'template') {
+      const key = String(body?.key || '');
+      await saveTemplate(key, body?.reset ? { subject: undefined, body: undefined, reset: true } : { subject: body?.subject, body: body?.body }); return reply({ templates: await listTemplates() });
+    }
     if (action === 'draft') {
       const id = String(body?.id || '');
       if (!id) return reply({ error: 'Give a contact id.' }, 400);

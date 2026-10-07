@@ -16,7 +16,7 @@ import { lookupPerson } from '../../../../lib/rocketreach';
 import { runIntel } from '../../../../lib/intel-ingest';
 import { priorityList } from '../../../../lib/priority';
 import { logOutcome, funnel, STEPS } from '../../../../lib/funnel';
-import { generateDrafts, approvedDrafts, markDraftPushed, saveDraft, autoClassify } from '../../../../lib/outreach';
+import { generateDrafts, approvedDrafts, markDraftPushed, saveDraft, autoClassify, batchApprove, listTemplates, saveTemplate, saveProposal, approvedProposals, markProposalPushed, getSettings } from '../../../../lib/outreach';
 import { signalFeed, setHeadline } from '../../../../lib/signals-feed';
 import { researchCompany, normCompany } from '../../../../lib/company-intel';
 import { researchBatch, saveIntel, signalContacts } from '../../../../lib/company-intel-store';
@@ -312,7 +312,7 @@ function createServer() {
   server.registerTool('save_draft', {
     title: 'Save a polished draft onto the record',
     description: 'Write your improved subject/body/angle for a contact into the board (decision.draft). Keep BARRY\'S VOICE. Status stays "suggested" until a founder approves it in the board; an approved or pushed draft is never downgraded. Use after generate_draft, or for a contact with no draft.',
-    inputSchema: { id: z.string(), subject: z.string().min(2).max(120), body: z.string().min(20).max(3000), angle: z.string().max(200).optional(), kind: z.enum(['signal', 'nurture', 'intro', 'first', 'chase']).optional(), to: z.string().email().optional() },
+    inputSchema: { id: z.string(), subject: z.string().min(2).max(120), body: z.string().min(20).max(3000), angle: z.string().max(200).optional(), kind: z.enum(['signal', 'nurture', 'intro', 'first', 'chase', 'post_meeting']).optional(), to: z.string().email().optional() },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ id, ...patch }) => out(await saveDraft(id, patch as any, 'Claude'), 'Draft saved.'));
 
@@ -335,6 +335,47 @@ function createServer() {
     inputSchema: { limit: z.number().int().min(1).max(500).optional() },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ limit }) => out(await autoClassify({ limit: limit || 300 }), 'Classified.'));
+
+  server.registerTool('batch_approve', {
+    title: 'Approve the top polished drafts in one go',
+    description: 'Approves up to N drafts (ranked by priority score) that Claude has polished or a founder has edited; raw engine text is never approved this way. Respects the board setting (batchApprove on/off, daily cap). Use only when the board setting allows it; founders can also press "Approve top N" in the board.',
+    inputSchema: { limit: z.number().int().min(1).max(25).optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  }, async ({ limit }) => out(await batchApprove({ limit, actor: 'Claude' }), 'Batch approved.'));
+
+  server.registerTool('list_templates', {
+    title: 'Email templates the engine uses',
+    description: 'The editable template library (first_approach, signal_cold, signal_warm, nurture, chase1, chase2, intro_ask, post_meeting, proposal_cover) with placeholders {first} {company} {wc} {offer} {scheme} {via_first} {name}. custom=true when a founder has edited it. When polishing a draft, stay close to the template the founders chose.',
+    inputSchema: {},
+    annotations: { readOnlyHint: true },
+  }, async () => out({ templates: await listTemplates(), settings: await getSettings() }, 'Templates.'));
+
+  server.registerTool('save_template', {
+    title: 'Edit an email template',
+    description: 'Overwrite a template\'s subject and/or body. Only do this when a founder asks for a template change; keep the placeholders.',
+    inputSchema: { key: z.string(), subject: z.string().max(120).optional(), body: z.string().max(3000).optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ key, ...patch }) => out(await saveTemplate(key, patch), 'Template saved.'));
+
+  server.registerTool('save_proposal', {
+    title: 'Draft a proposal onto a contact record',
+    description: 'After a logged meeting that names a scheme or problem, write a short staged proposal (Stress Test / peer review / position finding, then options) in plain text: title, scheme, body (the proposal, 300-900 words, headed sections, fees only if the founders stated them), cover (the covering email in Barry\'s voice, use the proposal_cover template), subject, to. Stored as decision.proposal status "suggested"; founders approve in the board under Today > Proposals to issue; the morning run then puts it in Outlook Drafts (never sent). Never overwrites an approved or pushed proposal.',
+    inputSchema: { id: z.string(), title: z.string().min(3).max(160), scheme: z.string().max(160), body: z.string().min(100).max(12000), cover: z.string().min(20).max(3000), subject: z.string().min(2).max(120), to: z.string().email() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ id, ...p }) => out(await saveProposal(id, p), 'Proposal saved.'));
+
+  server.registerTool('approved_proposals', {
+    title: 'Proposals approved in the board, waiting for Outlook',
+    description: 'List approved proposals not yet in Outlook Drafts: to, subject, cover (email body), body (proposal text, append under a line after the cover, or attach as the email body). Create an Outlook DRAFT (never send), then mark_proposal_pushed.',
+    inputSchema: { limit: z.number().int().min(1).max(50).optional() },
+    annotations: { readOnlyHint: true },
+  }, async ({ limit }) => out({ proposals: await approvedProposals(limit || 20) }, 'Approved proposals.'));
+
+  server.registerTool('mark_proposal_pushed', {
+    title: 'Record that an approved proposal is now in Outlook Drafts',
+    inputSchema: { id: z.string(), outlookId: z.string().min(5) },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ id, outlookId }) => out(await markProposalPushed(id, outlookId), 'Marked pushed.'));
 
   server.registerTool('signal_feed', {
     title: 'Signals feed (what the board shows under Signals)',
