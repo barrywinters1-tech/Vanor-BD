@@ -16,6 +16,7 @@ import { lookupPerson } from '../../../../lib/rocketreach';
 import { runIntel } from '../../../../lib/intel-ingest';
 import { priorityList } from '../../../../lib/priority';
 import { logOutcome, funnel, STEPS } from '../../../../lib/funnel';
+import { generateDrafts, approvedDrafts, markDraftPushed, saveDraft, autoClassify } from '../../../../lib/outreach';
 import { researchCompany, normCompany } from '../../../../lib/company-intel';
 import { researchBatch, saveIntel, signalContacts } from '../../../../lib/company-intel-store';
 
@@ -299,6 +300,40 @@ function createServer() {
     if (latest) await updateEntity('source', toId, r => (!r.lastContact || String(r.lastContact).slice(0, 10) < latest) ? { ...r, lastContact: latest } : r);
     return out({ moved, of: events.length }, `Moved ${moved} events.`);
   });
+
+  server.registerTool('generate_draft', {
+    title: 'Engine draft for a contact',
+    description: 'Runs the outreach engine for one contact: picks the angle (signal-led, nurture, intro via a warm contact, first approach, chase) and writes a first draft in Barry\'s voice onto the record (decision.draft, status "suggested"). Returns it so you can polish it with save_draft. Never overwrites a draft the founders have edited or approved.',
+    inputSchema: { id: z.string() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ id }) => { const made = await generateDrafts({ ids: [id], limit: 1 }); const d = await getOne('decision', id); return out({ ...made, draft: d?.draft || null }, 'Draft generated.'); });
+
+  server.registerTool('save_draft', {
+    title: 'Save a polished draft onto the record',
+    description: 'Write your improved subject/body/angle for a contact into the board (decision.draft). Keep BARRY\'S VOICE. Status stays "suggested" until a founder approves it in the board; an approved or pushed draft is never downgraded. Use after generate_draft, or for a contact with no draft.',
+    inputSchema: { id: z.string(), subject: z.string().min(2).max(120), body: z.string().min(20).max(3000), angle: z.string().max(200).optional(), kind: z.enum(['signal', 'nurture', 'intro', 'first', 'chase']).optional(), to: z.string().email().optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ id, ...patch }) => out(await saveDraft(id, patch as any, 'Claude'), 'Draft saved.'));
+
+  server.registerTool('approved_drafts', {
+    title: 'Drafts approved in the board, waiting for Outlook',
+    description: 'Founders approve drafts inside the board. This lists those not yet in Outlook Drafts: to, subject, body (plain text, already in Barry\'s voice, do not rewrite). Create each as an Outlook DRAFT (never send), then call mark_draft_pushed with the Outlook message id.',
+    inputSchema: { limit: z.number().int().min(1).max(50).optional() },
+    annotations: { readOnlyHint: true },
+  }, async ({ limit }) => out({ drafts: await approvedDrafts(limit || 30) }, 'Approved drafts.'));
+
+  server.registerTool('mark_draft_pushed', {
+    title: 'Record that an approved draft is now in Outlook Drafts',
+    inputSchema: { id: z.string(), outlookId: z.string().min(5) },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ id, outlookId }) => out(await markDraftPushed(id, outlookId), 'Marked pushed.'));
+
+  server.registerTool('auto_classify', {
+    title: 'Auto-classify unscored contacts',
+    description: 'Gives every contact with no fit score a provisional fit (0-2), sector and reason from segment and seniority. Runs daily at 06:40 anyway; call it after adding many leads. Never overwrites existing scores.',
+    inputSchema: { limit: z.number().int().min(1).max(500).optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ limit }) => out(await autoClassify({ limit: limit || 300 }), 'Classified.'));
 
   server.registerTool('funnel_report', {
     title: 'Outreach funnel and what is working',

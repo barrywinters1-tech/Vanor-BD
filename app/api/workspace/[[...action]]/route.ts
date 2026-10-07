@@ -5,6 +5,7 @@ import { workspaceAccess } from '../../../../lib/workspace-auth';
 import { issueTicket } from '../../../../lib/import-backup';
 import { researchCompany, normCompany } from '../../../../lib/company-intel';
 import { saveIntel, researchBatch } from '../../../../lib/company-intel-store';
+import { autoClassify, generateDrafts } from '../../../../lib/outreach';
 import { runIntel } from '../../../../lib/intel-ingest';
 import { runBackup } from '../../../../lib/backup-job';
 
@@ -195,7 +196,15 @@ export async function POST(request: NextRequest, context: Context) {
     if (action === 'run-scan') return reply(await runIntel({ write: true }));
     if (action === 'run-research') return reply(await researchBatch({ limit: 25, budgetMs: 45000 }));
     if (action === 'run-backup') return reply(await runBackup());
+    if (action === 'run-drafts') return reply({ classified: await autoClassify({ limit: 300 }), drafts: await generateDrafts({ limit: 60 }) });
     const body: any = await request.json();
+    if (action === 'draft') {
+      const id = String(body?.id || '');
+      if (!id) return reply({ error: 'Give a contact id.' }, 400);
+      const made = await generateDrafts({ ids: [id], limit: 1 });
+      const stored = await one(access, 'decision', id);
+      return reply({ ...made, decision: stored });
+    }
     if (action === 'research') {
       const name = String(body?.company || '').trim();
       if (name.length < 2) return reply({ error: 'Give a company name.' }, 400);
@@ -230,6 +239,9 @@ export async function POST(request: NextRequest, context: Context) {
           if (stored[field] && stored[field] !== previous?.[field]) overrides[field] = true;
         }
         stored = { ...stored, categoryOverrides: overrides };
+        const pd = previous?.draft as Record<string, unknown> | undefined, nd = stored.draft as Record<string, unknown> | undefined;
+        if (nd && pd && (nd.subject !== pd.subject || nd.body !== pd.body) && ['suggested', 'edited'].includes(String(nd.status)))
+          stored = { ...stored, draft: { ...nd, status: 'edited', origin: 'founder', editedAt: new Date().toISOString() } };
       }
       return reply(await save(access, scope, stored, expectedRev || 0, event));
     }
