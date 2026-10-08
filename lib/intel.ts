@@ -157,23 +157,43 @@ async function get(url: string, ms = 15000) {
   return r;
 }
 
+/** PlanIt (planit.org.uk): free, no key, but rate-limited and 403s bursty callers. One combined `or` search, paged sequentially, honouring Retry-After. */
 export async function fetchPlanIt(errors: string[]): Promise<Signal[]> {
   const out: Signal[] = [];
-  await Promise.all(CONFIG.planningKeywords.map(async kw => {
-    const p = new URLSearchParams({ search: kw, recent: String(CONFIG.planningRecentDays), pg_sz: '100', app_size: CONFIG.planningMinSize });
-    try {
-      const json = await (await get(`https://www.planit.org.uk/api/applics/json?${p}`, 25000)).json();
-      for (const r of json.records || []) {
-        const applicant = [r.applicant, r.agent].filter(Boolean).join(' / ') || '';
-        out.push({
-          source: 'planit', applicant: r.applicant || '', hint: { applicant: r.applicant || '', authority: r.area_name || '', appType: r.app_type || '', appState: r.app_state || '', appSize: r.app_size || '' },
-          title: `${r.area_name || ''}: ${String(r.description || '').slice(0, 110)}`,
-          link: r.link || r.url || '', date: r.start_date || r.last_changed || '',
-          summary: `${r.description || ''} | Address: ${r.address || ''} | Status: ${r.app_state || ''} | Type: ${r.app_type || ''} | Size: ${r.app_size || ''} | Applicant/agent: ${applicant}`.slice(0, 600),
-        });
+  const search = CONFIG.planningKeywords.map(k => (k.includes(' ') ? `"${k}"` : k)).join(' or ');
+  const ua = { 'User-Agent': 'Mozilla/5.0 (compatible; VanorBD/1.1; +https://vanor-bd.vercel.app; barryw@vanoradvisory.co.uk)' };
+  const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+  const deadline = Date.now() + 30000;
+  for (let page = 1; page <= 4 && Date.now() < deadline; page++) {
+    const p = new URLSearchParams({ search, recent: String(CONFIG.planningRecentDays), pg_sz: '100', page: String(page), app_size: CONFIG.planningMinSize, compress: 'on', sort: '-start_date' });
+    let attempt = 0;
+    while (attempt < 3) {
+      attempt++;
+      try {
+        const r = await fetch(`https://www.planit.org.uk/api/applics/json?${p}`, { headers: ua, signal: AbortSignal.timeout(12000), cache: 'no-store' });
+        if (r.status === 429) { const wait = Math.min(30000, (Number(r.headers.get('Retry-After')) || 5) * 1000); await sleep(wait); continue; }
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const json = await r.json();
+        const records = json.records || [];
+        for (const rec of records) {
+          const applicant = [rec.applicant, rec.agent].filter(Boolean).join(' / ') || '';
+          out.push({
+            source: 'planit', applicant: rec.applicant || '', hint: { applicant: rec.applicant || '', authority: rec.area_name || '', appType: rec.app_type || '', appState: rec.app_state || '', appSize: rec.app_size || '' },
+            title: `${rec.area_name || ''}: ${String(rec.description || '').slice(0, 110)}`,
+            link: rec.link || rec.url || '', date: rec.start_date || rec.last_changed || '',
+            summary: `${rec.description || ''} | Address: ${rec.address || ''} | Status: ${rec.app_state || ''} | Type: ${rec.app_type || ''} | Size: ${rec.app_size || ''} | Applicant/agent: ${applicant}`.slice(0, 600),
+          });
+        }
+        if (records.length < 100 || (json.to != null && json.total != null && json.to >= json.total)) return out;
+        break;
+      } catch (e) {
+        const m = e instanceof Error ? e.message : String(e);
+        if (attempt >= 3 || !/HTTP 403|HTTP 5\d\d|timeout|abort/i.test(m)) { errors.push(`planit page ${page}: ${m}${m.includes('403') ? ' (IP or User-Agent refused; the scan retries slower next time)' : ''}`); return out; }
+        await sleep(3000 * attempt);
       }
-    } catch (e) { const m = e instanceof Error ? e.message : String(e); errors.push(`planit "${kw}": ${m}${m.includes('403') ? ' (PlanIt blocks cloud IPs; needs an access agreement with planit.org.uk)' : ''}`); }
-  }));
+    }
+    await sleep(1500);
+  }
   return out;
 }
 
