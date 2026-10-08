@@ -115,7 +115,13 @@ export function score(s: Signal, today = new Date()): Scored {
   const timing = distress ? 10 : 4;
   const lead = classifyLead(text, s.hint || (s.applicant ? { applicant: s.applicant } : undefined));
   if ((s.source === 'planit' || s.source === 'london_datahub') && ['news', 'leadership'].includes(lead.stage)) lead.stage = 'submitted';
-  if (s.source.startsWith('gazette')) { lead.stage = 'distress'; if (s.applicant && CONTRACTOR_NAME.test(s.applicant)) lead.parties.contractor = s.applicant; }
+  if (s.source.startsWith('gazette')) {
+    // The insolvent company is the subject, never the buyer. The buyer is the employer or funder it owes a building to, if the notice names one (it rarely does).
+    lead.stage = 'distress';
+    const subj = (s.applicant || '').toLowerCase();
+    if (lead.parties.developer && lead.parties.developer.toLowerCase() === subj) delete lead.parties.developer;
+    if (s.applicant && CONTRACTOR_NAME.test(s.applicant)) lead.parties.contractor = s.applicant;
+  }
   let buyerType = classify(s.applicant || lead.parties.developer || lead.parties.funder || text);
   if (buyerType === 'unknown' && ((s.source === 'planit' || s.source === 'london_datahub') && s.applicant || lead.parties.developer)) buyerType = 'developer';
   if (buyerType === 'unknown' && lead.parties.funder) buyerType = 'lender';

@@ -61,3 +61,10 @@ test('Gazette notice feeds keep built-environment firms and score them as distre
   assert.ok(isSignal(s[0]));
   assert.ok(score(s[0], today).distress >= 30);
 });
+
+test('gazette: the insolvent company is the subject, not an exposed buyer', () => {
+  const r = score({ source: 'gazette_2441', title: 'Appointment of administrators: Z HOTELS STRAND LTD', summary: 'notice', applicant: 'Z HOTELS STRAND LTD', link: 'q', date: '2026-10-05' }, today);
+  assert.equal(r.lead.stage, 'distress'); assert.equal(r.lead.parties.developer, undefined); assert.ok(r.score < 50, `score ${r.score}`);
+  const f = score({ source: 'property_week', title: 'Watkin Jones secures £65m development loan from OakNorth Bank for 600-bed student scheme in Leeds', summary: '', link: 'w', date: '2026-10-05' }, today);
+  assert.ok(f.score > r.score + 30);
+});
