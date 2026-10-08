@@ -74,7 +74,7 @@ const num = (s: string) => parseFloat(s.replace(/,/g, ''));
 export function sizeOf(text: string): Size {
   const t = text; const out: Size = {};
   for (const m of t.matchAll(/£\s?(\d+(?:[.,]\d+)?)\s?(m|million|bn|billion)\b/gi)) { const v = num(m[1]) * (/^b/i.test(m[2]) ? 1000 : 1); out.valueM = Math.max(out.valueM || 0, v); }
-  const units = t.match(/(\d{1,3}(?:,\d{3})*|\d+)\s?(?:-|\s)?(?:new |affordable |private |rental |student )?(homes?|houses?|dwellings?|apartments?|flats?|units?|residential units)\b/i); if (units) out.units = num(units[1]);
+  const units = t.match(/(?<![\/\d.])(\d{1,3}(?:,\d{3})?|\d{1,4})\s?(?:-|\s)?(?:new |affordable |private |rental |student )?(homes?|houses?|dwellings?|apartments?|flats?|units?|residential units)\b/i); if (units && num(units[1]) > 0 && num(units[1]) < 5000) out.units = num(units[1]);
   const keys = t.match(/(\d{2,4})\s?-?\s?(bed(room)?s?|keys?|rooms?)\b/i); if (keys) { const n = num(keys[1]); if (/hotel|aparthotel|resort|inn/i.test(t)) out.keys = n; else out.beds = n; }
   const sqft = t.match(/(\d{1,3}(?:,\d{3})+|\d{4,7})\s?(sq\.? ?ft|square feet|sqft)/i); if (sqft) out.sqft = num(sqft[1]);
   const sqm = t.match(/(\d{1,3}(?:,\d{3})+|\d{3,7})\s?(sq\.? ?m|square metres|sqm|m2|m²)/i); if (sqm) out.sqm = num(sqm[1]);

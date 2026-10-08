@@ -28,13 +28,8 @@ export const FEEDS: Record<string, string> = {
   estates_gazette: 'https://eg.co.uk/feed/',
   property_week: 'https://www.propertyweek.com/rss',
   construction_news: 'https://www.constructionnews.co.uk/feed/',
-  construction_index: 'https://www.theconstructionindex.co.uk/rss/news',
   place_north_west: 'https://www.placenorthwest.co.uk/feed/',
-  bdonline: 'https://www.bdonline.co.uk/rss',
   architects_journal: 'https://www.architectsjournal.co.uk/feed',
-  housing_today: 'https://www.housingtoday.co.uk/rss',
-  react_news: 'https://reactnews.com/feed/',
-  bisnow_london: 'https://www.bisnow.com/feeds/rss/london',
   insider_media: 'https://www.insidermedia.com/rss/news',
   gazette_construction: 'https://www.thegazette.co.uk/insolvency/notice/data.feed?text=construction+OR+fit-out+OR+interiors+OR+mechanical+OR+electrical&results-page-size=50',
   hospitalitynet: 'https://www.hospitalitynet.org/rss/news.xml',
@@ -100,10 +95,11 @@ export function contractorsIn(text: string) {
   return out.slice(0, 5);
 }
 
+const PLANNING_NOISE = /householder|non[- ]material amendment|\bnma\b|section 73|\bs73\b|minor material amendment|discharge of condition|approval of details|prior approval|prior notification|lawful development|certificate of lawful|advertisement consent|\badvert\b|tree works|tpo\b|listed building consent only|variation of condition|removal of condition/i;
 export function isSignal(s: Signal) {
   const t = `${s.title} ${s.summary}`.toLowerCase();
   if (s.source === 'planit' || s.source === 'planning_data_gov' || s.source === 'london_datahub')
-    return !t.includes('size: small') && !t.includes('householder') && CONFIG.sectors.some(k => t.includes(k));
+    return !t.includes('size: small') && !PLANNING_NOISE.test(t) && CONFIG.sectors.some(k => t.includes(k));
   if (s.source.startsWith('gazette')) return true;
   // Press: a stage we act on, a sector we serve, and a size or a named party (Glenigan's 10 homes / £250k rule).
   return isLeadWorthy(classifyLead(`${s.title}. ${s.summary}`, s.hint)) || CONFIG.signalWords.some(w => t.includes(w));
@@ -184,7 +180,7 @@ export async function fetchPlanIt(errors: string[]): Promise<Signal[]> {
 /** Planning London Datahub (GLA): all London boroughs, guest Elasticsearch API, structured units/floorspace. */
 export async function fetchLondonDatahub(errors: string[]): Promise<Signal[]> {
   const since = new Date(Date.now() - CONFIG.planningRecentDays * 86400000).toISOString().slice(0, 10);
-  const body = { size: 200, sort: [{ valid_date: { order: 'desc', unmapped_type: 'date' } }], query: { bool: { filter: [{ range: { valid_date: { gte: since } } }], must: [{ query_string: { query: CONFIG.planningKeywords.map(k => `"${k}"`).join(' OR ') + ' OR "residential units" OR "mixed use" OR hotel OR offices', fields: ['description', 'development_type', 'application_type'] } }], must_not: [{ terms: { 'application_type.keyword': ['Householder', 'Tree', 'Advertisement', 'Discharge of Condition', 'Non-Material Amendment', 'Lawful Development Certificate', 'Prior Approval'] } }] } } };
+  const body = { size: 200, query: { bool: { must: [{ range: { valid_date: { gte: since } } }, { query_string: { query: '(' + CONFIG.planningKeywords.map(k => `"${k}"`).join(' OR ') + ' OR "residential units" OR "mixed use" OR hotel OR offices) AND NOT (householder OR "non-material" OR "discharge of" OR "prior approval" OR advertisement OR tree)', default_field: 'description' } }] } } };
   try {
     const r = await fetch('https://planningdata.london.gov.uk/api-guest/applications/_search', { method: 'POST', headers: { ...UA, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(25000), cache: 'no-store' });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
