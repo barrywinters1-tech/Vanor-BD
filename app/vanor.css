@@ -2134,3 +2134,76 @@ html, body {
 .vanor .task-check{display:flex;align-items:center;padding:4px 10px 0 0}
 .vanor .task-check input{width:18px;height:18px;accent-color:var(--accent,#286469)}
 .vanor .task-row small .late{color:#8a2a2a;font-weight:600}
+
+/* ===== Design layer, 8 Oct 2026 (Apple fluid-interface principles, translated) ===== */
+/* Typography: system font with optical sizing; tracking tightens as size grows, loosens for small text; leading tracks size inversely. */
+.vanor{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,"Segoe UI",Inter,Roboto,sans-serif;font-optical-sizing:auto;font-size:14px;line-height:1.5;text-rendering:optimizeLegibility}
+.vanor h1{font-size:clamp(26px,2.4vw,32px);line-height:1.08;letter-spacing:-0.025em;font-weight:650}
+.vanor h2{font-size:17px;line-height:1.3;letter-spacing:-0.012em;font-weight:620}
+.vanor h3{letter-spacing:-0.006em}
+.vanor .stat strong{letter-spacing:-0.03em;font-variant-numeric:tabular-nums;line-height:1}
+.vanor .tiny,.vanor small,.vanor .hint{letter-spacing:0.004em}
+.vanor .tag{letter-spacing:0.02em;font-weight:600}
+.vanor .nav-count,.vanor .mono{font-variant-numeric:tabular-nums}
+
+/* Response: feedback on press, instant; hover is secondary. */
+.vanor .btn{transition:background .14s,border-color .14s,transform .1s ease-out,box-shadow .14s}
+.vanor .btn:active{transform:scale(.97)}
+.vanor .btn.primary{box-shadow:0 1px 2px rgba(16,40,52,.18),inset 0 1px 0 rgba(255,255,255,.12)}
+.vanor .btn.primary:active{box-shadow:0 0 0 rgba(0,0,0,0)}
+.vanor .review-line,.vanor .queue-item,.vanor .nav-button,.vanor .kanban-card{transition:background .12s,transform .1s ease-out}
+.vanor .review-line:active,.vanor .queue-item:active,.vanor .kanban-card:active{transform:scale(.995)}
+.vanor .nav-button:active{transform:translateX(1px)}
+.vanor input:focus-visible,.vanor textarea:focus-visible,.vanor select:focus-visible,.vanor .btn:focus-visible,.vanor .review-line:focus-visible{outline:2px solid color-mix(in srgb,var(--accent) 70%,white);outline-offset:2px}
+
+/* Materials: translucent chrome the content scrolls under; sidebar heavier, bars lighter; scroll-edge fade instead of a hard rule. */
+.vanor .topline{position:sticky;top:0;z-index:30;background:rgba(250,249,246,.72);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);border-bottom:1px solid rgba(16,40,52,.08)}
+.vanor .topline::after{content:"";position:absolute;left:0;right:0;top:100%;height:10px;background:linear-gradient(rgba(16,40,52,.05),rgba(16,40,52,0));pointer-events:none}
+.vanor .modal-head,.vanor .drawer-head{background:rgba(255,255,255,.78);backdrop-filter:blur(14px) saturate(150%);-webkit-backdrop-filter:blur(14px) saturate(150%)}
+.vanor .modal-shade{background:rgba(16,40,52,.42);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.vanor .overlay{background:rgba(16,40,52,.28);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
+.vanor .panel{box-shadow:0 1px 2px rgba(16,40,52,.04),0 0 0 1px rgba(16,40,52,.035)}
+.vanor .modal{box-shadow:0 24px 80px rgba(16,40,52,.28),0 2px 6px rgba(16,40,52,.1);border:1px solid rgba(255,255,255,.5)}
+.vanor .toast{backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);background:rgba(24,47,59,.92);border:1px solid rgba(255,255,255,.08)}
+
+/* Motion: surfaces materialise (blur + scale + opacity together), not fade. Modals come from the trigger's side of the screen; drawers slide from the right and leave to the right; phone sheets come up and go down. Critically damped curves, no overshoot. */
+@keyframes vanor-materialise{from{opacity:0;transform:translateY(8px) scale(.985);filter:blur(6px)}to{opacity:1;transform:none;filter:blur(0)}}
+@keyframes vanor-shade-in{from{opacity:0}to{opacity:1}}
+@keyframes vanor-drawer-in{from{transform:translateX(24px);opacity:0;filter:blur(4px)}to{transform:none;opacity:1;filter:blur(0)}}
+@keyframes vanor-sheet-up{from{transform:translateY(16px);opacity:0;filter:blur(4px)}to{transform:none;opacity:1;filter:blur(0)}}
+@keyframes vanor-toast-in{from{opacity:0;transform:translate(-50%,8px) scale(.98)}to{opacity:1;transform:translate(-50%,0) scale(1)}}
+@keyframes vanor-row-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.vanor .modal-shade,.vanor .overlay{animation:vanor-shade-in .18s ease-out both}
+.vanor .modal{animation:vanor-materialise .26s cubic-bezier(.2,.8,.2,1) both;transform-origin:50% 40%}
+.vanor .drawer{animation:vanor-drawer-in .28s cubic-bezier(.2,.8,.2,1) both}
+.vanor .toast{animation:vanor-toast-in .22s cubic-bezier(.2,.8,.2,1) both}
+.vanor .modal-shade.closing,.vanor .overlay.closing{animation:vanor-shade-in .16s ease-in reverse both}
+.vanor .modal-shade.closing .modal{animation:vanor-materialise .18s cubic-bezier(.8,.2,.8,1) reverse both}
+.vanor .overlay.closing .drawer{animation:vanor-drawer-in .2s cubic-bezier(.8,.2,.8,1) reverse both}
+.vanor .signal-row.fresh,.vanor .task-row{animation:vanor-row-in .2s ease-out both}
+.vanor .draft-inline{animation:vanor-materialise .22s cubic-bezier(.2,.8,.2,1) both;transform-origin:top center}
+@media (max-width:760px){.vanor .modal{animation-name:vanor-sheet-up;border-radius:14px 14px 0 0}.vanor .modal-shade{align-items:flex-end;padding:0}.vanor .modal-shade.closing .modal{animation:vanor-sheet-up .18s cubic-bezier(.8,.2,.8,1) reverse both}.vanor .drawer{animation-name:vanor-sheet-up}}
+
+/* Quota progress and inline draft on Today */
+.vanor .quota{display:flex;align-items:center;gap:10px;margin:2px 0 0}
+.vanor .quota .bar{flex:1;height:6px;border-radius:3px;background:rgba(16,40,52,.08);overflow:hidden}
+.vanor .quota .bar i{display:block;height:100%;border-radius:3px;background:var(--accent);transition:width .4s cubic-bezier(.2,.8,.2,1)}
+.vanor .quota .bar i.done{background:var(--green)}
+.vanor .draft-inline{padding:12px 20px 16px 62px;border-bottom:1px solid var(--hair);background:var(--soft)}
+.vanor .draft-inline .field-grid{margin-top:8px}
+.vanor .draft-inline textarea{min-height:180px}
+.vanor .review-line.selected{box-shadow:inset 3px 0 0 var(--accent);background:var(--soft)}
+.vanor .queue-panel.collapsed .panel-head{border-bottom:0}
+.vanor .queue-panel.collapsed .panel-head h2{color:var(--muted);font-weight:500}
+.vanor .kbd-hint{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:1px 5px;margin-left:4px}
+.vanor .record-tabs{display:flex;gap:4px;margin:14px 0 6px;border-bottom:1px solid var(--line);position:sticky;top:61px;background:rgba(250,249,246,.9);backdrop-filter:blur(10px);z-index:5}
+.vanor .record-tabs button{border:0;background:none;padding:10px 12px;font:inherit;font-size:13px;font-weight:560;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer}
+.vanor .record-tabs button.active{color:var(--ink);border-bottom-color:var(--accent)}
+.vanor .record-section.hidden{display:none}
+
+/* Reduced motion and transparency: gentler equivalents, never nothing. */
+@media (prefers-reduced-motion:reduce){.vanor .modal,.vanor .drawer,.vanor .toast,.vanor .signal-row.fresh,.vanor .task-row,.vanor .draft-inline{animation:vanor-shade-in .18s ease-out both!important;transform:none!important;filter:none!important}.vanor .btn:active,.vanor .review-line:active,.vanor .kanban-card:active{transform:none}.vanor .quota .bar i{transition:none}}
+@media (prefers-reduced-transparency:reduce){.vanor .topline,.vanor .modal-head,.vanor .drawer-head,.vanor .record-tabs{background:var(--paper);backdrop-filter:none;-webkit-backdrop-filter:none}.vanor .modal-shade,.vanor .overlay{backdrop-filter:none;-webkit-backdrop-filter:none}.vanor .toast{background:var(--nav);backdrop-filter:none}}
+@media (prefers-contrast:more){.vanor .panel{box-shadow:0 0 0 1px var(--ink)}.vanor .btn{border-color:var(--ink)}}
+.vanor .record-pane.hidden{display:none}
+.vanor .record-pane{animation:vanor-row-in .18s ease-out both}
