@@ -1,6 +1,7 @@
 // Server-side view of the Signals feed, for the Claude runs (headline polishing, weekly digest).
 import { listScope, updateEntity, type Entity } from './bd-store';
 import { priorityList } from './priority';
+import { STAGE_PLAY, type Stage } from './lead-classify';
 
 const DAY = 864e5;
 const norm = (s = '') => String(s).toLowerCase().replace(/\b(ltd|limited|plc|llp|group|holdings|uk|the)\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -20,7 +21,8 @@ function headline(company: string, sg: { type: string; text?: string }) {
   }
 }
 
-export type FeedItem = { id: string; key: string; date: string; source: string; headline: string; why: string; text: string; link: string; cell: string; company: string; polished: boolean };
+export type FeedItem = { id: string; key: string; date: string; source: string; headline: string; why: string; text: string; link: string; cell: string; company: string; polished: boolean; stage: string; sector: string; value: string; region: string; parties: Record<string, string>; play: string };
+const CH_STAGE: Record<string, string> = { property: 'funded', lending: 'funded', planning: 'submitted', new_spv: 'acquired', new_director: 'leadership', distress: 'distress' };
 
 export async function signalFeed({ days = 30, buyersOnly = true, limit = 60 }: { days?: number; buyersOnly?: boolean; limit?: number } = {}): Promise<FeedItem[]> {
   const since = new Date(Date.now() - days * DAY).toISOString().slice(0, 10);
@@ -35,7 +37,8 @@ export async function signalFeed({ days = 30, buyersOnly = true, limit = 60 }: {
       if (dismissed(r.id).has('lead')) continue;
       const h = r.headlines?.lead || {};
       const src = /gazette/i.test(r.source || '') ? 'The Gazette' : /planning/i.test(r.source || '') ? 'Planning' : 'Press';
-      items.push({ id: r.id, key: 'lead', date, source: src, headline: h.headline || r.title || r.company || r.name, why: h.why || '', text: String(r.context || '').split('\n')[0].slice(0, 200), link: r.sourceUrl || '', cell: cellOf.get(r.id)?.cell || '', company: r.company || '', polished: !!h.headline });
+      const it = r.intel || {}; const stage = it.stage || (src === 'The Gazette' ? 'distress' : src === 'Planning' ? 'submitted' : 'news');
+      items.push({ id: r.id, key: 'lead', date, source: src, headline: h.headline || r.title || r.company || r.name, why: h.why || '', text: String(r.context || '').split('\n')[0].slice(0, 200), link: r.sourceUrl || '', cell: cellOf.get(r.id)?.cell || '', company: r.company || '', polished: !!h.headline, stage, sector: it.sector || '', value: it.valueBand || '', region: it.region || r.region || '', parties: it.parties || {}, play: STAGE_PLAY[stage as Stage] || '' });
     }
   }
   const seen = new Set<string>();
@@ -50,7 +53,8 @@ export async function signalFeed({ days = 30, buyersOnly = true, limit = 60 }: {
       if (sg.type === 'inactive') continue; const date = String(sg.date || '').slice(0, 10); if (date < since) continue;
       const key = signalKey(sg.type, date); if (dis.has(key)) continue;
       const h = target.headlines?.[key] || r.headlines?.[key] || {};
-      items.push({ id: target.id, key, date, source: SOURCE[sg.type] || 'Companies House', headline: h.headline || headline(r.company, sg), why: h.why || '', text: `${sg.text || ''}${mates.length ? ` · ${mates.length} contact${mates.length > 1 ? 's' : ''} on the board` : ''}`, link: '', cell: cellOf.get(target.id)?.cell || '', company: r.company || '', polished: !!h.headline });
+      const stage = CH_STAGE[sg.type] || 'news';
+      items.push({ id: target.id, key, date, source: SOURCE[sg.type] || 'Companies House', headline: h.headline || headline(r.company, sg), why: h.why || '', text: `${sg.text || ''}${mates.length ? ` · ${mates.length} contact${mates.length > 1 ? 's' : ''} on the board` : ''}`, link: '', cell: cellOf.get(target.id)?.cell || '', company: r.company || '', polished: !!h.headline, stage, sector: '', value: '', region: r.region || '', parties: { developer: r.company || '' }, play: STAGE_PLAY[stage as Stage] || '' });
     }
   }
   return items.filter(i => !buyersOnly || (i.cell && i.cell !== 'C')).sort((a, b) => b.date.localeCompare(a.date)).slice(0, limit);

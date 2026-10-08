@@ -1,10 +1,11 @@
 // Market + planning signal scanner (ported from vanor-intel: trigger_monitor, planning, buyers, lead_pipeline).
 // Plain code, no AI: fetch feeds -> keep real signals -> score -> leads for the board's review queue.
 
-export type Signal = { title: string; link: string; date: string; summary: string; source: string; applicant?: string };
+import { classifyLead, isLeadWorthy, type Lead } from './lead-classify.ts';
+export type Signal = { title: string; link: string; date: string; summary: string; source: string; applicant?: string; hint?: { applicant?: string; authority?: string; appType?: string; appState?: string; appSize?: string } };
 export type Scored = Signal & {
   score: number; complexity: number; distress: number; money: number; timing: number;
-  buyerType: string; talkTo: string; signs: string; organisation: string; contractors: string[];
+  buyerType: string; talkTo: string; signs: string; organisation: string; contractors: string[]; lead: Lead;
 };
 
 export const CONFIG = {
@@ -21,13 +22,20 @@ export const CONFIG = {
   maxPerRun: 15,
 };
 
+// Feeds that fail are reported by name in the 08:10 run; prune or fix from there.
 export const FEEDS: Record<string, string> = {
   construction_enquirer: 'https://www.constructionenquirer.com/feed/',
   estates_gazette: 'https://eg.co.uk/feed/',
   property_week: 'https://www.propertyweek.com/rss',
-  building: 'https://www.building.co.uk/rss/news',
-  hotelowner_admin: 'https://www.hotelowner.co.uk/tag/administration/feed/',
-  hotelowner_refurb: 'https://www.hotelowner.co.uk/tag/refurbishment/feed/',
+  construction_news: 'https://www.constructionnews.co.uk/feed/',
+  construction_index: 'https://www.theconstructionindex.co.uk/rss/news',
+  place_north_west: 'https://www.placenorthwest.co.uk/feed/',
+  bdonline: 'https://www.bdonline.co.uk/rss',
+  architects_journal: 'https://www.architectsjournal.co.uk/feed',
+  housing_today: 'https://www.housingtoday.co.uk/rss',
+  react_news: 'https://reactnews.com/feed/',
+  bisnow_london: 'https://www.bisnow.com/feeds/rss/london',
+  insider_media: 'https://www.insidermedia.com/rss/news',
   gazette_construction: 'https://www.thegazette.co.uk/insolvency/notice/data.feed?text=construction+OR+fit-out+OR+interiors+OR+mechanical+OR+electrical&results-page-size=50',
   hospitalitynet: 'https://www.hospitalitynet.org/rss/news.xml',
 };
@@ -94,9 +102,11 @@ export function contractorsIn(text: string) {
 
 export function isSignal(s: Signal) {
   const t = `${s.title} ${s.summary}`.toLowerCase();
-  if (s.source === 'planit' || s.source === 'planning_data_gov')
+  if (s.source === 'planit' || s.source === 'planning_data_gov' || s.source === 'london_datahub')
     return !t.includes('size: small') && !t.includes('householder') && CONFIG.sectors.some(k => t.includes(k));
-  return CONFIG.signalWords.some(w => t.includes(w));
+  if (s.source.startsWith('gazette')) return true;
+  // Press: a stage we act on, a sector we serve, and a size or a named party (Glenigan's 10 homes / £250k rule).
+  return isLeadWorthy(classifyLead(`${s.title}. ${s.summary}`, s.hint)) || CONFIG.signalWords.some(w => t.includes(w));
 }
 
 export function score(s: Signal, today = new Date()): Scored {
@@ -106,14 +116,17 @@ export function score(s: Signal, today = new Date()): Scored {
   const distress = Math.min(40, sum(DISTRESS, t));
   const money = Math.max(Math.min(20, sum(MONEY, t)), moneySignal(text));
   const timing = distress ? 10 : 4;
-  const buyerType = classify(s.applicant || text);
-  const raw = Math.min(100, (complexity + distress + money + timing) * BUYERS[buyerType].weight);
+  const lead = classifyLead(text, s.hint);
+  const buyerType = classify(s.applicant || lead.parties.developer || lead.parties.funder || text);
+  const stageBonus: Partial<Record<Lead['stage'], number>> = { granted: 14, funded: 16, acquired: 10, tender: 12, contractor_appointed: 8, on_site: 6, stalled: 18, submitted: 6, pre_planning: 3, distress: 0 };
+  const sizeBonus = lead.isLarge ? 8 : 0;
+  const raw = Math.min(100, (complexity + distress + money + timing + (stageBonus[lead.stage] || 0) + sizeBonus) * BUYERS[buyerType].weight);
   const rec = recency(s.date, today);
   return {
     ...s, complexity, distress, money, timing, buyerType,
     score: Math.round(raw * (distress ? rec : Math.max(rec, 0.8))),
     talkTo: BUYERS[buyerType].talkTo, signs: BUYERS[buyerType].signs,
-    organisation: (s.applicant || '').trim(), contractors: contractorsIn(text),
+    organisation: (s.applicant || lead.parties.developer || lead.parties.funder || '').trim(), contractors: contractorsIn(text), lead,
   };
 }
 
@@ -152,21 +165,41 @@ export async function fetchPlanIt(errors: string[]): Promise<Signal[]> {
   const out: Signal[] = [];
   await Promise.all(CONFIG.planningKeywords.map(async kw => {
     const p = new URLSearchParams({ search: kw, recent: String(CONFIG.planningRecentDays), pg_sz: '100', app_size: CONFIG.planningMinSize });
-    if (process.env.PLANIT_KEY) p.set('auth', process.env.PLANIT_KEY);
     try {
       const json = await (await get(`https://www.planit.org.uk/api/applics/json?${p}`, 25000)).json();
       for (const r of json.records || []) {
         const applicant = [r.applicant, r.agent].filter(Boolean).join(' / ') || '';
         out.push({
-          source: 'planit', applicant: r.applicant || '',
+          source: 'planit', applicant: r.applicant || '', hint: { applicant: r.applicant || '', authority: r.area_name || '', appType: r.app_type || '', appState: r.app_state || '', appSize: r.app_size || '' },
           title: `${r.area_name || ''}: ${String(r.description || '').slice(0, 110)}`,
           link: r.link || r.url || '', date: r.start_date || r.last_changed || '',
           summary: `${r.description || ''} | Address: ${r.address || ''} | Status: ${r.app_state || ''} | Type: ${r.app_type || ''} | Size: ${r.app_size || ''} | Applicant/agent: ${applicant}`.slice(0, 600),
         });
       }
-    } catch (e) { errors.push(`planit "${kw}": ${e instanceof Error ? e.message : e}`); }
+    } catch (e) { const m = e instanceof Error ? e.message : String(e); errors.push(`planit "${kw}": ${m}${m.includes('403') ? ' (PlanIt blocks cloud IPs; needs an access agreement with planit.org.uk)' : ''}`); }
   }));
   return out;
+}
+
+/** Planning London Datahub (GLA): all London boroughs, guest Elasticsearch API, structured units/floorspace. */
+export async function fetchLondonDatahub(errors: string[]): Promise<Signal[]> {
+  const since = new Date(Date.now() - CONFIG.planningRecentDays * 86400000).toISOString().slice(0, 10);
+  const body = { size: 200, sort: [{ valid_date: { order: 'desc', unmapped_type: 'date' } }], query: { bool: { filter: [{ range: { valid_date: { gte: since } } }], must: [{ query_string: { query: CONFIG.planningKeywords.map(k => `"${k}"`).join(' OR ') + ' OR "residential units" OR "mixed use" OR hotel OR offices', fields: ['description', 'development_type', 'application_type'] } }], must_not: [{ terms: { 'application_type.keyword': ['Householder', 'Tree', 'Advertisement', 'Discharge of Condition', 'Non-Material Amendment', 'Lawful Development Certificate', 'Prior Approval'] } }] } } };
+  try {
+    const r = await fetch('https://planningdata.london.gov.uk/api-guest/applications/_search', { method: 'POST', headers: { ...UA, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(25000), cache: 'no-store' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const json = await r.json();
+    return (json.hits?.hits || []).map((h: any) => h._source || {}).filter((e: any) => e.description).map((e: any) => {
+      const det = e.application_details || {}; const units = det.residential_details?.total_no_proposed_residential_units; const gia = det.total_gia_proposed;
+      const addr = [e.site_name, e.site_number, e.street_name, e.postcode].filter(Boolean).join(' ');
+      return {
+        source: 'london_datahub', applicant: '', hint: { authority: e.lpa_name || e.borough || '', appType: e.application_type || '', appState: e.status || e.decision || '', appSize: units >= 10 || gia >= 1000 ? 'Large' : '' },
+        title: `${e.lpa_name || e.borough || 'London'}: ${String(e.description || '').slice(0, 110)}`,
+        link: e.url_planning_app || `https://planningdata.london.gov.uk/?lpa_app_no=${encodeURIComponent(e.lpa_app_no || '')}`, date: e.valid_date || e.decision_date || e.last_updated || '',
+        summary: `${e.description || ''} | Address: ${addr} | Status: ${e.status || ''} ${e.decision || ''} | Type: ${e.application_type || ''} ${e.development_type || ''} | Size: ${units ? units + ' homes' : ''} ${gia ? gia + ' sq m' : ''} | Ref: ${e.lpa_app_no || ''}`.slice(0, 600),
+      } as Signal;
+    });
+  } catch (e) { errors.push(`london_datahub: ${e instanceof Error ? e.message : e}`); return []; }
 }
 
 export async function fetchPlanningDataGov(errors: string[]): Promise<Signal[]> {
@@ -228,7 +261,7 @@ export async function companiesHouseDirectors(name: string) {
 /** Fetch everything, keep real signals, score, dedupe by link, best first. */
 export async function scan(today = new Date()) {
   const errors: string[] = [];
-  const all = (await Promise.all([fetchFeeds(errors), fetchGazette(errors), fetchPlanIt(errors), fetchPlanningDataGov(errors)])).flat();
+  const all = (await Promise.all([fetchFeeds(errors), fetchGazette(errors), fetchPlanIt(errors), fetchLondonDatahub(errors)])).flat();
   const seen = new Set<string>();
   const scored = all.filter(isSignal).filter(s => s.link && !seen.has(s.link) && seen.add(s.link)).map(s => score(s, today))
     .sort((a, b) => b.score - a.score);
@@ -238,6 +271,7 @@ export async function scan(today = new Date()) {
 export function leadContext(s: Scored, directors: string[], known: string[]) {
   return [
     `${s.title}.`,
+    `Stage: ${s.lead.stage.replace('_', ' ')}. Sector: ${s.lead.sector.replace('_', ' ')}. ${s.lead.valueBand}.${s.lead.region ? ' ' + s.lead.region + '.' : ''}${Object.entries(s.lead.parties).map(([k, v]) => ` ${k[0].toUpperCase() + k.slice(1)}: ${v}.`).join('')}`,
     `Score ${s.score}/100 (complexity ${s.complexity}, distress ${s.distress}, money ${s.money}, timing ${s.timing}). Buyer type: ${s.buyerType.replace('_', ' ')}; signs: ${s.signs}.`,
     s.summary,
     s.contractors.length ? `Contractors named: ${s.contractors.join(', ')}.` : '',
