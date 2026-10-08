@@ -41,6 +41,8 @@ class SitesRepository {
   runDrafts() { return this.request('/run-drafts', { method: 'POST', body: '{}' }); }
   generateDraft(id: string) { return this.request('/draft', { method: 'POST', body: JSON.stringify({ id }) }); }
   batchApprove() { return this.request('/batch-approve', { method: 'POST', body: '{}' }); }
+  findContacts(id: string) { return this.request('/find-contacts', { method: 'POST', body: JSON.stringify({ id }) }); }
+  enrich(id: string) { return this.request('/enrich', { method: 'POST', body: JSON.stringify({ id }) }); }
   templates() { return this.request('/templates'); }
   saveTemplate(patch: unknown) { return this.request('/template', { method: 'POST', body: JSON.stringify(patch) }); }
   exportBackup() { return this.request('/backup'); }
@@ -63,7 +65,7 @@ export default function VanorWorkspace() {
       if (!ready) { setSetup(user.role === 'admin' ? 'import' : 'waiting'); return; }
       setSetup('ready');
       if (!(window as any).VanorPriority) await new Promise<void>((resolve) => { const s = document.createElement('script'); s.src = '/vanor-priority.js?v=1'; s.onload = () => resolve(); s.onerror = () => resolve(); document.head.appendChild(s); });
-      if (!window.VanorWorkbench) await new Promise<void>((resolve, reject) => { const script = document.createElement('script'); script.src = '/vanor-runtime.js?v=31'; script.onload = () => resolve(); script.onerror = () => reject(new Error('The Vanor application failed to load.')); document.head.appendChild(script); });
+      if (!window.VanorWorkbench) await new Promise<void>((resolve, reject) => { const script = document.createElement('script'); script.src = '/vanor-runtime.js?v=32'; script.onload = () => resolve(); script.onerror = () => reject(new Error('The Vanor application failed to load.')); document.head.appendChild(script); });
       if (host.current && window.VanorWorkbench) handle = await window.VanorWorkbench.start({ element: host.current, repo, seed: null, actor: user.actor });
     })().catch(e => setError(e.message || String(e)));
     return () => handle?.dispose();

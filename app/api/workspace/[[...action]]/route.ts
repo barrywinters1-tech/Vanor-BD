@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'node:crypto';
 import { categoriseLead } from '../../../../lib/lead-categorisation';
 
 import { workspaceAccess } from '../../../../lib/workspace-auth';
@@ -7,6 +8,8 @@ import { researchCompany, normCompany } from '../../../../lib/company-intel';
 import { saveIntel, researchBatch } from '../../../../lib/company-intel-store';
 import { autoClassify, generateDrafts, batchApprove, listTemplates, saveTemplate, getSettings } from '../../../../lib/outreach';
 import { runIntel } from '../../../../lib/intel-ingest';
+import { lookupPerson, searchPeople } from '../../../../lib/rocketreach';
+import { logEvent, saveEntity as storeSave, updateEntity as storeUpdate } from '../../../../lib/bd-store';
 import { runBackup } from '../../../../lib/backup-job';
 
 export const runtime = 'nodejs';
@@ -203,6 +206,36 @@ export async function POST(request: NextRequest, context: Context) {
     if (action === 'template') {
       const key = String(body?.key || '');
       await saveTemplate(key, body?.reset ? { subject: undefined, body: undefined, reset: true } : { subject: body?.subject, body: body?.body }); return reply({ templates: await listTemplates() });
+    }
+    if (action === 'find-contacts') {
+      // On demand only: founders press the button once a lead is worth pursuing. Adds up to 3 decision-makers at the company as leads with whatever RocketReach returns.
+      const id = String(body?.id || ''); const rec = id ? await one(access, 'source', id) : null;
+      const company = String(body?.company || rec?.company || '').trim();
+      if (company.length < 2) return reply({ error: 'No company on this record.' }, 400);
+      const { candidates, message } = await searchPeople({ company, limit: Number(body?.limit || 3) });
+      if (message) return reply({ error: message }, 502);
+      const existing = (await list(access, 'source')).filter(r => normCompany(r.company) === normCompany(company));
+      const added: any[] = [];
+      for (const c of candidates) {
+        if (existing.some(r => String(r.name || '').toLowerCase() === c.name.toLowerCase())) continue;
+        const nid = 'rr:' + crypto.randomUUID();
+        const record = { id: nid, kind: 'lead', origin: 'rocketreach', addedBy: 'RocketReach search', name: c.name, company, jobTitle: c.title, title: '', email: c.emails[0]?.email || '', phone: c.phones[0]?.number || '', linkedin: c.linkedin || '', notes: '',
+          context: `Found via RocketReach search at ${company} (${c.title}) from the board${rec ? `, pursuing: ${String(rec.title || rec.context || '').slice(0, 160)}` : ''}.`, source: 'RocketReach search', sourceUrl: rec?.sourceUrl || '', sourceOwner: '', segment: '', region: rec?.region || '', route: '',
+          lastContact: '', nextAsk: '', nextDate: '', sourceStage: 'New lead', classification: 'New lead', fromLeadId: rec?.id || '', intel: rec?.intel || undefined,
+          enrichment: { provider: 'RocketReach', at: new Date().toISOString(), status: c.status, emails: c.emails, phones: c.phones, rocketreachId: c.rocketreachId }, createdAt: new Date().toISOString() };
+        if (await storeSave('source', record, 0)) { added.push({ id: nid, name: c.name, title: c.title, email: record.email, phone: record.phone }); await logEvent({ entityId: nid, recordId: nid, type: 'Lead added', actor: 'RocketReach search', note: `${c.title} at ${company}; found on request from the board.` }); }
+      }
+      if (rec) await logEvent({ entityId: rec.id, recordId: rec.id, type: 'Contacts searched', actor: 'RocketReach search', note: `${candidates.length} found, ${added.length} added: ${added.map(a => a.name).join(', ') || 'none'}` });
+      return reply({ found: candidates.length, added, candidates: candidates.map(c => ({ name: c.name, title: c.title, hasEmail: !!c.emails.length, hasPhone: !!c.phones.length })) });
+    }
+    if (action === 'enrich') {
+      const id = String(body?.id || ''); const rec = id ? await one(access, 'source', id) : null;
+      if (!rec || !rec.name) return reply({ error: 'No named person on this record.' }, 400);
+      const result = await lookupPerson({ name: rec.name, company: rec.company, linkedin: rec.linkedin || undefined });
+      if (result.status === 'error') return reply({ error: result.message || 'RocketReach lookup failed.' }, 502);
+      await storeUpdate('source', id, r => ({ ...r, email: r.email || result.emails[0]?.email || '', phone: r.phone || result.phones[0]?.number || '', linkedin: r.linkedin || result.linkedin || '', jobTitle: r.jobTitle || result.title || '', enrichment: { provider: 'RocketReach', at: new Date().toISOString(), ...result } }));
+      await logEvent({ entityId: id, recordId: id, type: 'Contact enriched', actor: 'RocketReach search', note: `On request: ${result.status}, ${result.emails.length} email(s), ${result.phones.length} phone(s).` });
+      return reply({ status: result.status, email: result.emails[0]?.email || '', phone: result.phones[0]?.number || '', linkedin: result.linkedin || '' });
     }
     if (action === 'draft') {
       const id = String(body?.id || '');
