@@ -25,7 +25,7 @@ export type Lead = { stage: Stage; devType: DevType; sector: Sector; size: Size;
 const STAGES: [Stage, RegExp][] = [
   ['distress', /\b(petition to wind up|winding[- ]up|administrat(ion|ors)|liquidat(ion|ors)|insolven|ceased trading|collapse[ds]?|gone bust|enters? administration|notice of intent)\b/i],
   ['stalled', /\b(stalled|mothball|paused|on hold|halted|suspended|delay(ed|s)? (again|further|by)|behind (schedule|programme)|overrun|dispute|adjudicat|terminat(ed|ion)|walk(s|ed) off|pulls? out|replace[ds]? (the )?contractor|new contractor)\b/i],
-  ['contractor_appointed', /\b(appointed to (build|deliver|construct)|appoint(s|ed)? [\w\s&]{0,30}(as )?(main |principal )?contractor|wins? (the |a )?(£[\d.]+[mb]n? )?(contract|deal|job)|contract(or)? (award|signed|let)|awarded (the |a )?(£[\d.]+[mb]n? )?contract|lands? (the |a )?(£[\d.]+[mb]n? )?(contract|job)|secures? (the |a )?(£[\d.]+[mb]n? )?contract|named as contractor|design and build contract)\b/i],
+  ['contractor_appointed', /\b(scoops?|bags|clinches|appointed to (build|deliver|construct)|appoint(s|ed)? [\w\s&]{0,30}(as )?(main |principal )?contractor|wins? (the |a )?(£[\d.]+[mb]n? )?(contract|deal|job)|contract(or)? (award|signed|let)|awarded (the |a )?(£[\d.]+[mb]n? )?contract|lands? (the |a )?(£[\d.]+[mb]n? )?(contract|job)|secures? (the |a )?(£[\d.]+[mb]n? )?contract|named as contractor|design and build contract)\b/i],
   ['on_site', /\b(start(s|ed)? on site|on site|breaks? ground|ground[- ]breaking|work(s)? (has|have) (begun|started)|construction (has )?(begun|started|underway|under way)|topping[- ]out|tops out|piling|enabling works? (begin|start)|now under construction)\b/i],
   ['completed', /\b(complet(ed|es|ion of)|practical completion|handed over|hands over|opens? (its|their) doors|officially open(ed|s)|reaches? completion)\b/i],
   ['tender', /\b(out to tender|tender(s|ing|ed)? (for|launched|process|list|return)|invites? (bids|tenders)|procurement (begins|launched|process)|shortlist(ed|s)? (for|contractors)|find a tender|contract notice|pre[- ]qualification|pqq)\b/i],
@@ -34,10 +34,12 @@ const STAGES: [Stage, RegExp][] = [
   ['granted', /\b(planning (permission |consent |approval )?(granted|approved|secured|won|given)|wins? (planning|consent|approval)|approv(ed|es) plans|gets? (the )?(green light|go[- ]ahead|nod)|green[- ]light(ed|s)?|consent(ed)? (for|to)|resolution to grant|committee (approv|back)|councillors (approv|back)|secures? (planning|consent)|granted (planning|consent))\b/i],
   ['refused', /\b(refus(ed|es|al)|reject(ed|s)|turned down|thrown out|planning (committee )?(refus|reject))\b/i],
   ['appeal', /\b(appeal(s|ed)?|planning inspector(ate)?|call(ed|s)?[- ]in|public inquiry)\b/i],
-  ['submitted', /\b(submit(s|ted)? (a |its |their |revised |new |fresh |detailed |outline |reserved matters )?(planning |plans|application|proposals?)|plans (submitted|lodged|filed|go in|unveiled|revealed)|lodges? (a |an )?(planning )?(application|plans)|applies? for (planning|permission|consent)|seeks? (planning|permission|consent|approval)|files? (plans|an application)|validated|pending (decision|consideration)|awaiting decision|registered)\b/i],
+  ['submitted', /\b(submit(s|ted)? (a |its |their |revised |new |fresh |detailed |outline |reserved matters )?(planning |plans|application|proposals?)|plans (submitted|lodged|filed|go in|unveiled|revealed)|lodges? (a |an )?(planning )?(application|plans)|applies? for (planning|permission|consent)|seeks? (planning|permission|consent|approval)|files? (plans|an application)|pending (decision|consideration)|awaiting decision)\b/i],
   ['pre_planning', /\b(pre[- ]app(lication)?|consultation (launched|opens|begins)|public consultation|unveils? (plans|proposals|vision|designs)|reveals? (plans|proposals|designs)|draws? up plans|masterplan|early[- ]stage plans|proposals? for|plans for (a |an )?(new )?)\b/i],
   ['leadership', /\b(appoint(s|ed)? [\w\s]{0,40}(as )?(chief executive|ceo|managing director|development director|head of|director of|chairman|chair)|joins? (as|from)|steps? down|hires?|promot(es|ed)|new (chief executive|ceo|md|managing director|development director))\b/i],
 ];
+const PROPERTY_OBJECT = /\b(site|land|scheme|building|estate|hotel|offices?|portfolio|tower|plot|asset|property|campus|business park|retail park|development|homes|block|warehouse|shed|centre|store|pub|former|hectare|acre|sq ?ft|plc headquarters)\b/i;
+const CORPORATE = /\b(firm|company|business|stake|shares|shareholding|subsidiary|turnover|revenue|results|profits?|pre-tax|acquisition of [A-Z][\w ]+ (Ltd|Limited|Group|plc)|buying spree|consultancy|contractor group)\b/i;
 const SECTORS: [Sector, RegExp][] = [
   ['data_centre', /\b(?:data ?cent(re|er)s?|hyperscale|colocation)\b/i], ['life_sciences', /\b(?:life[- ]sciences?|laborator(y|ies)|lab space|r&d (space|facility)|science park)\b/i],
   ['pbsa', /\b(?:student (accommodation|housing|beds?|scheme)|pbsa|purpose[- ]built student)\b/i], ['btr', /\b(?:build[- ]to[- ]rent|btr|co[- ]living|rental (homes|apartments|scheme))\b/i],
@@ -95,13 +97,17 @@ export function partiesOf(text: string): Parties {
   p.funder = grab(new RegExp(`${ci('funded by|financed by|loan from|facility from|lender|lenders|funder|backed by|finance from|debt from|provided by')}\\s+${name}`)) || grab(new RegExp(`${name}\\s+(?:has|have)\\s+(?:provided|agreed|lent|lends|closed|completed)\\s+(?:a|an|the)?\\s?£`));
   p.contractor = grab(new RegExp(`${ci('contractor|main contractor|principal contractor|builder|appointed|awarded to|won by|delivered by|built by')}\\s+${name}`)) || grab(new RegExp(`${name}\\s+(?:has|have)\\s+(?:won|been appointed|been awarded|landed|secured|started on site|begun work|broken ground)`));
   p.architect = grab(new RegExp(`${ci('designed by|architects|architect')}\\s+${name}`));
-  return Object.fromEntries(Object.entries(p).filter(([, v]) => v && v.length > 3 && v.length < 80)) as Parties;
+  const BARE = /^(the |a )?(construction|developments?|homes|group|holdings|properties|property|estates|capital|partners|living|investments?|management|building|contractors?|limited|ltd|plc)$/i;
+  if (p.developer && p.contractor && p.developer.toLowerCase() === p.contractor.toLowerCase()) delete p.developer;
+  return Object.fromEntries(Object.entries(p).filter(([, v]) => v && v.length > 3 && v.length < 80 && !BARE.test(v))) as Parties;
 }
 export function classifyLead(text: string, hint: { applicant?: string; authority?: string; appType?: string; appState?: string; appSize?: string } = {}): Lead {
   const t = `${text} ${hint.appType || ''} ${hint.appState || ''}`;
   let stage: Stage = 'news';
   if (hint.appState) { const s = hint.appState.toLowerCase(); stage = /permitted|granted|approved|conditions/.test(s) ? 'granted' : /refused|rejected/.test(s) ? 'refused' : /appeal/.test(s) ? 'appeal' : /withdrawn/.test(s) ? 'stalled' : 'submitted'; }
   else for (const [k, re] of STAGES) if (re.test(t)) { stage = k; break; }
+  if (stage === 'acquired' && !PROPERTY_OBJECT.test(t)) stage = CORPORATE.test(t) ? 'news' : stage;
+  if (stage === 'acquired' && CORPORATE.test(t) && !PROPERTY_OBJECT.test(t)) stage = 'news';
   let sector: Sector = 'unknown'; for (const [k, re] of SECTORS) if (re.test(t)) { sector = k; break; }
   let devType: DevType = 'unknown'; for (const [k, re] of DEV) if (re.test(t)) { devType = k; break; }
   let region = ''; for (const [k, re] of REGIONS) if (re.test(t)) { region = k; break; }
@@ -134,7 +140,8 @@ export const CALL_FOR: Record<string, string> = { developer: 'Development Direct
 export function sellability(lead: Lead, buyerType: string, text: string, date: string, opts: { knownContacts?: number; warm?: boolean; today?: Date } = {}): Sellability {
   const today = opts.today || new Date();
   const isContractor = /\b(contractors?|construction|building|interiors|fit[- ]?out|m&e|mechanical|electrical|scaffold|groundwork|civil)\b/i.test(lead.parties.developer || '') && !/develop|homes|propert|estates|capital|living/i.test(lead.parties.developer || '');
-  const buyerKey = isContractor ? 'contractor' : (buyerType in BUYER ? buyerType : 'unknown');
+  const contractorOnly = !lead.parties.developer && !lead.parties.funder && !!lead.parties.contractor;
+  const buyerKey = isContractor || contractorOnly ? 'contractor' : (buyerType in BUYER ? buyerType : 'unknown');
   const exposedParty = !!(lead.parties.funder || (lead.parties.developer && !isContractor));
   let moment = MOMENT[lead.stage];
   if (lead.stage === 'distress') moment = exposedParty ? 0.8 : lead.sector !== 'unknown' && !isContractor ? 0.5 : 0.3;
@@ -147,7 +154,8 @@ export function sellability(lead: Lead, buyerType: string, text: string, date: s
   const days = (today.getTime() - (Date.parse(date) || today.getTime())) / 864e5;
   const fresh = days <= 14 ? 1 : days <= 30 ? 0.8 : days <= 90 ? 0.5 : 0.3;
   const sector = OFF_SECTOR.includes(lead.sector) ? 0.6 : lead.sector === 'unknown' ? 0.85 : 1;
-  const score = Math.round((30 * moment + 25 * buyer + 20 * size + 15 * access + 10 * fresh) * sector);
+  // A dead moment caps everything else: a famous developer in a news story is not a lead.
+  const score = Math.round((30 * moment + (25 * buyer + 20 * size + 15 * access + 10 * fresh) * (0.4 + 0.6 * moment)) * sector);
   const tier: Sellability['tier'] = score >= 65 ? 'Hot' : score >= 45 ? 'Warm' : 'Watch';
   const why = [
     `${STAGE_LABEL[lead.stage]}${lead.stage === 'distress' ? (exposedParty ? ', exposed party named' : ', no exposed party named yet') : ''}`,

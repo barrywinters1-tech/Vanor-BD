@@ -95,16 +95,17 @@ export function contractorsIn(text: string) {
   return out.slice(0, 5);
 }
 
-const PLANNING_NOISE = /householder|non[- ]material amendment|\bnma\b|section 73|\bs73\b|minor material amendment|discharge of condition|approval of details|prior approval|prior notification|lawful development|certificate of lawful|advertisement consent|\badvert\b|tree works|tpo\b|listed building consent only|variation of condition|removal of condition/i;
+const PLANNING_NOISE = /householder|pursuant to condition|condition \d+|details reserved by|non[- ]material amendment|\bnma\b|section 73|\bs73\b|minor material amendment|discharge of condition|approval of details|prior approval|prior notification|lawful development|certificate of lawful|advertisement consent|\badvert\b|tree works|tpo\b|listed building consent only|variation of condition|removal of condition/i;
 export function isSignal(s: Signal) {
   const t = `${s.title} ${s.summary}`.toLowerCase();
   if (s.source === 'planit' || s.source === 'planning_data_gov' || s.source === 'london_datahub')
     return !t.includes('size: small') && !PLANNING_NOISE.test(t) && CONFIG.sectors.some(k => t.includes(k));
   if (s.source.startsWith('gazette')) return true;
   // Press: a stage we act on, a sector we serve, and a size or a named party (Glenigan's 10 homes / £250k rule).
-  return isLeadWorthy(classifyLead(`${s.title}. ${s.summary}`, s.hint)) || CONFIG.signalWords.some(w => t.includes(w));
+  return isLeadWorthy(classifyLead(`${s.title}. ${s.summary}`, s.hint));
 }
 
+const CONTRACTOR_NAME = /\b(mechanical|electrical|m ?& ?e|construction|contractors?|contracting|building|builders|scaffold\w*|roofing|cladding|groundworks?|civils?|civil engineering|interiors|fit[- ]?out|joinery|plumbing|drylining|plastering|brickwork|carpentry|demolition|steel\w*|glazing|flooring|decorat\w*|plant hire|engineering services)\b/i;
 export function score(s: Signal, today = new Date()): Scored {
   const text = `${s.title} ${s.summary} ${s.applicant || ''}`;
   const t = text.toLowerCase();
@@ -112,7 +113,9 @@ export function score(s: Signal, today = new Date()): Scored {
   const distress = Math.min(40, sum(DISTRESS, t));
   const money = Math.max(Math.min(20, sum(MONEY, t)), moneySignal(text));
   const timing = distress ? 10 : 4;
-  const lead = classifyLead(text, s.hint);
+  const lead = classifyLead(text, s.hint || (s.applicant ? { applicant: s.applicant } : undefined));
+  if ((s.source === 'planit' || s.source === 'london_datahub') && ['news', 'leadership'].includes(lead.stage)) lead.stage = 'submitted';
+  if (s.source.startsWith('gazette')) { lead.stage = 'distress'; if (s.applicant && CONTRACTOR_NAME.test(s.applicant)) lead.parties.contractor = s.applicant; }
   let buyerType = classify(s.applicant || lead.parties.developer || lead.parties.funder || text);
   if (buyerType === 'unknown' && ((s.source === 'planit' || s.source === 'london_datahub') && s.applicant || lead.parties.developer)) buyerType = 'developer';
   if (buyerType === 'unknown' && lead.parties.funder) buyerType = 'lender';
