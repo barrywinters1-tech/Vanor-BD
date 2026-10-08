@@ -95,7 +95,7 @@ export function contractorsIn(text: string) {
   return out.slice(0, 5);
 }
 
-const PLANNING_NOISE = /householder|pursuant to condition|condition \d+|details reserved by|non[- ]material amendment|\bnma\b|section 73|\bs73\b|minor material amendment|discharge of condition|approval of details|prior approval|prior notification|lawful development|certificate of lawful|advertisement consent|\badvert\b|tree works|tpo\b|listed building consent only|variation of condition|removal of condition/i;
+const PLANNING_NOISE = /householder|pursuant to condition|deed of variation|s\.?106|section 106|changing (block|rooms?)|tennis court|condition \d+|details reserved by|non[- ]material amendment|\bnma\b|section 73|\bs73\b|minor material amendment|discharge of condition|approval of details|prior approval|prior notification|lawful development|certificate of lawful|advertisement consent|\badvert\b|tree works|tpo\b|listed building consent only|variation of condition|removal of condition/i;
 export function isSignal(s: Signal) {
   const t = `${s.title} ${s.summary}`.toLowerCase();
   if (s.source === 'planit' || s.source === 'planning_data_gov' || s.source === 'london_datahub')
