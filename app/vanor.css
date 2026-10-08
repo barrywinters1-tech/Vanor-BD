@@ -2128,3 +2128,9 @@ html, body {
 .vanor .signal-actions{display:flex;flex-direction:row;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:6px;max-width:260px}
 .vanor .tag.danger{background:#f6e3e3;color:#8a2a2a}
 @media (max-width:760px){.vanor .signal-grid{grid-template-columns:1fr}.vanor .signal-stage{flex-direction:row;align-items:center;gap:10px}.vanor .signal-actions{flex-direction:row;flex-wrap:wrap;align-items:center}}
+
+.vanor .task-row{align-items:flex-start}
+.vanor .task-row.done .names b{text-decoration:line-through;color:var(--secondary)}
+.vanor .task-check{display:flex;align-items:center;padding:4px 10px 0 0}
+.vanor .task-check input{width:18px;height:18px;accent-color:var(--accent,#286469)}
+.vanor .task-row small .late{color:#8a2a2a;font-weight:600}

@@ -9,6 +9,7 @@ import { saveIntel, researchBatch } from '../../../../lib/company-intel-store';
 import { autoClassify, generateDrafts, batchApprove, listTemplates, saveTemplate, getSettings } from '../../../../lib/outreach';
 import { runIntel } from '../../../../lib/intel-ingest';
 import { lookupPerson, searchPeople } from '../../../../lib/rocketreach';
+import { addTask, completeTask, snoozeTask, deriveTasks } from '../../../../lib/tasks';
 import { logEvent, saveEntity as storeSave, updateEntity as storeUpdate } from '../../../../lib/bd-store';
 import { runBackup } from '../../../../lib/backup-job';
 
@@ -206,6 +207,14 @@ export async function POST(request: NextRequest, context: Context) {
     if (action === 'template') {
       const key = String(body?.key || '');
       await saveTemplate(key, body?.reset ? { subject: undefined, body: undefined, reset: true } : { subject: body?.subject, body: body?.body }); return reply({ templates: await listTemplates() });
+    }
+    if (action === 'sync-tasks') return reply(await deriveTasks());
+    if (action === 'task') {
+      const { data } = await access.db.auth.getUser(); const actor = /graeme/i.test(data.user?.email || '') ? 'Graeme' : 'Barry';
+      if (body?.op === 'done' || body?.op === 'reopen') return reply(await completeTask(String(body.id), actor, body.op === 'done'));
+      if (body?.op === 'snooze') return reply(await snoozeTask(String(body.id), Number(body.days || 7), actor));
+      if (body?.op === 'add') return reply(await addTask({ id: 'task:' + crypto.randomUUID(), title: String(body.title || '').slice(0, 140), owner: body.owner === 'Graeme' ? 'Graeme' : 'Barry', due: String(body.due || ''), priority: ['High', 'Low'].includes(body.priority) ? body.priority : 'Normal', source: { kind: 'manual', id: body.sourceId || undefined, label: body.sourceLabel || undefined }, notes: String(body.notes || ''), createdBy: actor }));
+      return reply({ error: 'Unknown task op.' }, 400);
     }
     if (action === 'find-contacts') {
       // On demand only: founders press the button once a lead is worth pursuing. Adds up to 3 decision-makers at the company as leads with whatever RocketReach returns.

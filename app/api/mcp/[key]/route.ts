@@ -16,6 +16,7 @@ import { lookupPerson } from '../../../../lib/rocketreach';
 import { runIntel } from '../../../../lib/intel-ingest';
 import { priorityList } from '../../../../lib/priority';
 import { logOutcome, funnel, STEPS } from '../../../../lib/funnel';
+import { listTasks, addTask, completeTask, deriveTasks } from '../../../../lib/tasks';
 import { generateDrafts, approvedDrafts, markDraftPushed, saveDraft, autoClassify, batchApprove, listTemplates, saveTemplate, saveProposal, approvedProposals, markProposalPushed, getSettings } from '../../../../lib/outreach';
 import { signalFeed, setHeadline } from '../../../../lib/signals-feed';
 import { researchCompany, normCompany } from '../../../../lib/company-intel';
@@ -376,6 +377,30 @@ function createServer() {
     inputSchema: { id: z.string(), outlookId: z.string().min(5) },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ id, outlookId }) => out(await markProposalPushed(id, outlookId), 'Marked pushed.'));
+
+  server.registerTool('list_tasks', {
+    title: 'Tasks on the board',
+    description: 'The founders\' task list: next asks, drafts to send, proposals to send, event prep and follow-ups, promises from meetings. Filter by owner (Barry/Graeme/All) and status (Open/Done/Snoozed/All). dueBefore = YYYY-MM-DD.',
+    inputSchema: { owner: z.string().optional(), status: z.enum(['Open', 'Done', 'Snoozed', 'All']).optional(), dueBefore: z.string().optional(), limit: z.number().int().min(1).max(300).optional() },
+    annotations: { readOnlyHint: true },
+  }, async (a) => out({ tasks: await listTasks(a as any) }, 'Tasks.'));
+  server.registerTool('add_task', {
+    title: 'Add a task for a founder',
+    description: 'Use for a concrete commitment Barry or Graeme made (from a meeting transcript or email), or something only they can do. One line, imperative, with a due date. Idempotent on source + title. Never add vague tasks ("follow up").',
+    inputSchema: { title: z.string().min(5).max(140), owner: z.enum(['Barry', 'Graeme']), due: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), priority: z.enum(['High', 'Normal', 'Low']).optional(), sourceKind: z.enum(['record', 'event', 'meeting', 'manual']).optional(), sourceId: z.string().optional(), sourceLabel: z.string().optional(), notes: z.string().max(600).optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ title, owner, due, priority, sourceKind, sourceId, sourceLabel, notes }) => out(await addTask({ title, owner, due, priority: priority || 'Normal', source: { kind: sourceKind || 'meeting', id: sourceId, label: sourceLabel }, notes: notes || '', createdBy: 'Claude' }), 'Task added.'));
+  server.registerTool('complete_task', {
+    title: 'Mark a task done',
+    description: 'Only when the evidence shows it was done (e.g. the email was sent, the booking confirmed). Say why in the note of a log_interaction if relevant.',
+    inputSchema: { id: z.string() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ id }) => out(await completeTask(id, 'Claude'), 'Done.'));
+  server.registerTool('derive_tasks', {
+    title: 'Refresh engine tasks',
+    description: 'Creates tasks from next asks, pushed drafts and proposals, event deadlines and event follow-ups. Runs daily anyway.',
+    inputSchema: {}, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async () => out(await deriveTasks(), 'Derived.'));
 
   server.registerTool('signal_feed', {
     title: 'Signals feed (what the board shows under Signals)',
