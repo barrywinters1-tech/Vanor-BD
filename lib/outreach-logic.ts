@@ -32,24 +32,24 @@ const VANOR = 'Graeme and I set up Vanor after years on the contractor side. We 
 /** Editable templates. Placeholders: {first} {company} {wc} {offer} {scheme} {via_first} {name} {vanor}. Founders edit these in the board (Templates). */
 export type Template = { key: string; label: string; when: string; subject: string; body: string };
 export const DEFAULT_TEMPLATES: Template[] = [
-  { key: 'first_approach', label: 'First approach (cold, right buyer)', when: 'Grade A, no trigger, no way in', subject: 'Coffee?',
-    body: "Hi {first},\n\nThought I'd drop you a line.\n\n{vanor}; mainly {offer}.\n\nWould you be up for a coffee {wc}? Happy to come to you.\n\nKind regards,\nBarry" },
-  { key: 'signal_cold', label: 'Signal-led, cold', when: 'Dated trigger (planning, funding, new vehicle), not yet a relationship', subject: 'Coffee?',
-    body: "Hi {first},\n\n{opener}\n\n{vanor}; mainly {offer}.\n\nWould you be up for a coffee {wc}? Happy to come to you.\n\nKind regards,\nBarry" },
-  { key: 'signal_warm', label: 'Signal-led, warm', when: 'Dated trigger and we already know them', subject: 'Due a catch up',
-    body: "Hi {first},\n\n{opener_warm}\n\nIf there's a contractor programme or cost plan you'd like a second pair of eyes on before it starts, happy to take a look. Can we get something in {wc}?\n\nRegards,\nBarry" },
-  { key: 'nurture', label: 'Catch up (warm, no trigger)', when: 'Known contact, nothing live', subject: 'Due a catch up',
-    body: "Hi {first},\n\nDue a catch up. Hows all with you guys, keeping busy?\n\nWould be good to hear what's coming through at {company} and whether there's anywhere we could help, {offer}.\n\nCan we get something in {wc}? Happy to come to you.\n\nRegards,\nBarry" },
+  { key: 'first_approach', label: 'First approach (cold, right buyer)', when: 'Grade A, no trigger, no way in', subject: '{company}: client-side support',
+    body: "Hi {first},\n\nHope all's well. I'm getting in touch as {company} looks like the sort of business we'd like to be working with.\n\nGraeme and I set up Vanor after years on the contractor side. We support clients on the owner side of complex developments where additional senior bandwidth is needed around programme, commercial performance, risk and delivery, {offer}.\n\nRather than assume where the pressure points are, I'd be interested to hear how you're resourcing the client side of what you've got coming through and whether there's anywhere independent support would add value.\n\nIf useful, happy to have a short call or grab a coffee, equally happy to come over to you. Would {wc} work?\n\nKind regards,\nBarry" },
+  { key: 'signal_cold', label: 'Signal-led, cold', when: 'Dated trigger (planning, funding, new vehicle), not yet a relationship', subject: '{scheme_or_company}: client-side delivery support',
+    body: "Hi {first},\n\n{opener}\n\nGraeme and I set up Vanor after years on the contractor side. We support clients on the owner side where additional senior bandwidth is needed around programme, commercial performance, risk, mobilisation and delivery assurance, {offer}.\n\nGiven where {scheme_or_it} appears to be in its lifecycle, I thought it worth reaching out. Rather than assume where the pressure points are, I'd be interested to understand how you're resourcing the client side and whether there are any areas where independent support could add value.\n\nIf useful, I'd be happy to have a short discovery call, or grab a coffee, happy to come to you. Would {wc} work?\n\nKind regards,\nBarry" },
+  { key: 'signal_warm', label: 'Signal-led, warm', when: 'Dated trigger and we already know them', subject: '{scheme_or_company}',
+    body: "Hi {first},\n\nHope all's well at {company}.\n\n{opener_warm}\n\nFollowing on from our last catch up I was thinking whether a peer review or position finding exercise would be useful on it before things get fixed. Happy to talk through what that would look like, it's a light-touch, fixed-fee first stage and if we don't think it's needed we'll say so.\n\nCould we have a 20-minute call {wc}?\n\nRegards,\nBarry" },
+  { key: 'nurture', label: 'Catch up (warm, no trigger)', when: 'Known contact, nothing live', subject: 'Catch up',
+    body: "Hi {first},\n\nDue a catch up. Hows all with you guys, keeping busy?\n\nWould be good to hear what's coming through at {company} and whether there's anywhere we could help, {offer}.\n\nCan we get something in {wc}? Happy to come to you, or a spot of breakfast if easier.\n\nRegards,\nBarry" },
   { key: 'chase1', label: 'Chase 1 (from day 4)', when: 'We wrote, no reply after 4 working days', subject: 'Following up',
-    body: "Hi {first},\n\nJust following up on the below. Can we get 20 minutes in {wc}? Happy to come to you.\n\nRegards,\nBarry" },
+    body: "Hi {first},\n\nJust following up on the below in case it got buried.\n\nIf it's useful, could we have a 20-minute call {wc}? Equally happy to grab a coffee, I can come to you.\n\nRegards,\nBarry" },
   { key: 'chase2', label: 'Chase 2 (day 9 to 20)', when: 'Second chase, then we stop', subject: 'Last one from me',
-    body: "Hi {first},\n\nLast one from me on this. If it's not the right time, no problem at all, just say and I'll leave it there.\n\nIf it is, I'm around {wc} and happy to come to you.\n\nRegards,\nBarry" },
-  { key: 'intro_ask', label: 'Ask a warm contact for an intro', when: 'Target is cold or has no email and we know a colleague', subject: 'Intro to {first}?',
-    body: "Hi {via_first},\n\nQuick one. Would you be happy to introduce me to {name} at {company}? Looks like the sort of job where {offer}.\n\nA two-line email is plenty, happy to take it from there and will keep you in the loop.\n\nRegards,\nBarry" },
-  { key: 'post_meeting', label: 'After a meeting', when: 'Logged meeting with no follow-up sent', subject: 'Thanks for today',
-    body: "Hi {first},\n\nThanks for today, good to catch up properly.\n\nAs discussed, {promise}.\n\n{ask}\n\nRegards,\nBarry" },
-  { key: 'proposal_cover', label: 'Proposal cover note', when: 'Sending a Stress Test or peer review proposal', subject: 'Proposal: {scheme}',
-    body: "Hi {first},\n\nAs discussed, please find attached our proposal for {scheme}.\n\nWe've set it out in stages so you can start with the peer review and position finding and go from there.\n\nHappy to talk it through, can we get 20 minutes in {wc}?\n\nRegards,\nBarry" },
+    body: "Hi {first},\n\nLast one from me on this, I know how busy things get.\n\nIf the timing isn't right no problem at all, just say and I'll leave it there. If it's worth a conversation at some point, I'm around {wc} and happy to come to you.\n\nRegards,\nBarry" },
+  { key: 'intro_ask', label: 'Ask a warm contact for an intro', when: 'Target is cold or has no email and we know a colleague', subject: 'Intro to {name}?',
+    body: "Hi {via_first},\n\nHope all's well. Quick one.\n\nWould you be happy to introduce me to {name} at {company}? Looks like the sort of job where we could add value, {offer}, and a warm intro from you would go a long way.\n\nA two-line email is plenty, happy to take it from there and will keep you in the loop. And if there's anything I can do the other way, just say.\n\nRegards,\nBarry" },
+  { key: 'post_meeting', label: 'After a meeting', when: 'Logged meeting with no follow-up sent', subject: 'Good to catch up',
+    body: "Hi {first},\n\nGreat to catch up {when} and good to hear more about what you've got coming through at {company}.\n\nReally useful discussion, particularly around {promise}. It gave me a much better picture of where we may be able to support you as things develop.\n\n{ask}\n\nI'll keep in touch and, as discussed, happy to pick up anything where an extra pair of hands or some independent support would be useful.\n\nKind regards,\nBarry" },
+  { key: 'proposal_cover', label: 'Proposal cover note', when: 'Sending a Stress Test or peer review proposal', subject: '{scheme}: proposal',
+    body: "Hi {first},\n\nThanks again for your time {when}. As discussed, please find attached our proposal for {scheme}.\n\nWe've set it out in stages so each one is a separate appointment and you can decide whether and when to progress to the next. The first stage is fixed-fee and deliberately light-touch: it separates what's established from what's assumed, and if we don't think the next stage is needed we'll say so.\n\nHappy to talk it through, could we get 20 minutes {wc}?\n\nKind regards,\nBarry" },
 ];
 export function renderTemplate(t: { subject: string; body: string }, vars: Record<string, string>) {
   const sub = (s: string) => s.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '');
@@ -71,17 +71,18 @@ function topSignal(r: Entity): Signal | null {
 /** A place name or scheme the way Barry would say it, from a planning signal; never a filing quote. */
 function schemeHint(sig: Signal | null): string {
   if (!sig || sig.type !== 'planning') return '';
-  const t = String(sig.text || '').replace(/^(planning|application|consent)[:\s-]*/i, '').split(/[.;|]/)[0].trim();
-  return t.length > 6 && t.length < 70 ? t : '';
+  const t = String(sig.text || '').replace(/^(planning|application|consent)[:\s-]*/i, '').split(/[.;|]/)[0]
+    .split(',').map(x => x.replace(/\b\d[\d,]*\s?-?\s?(beds?|keys|homes|units|rooms|apartments|flats|storeys?|sq\s?(ft|m))\b/gi, '').trim()).filter(Boolean).join(', ').trim();
+  return t.length > 3 && t.length < 60 ? t : '';
 }
 
 function offerFor(r: Entity, segment: string): string {
-  if (/lender|debt|bank|credit|fund/i.test(segment)) return 'we act as the monitoring surveyor or do a quick independent position review when a loan drifts';
-  if (/investor|private equity/i.test(segment)) return 'we do a short peer review of the contractor\'s programme and cost before a scheme starts, or position finding when one has drifted';
-  if (/hotel|operator|hospitality/i.test(segment)) return 'we run a short peer review of the contractor\'s programme and cost before the refurb starts, or position finding when a job has slipped';
-  if (/public|housing|council/i.test(segment)) return 'we do a focused peer review of one challenged scheme, or a first-principles reset where a project has stalled';
-  if (/data cent/i.test(segment)) return 'we give the owner an independent view of the contractor\'s programme and cost, and monitor for the funder';
-  return 'we do a short peer review of the contractor\'s programme and cost before a job starts, or position finding when one has drifted';
+  if (/lender|debt|bank|credit|fund/i.test(segment)) return 'typically acting as monitoring surveyor or a quick independent position review when a loan drifts';
+  if (/investor|private equity/i.test(segment)) return 'typically a short peer review of the contractor\'s programme and cost before a scheme starts, or position finding when one has drifted';
+  if (/hotel|operator|hospitality/i.test(segment)) return 'typically a short peer review of the contractor\'s programme and cost before the refurb starts, or position finding when a job has slipped';
+  if (/public|housing|council/i.test(segment)) return 'typically a focused peer review of one challenged scheme, or a first-principles reset where a project has stalled';
+  if (/data cent/i.test(segment)) return 'typically an independent view of the contractor\'s programme and cost for the owner, and monitoring for the funder';
+  return 'typically a short peer review of the contractor\'s programme and cost before a job starts, or position finding when one has drifted';
 }
 
 export type DraftInput = { r: Entity; d?: Entity | null; warm: boolean; cell: string; wayIn?: { name: string; company: string; email?: string } | null; lastSentDaysAgo?: number | null; touches?: number; segment: string; templates?: Map<string, Template> };
@@ -92,9 +93,9 @@ export function composeDraft(input: DraftInput): Draft | null {
   const wc = weekCommencing(); const sig = topSignal(r); const scheme = schemeHint(sig);
   const now = new Date().toISOString();
   const base = { to: email, status: 'suggested' as const, origin: 'engine' as const, generatedAt: now };
-  const vars: Record<string, string> = { first: first(name) || 'there', name, company, wc, offer: offerFor(r, segment), scheme, vanor: VANOR, via_first: wayIn ? first(wayIn.name) : '',
-    opener: sig?.type === 'planning' && scheme ? `Saw ${scheme} has gone in, so thought I'd drop you a line.` : sig?.type === 'planning' ? `Saw you've got a scheme going through planning, so thought I'd drop you a line.` : `Sounds like you've got something moving at ${company}, so thought I'd drop you a line.`,
-    opener_warm: sig?.type === 'planning' && scheme ? `Saw ${scheme} has gone in and we're due a catch up.` : `Sounds like you've got something moving at ${company} and we're due a catch up.` };
+  const vars: Record<string, string> = { first: first(name) || 'there', name, company, wc, offer: offerFor(r, segment), scheme, scheme_or_company: scheme || company, scheme_or_it: scheme || 'the scheme', when: 'earlier', promise: 'the pipeline and how you are thinking about procurement and delivery', ask: '', vanor: VANOR, via_first: wayIn ? first(wayIn.name) : '',
+    opener: sig?.type === 'planning' && scheme ? `Hope all's well. I've been following ${scheme} with interest and understand it's now going through planning.` : sig?.type === 'planning' ? `Hope all's well. I understand you've got a scheme going through planning at the moment.` : sig?.type === 'lending' || sig?.type === 'property' ? `Hope all's well. I understand funding is now in place on your next scheme and it's moving towards a start.` : `Hope all's well. Sounds like you've got something moving at ${company}.`,
+    opener_warm: sig?.type === 'planning' && scheme ? `Saw ${scheme} has gone in, good news.` : sig?.type === 'lending' || sig?.type === 'property' ? `Heard the funding's landed on the next one, good news.` : `Sounds like you've got something moving.` };
   const use = (key: string, kind: Draft['kind'], angle: string, extra: Partial<Draft> = {}): Draft => { const t = T.get(key)!; const out = renderTemplate(t, vars); return { ...base, kind, angle, subject: out.subject, body: out.body, template: key, ...extra } as Draft; };
 
   if (cell === 'C' || !name) return null;
