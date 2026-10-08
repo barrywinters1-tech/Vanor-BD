@@ -1,11 +1,11 @@
 // Market + planning signal scanner (ported from vanor-intel: trigger_monitor, planning, buyers, lead_pipeline).
 // Plain code, no AI: fetch feeds -> keep real signals -> score -> leads for the board's review queue.
 
-import { classifyLead, isLeadWorthy, type Lead } from './lead-classify.ts';
+import { classifyLead, isLeadWorthy, sellability, type Lead, type Sellability } from './lead-classify.ts';
 export type Signal = { title: string; link: string; date: string; summary: string; source: string; applicant?: string; hint?: { applicant?: string; authority?: string; appType?: string; appState?: string; appSize?: string } };
 export type Scored = Signal & {
   score: number; complexity: number; distress: number; money: number; timing: number;
-  buyerType: string; talkTo: string; signs: string; organisation: string; contractors: string[]; lead: Lead;
+  buyerType: string; talkTo: string; signs: string; organisation: string; contractors: string[]; lead: Lead; sell: Sellability;
 };
 
 export const CONFIG = {
@@ -66,7 +66,7 @@ const sum = (table: Record<string, number>, t: string) => Object.entries(table).
 
 export function classify(text: string) {
   const t = text.toLowerCase();
-  for (const [kind, words] of KEYS) if (words.some(w => t.includes(w))) return kind;
+  for (const [kind, words] of KEYS) if (words.some(w => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(t))) return kind;
   return 'unknown';
 }
 
@@ -113,16 +113,15 @@ export function score(s: Signal, today = new Date()): Scored {
   const money = Math.max(Math.min(20, sum(MONEY, t)), moneySignal(text));
   const timing = distress ? 10 : 4;
   const lead = classifyLead(text, s.hint);
-  const buyerType = classify(s.applicant || lead.parties.developer || lead.parties.funder || text);
-  const stageBonus: Partial<Record<Lead['stage'], number>> = { granted: 14, funded: 16, acquired: 10, tender: 12, contractor_appointed: 8, on_site: 6, stalled: 18, submitted: 6, pre_planning: 3, distress: 0 };
-  const sizeBonus = lead.isLarge ? 8 : 0;
-  const raw = Math.min(100, (complexity + distress + money + timing + (stageBonus[lead.stage] || 0) + sizeBonus) * BUYERS[buyerType].weight);
-  const rec = recency(s.date, today);
+  let buyerType = classify(s.applicant || lead.parties.developer || lead.parties.funder || text);
+  if (buyerType === 'unknown' && ((s.source === 'planit' || s.source === 'london_datahub') && s.applicant || lead.parties.developer)) buyerType = 'developer';
+  if (buyerType === 'unknown' && lead.parties.funder) buyerType = 'lender';
+  const sell = sellability(lead, buyerType, text, s.date, { today });
   return {
     ...s, complexity, distress, money, timing, buyerType,
-    score: Math.round(raw * (distress ? rec : Math.max(rec, 0.8))),
-    talkTo: BUYERS[buyerType].talkTo, signs: BUYERS[buyerType].signs,
-    organisation: (s.applicant || lead.parties.developer || lead.parties.funder || '').trim(), contractors: contractorsIn(text), lead,
+    score: sell.score,
+    talkTo: sell.call, signs: BUYERS[buyerType].signs,
+    organisation: (s.applicant || lead.parties.developer || lead.parties.funder || '').trim(), contractors: contractorsIn(text), lead, sell,
   };
 }
 
@@ -287,8 +286,9 @@ export async function scan(today = new Date()) {
 export function leadContext(s: Scored, directors: string[], known: string[]) {
   return [
     `${s.title}.`,
+    `${s.sell.tier} ${s.score}/100: ${s.sell.why}.`,
+    `Play: ${s.sell.play}. Call: ${s.sell.call}.`,
     `Stage: ${s.lead.stage.replace('_', ' ')}. Sector: ${s.lead.sector.replace('_', ' ')}. ${s.lead.valueBand}.${s.lead.region ? ' ' + s.lead.region + '.' : ''}${Object.entries(s.lead.parties).map(([k, v]) => ` ${k[0].toUpperCase() + k.slice(1)}: ${v}.`).join('')}`,
-    `Score ${s.score}/100 (complexity ${s.complexity}, distress ${s.distress}, money ${s.money}, timing ${s.timing}). Buyer type: ${s.buyerType.replace('_', ' ')}; signs: ${s.signs}.`,
     s.summary,
     s.contractors.length ? `Contractors named: ${s.contractors.join(', ')}.` : '',
     directors.length ? `Directors (Companies House): ${directors.join('; ')}.` : '',

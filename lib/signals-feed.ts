@@ -21,7 +21,7 @@ function headline(company: string, sg: { type: string; text?: string }) {
   }
 }
 
-export type FeedItem = { id: string; key: string; date: string; source: string; headline: string; why: string; text: string; link: string; cell: string; company: string; polished: boolean; stage: string; sector: string; value: string; region: string; parties: Record<string, string>; play: string };
+export type FeedItem = { id: string; key: string; date: string; source: string; headline: string; why: string; text: string; link: string; cell: string; company: string; polished: boolean; stage: string; sector: string; value: string; region: string; parties: Record<string, string>; play: string; tier: string; score: number; whyScore: string; call: string };
 const CH_STAGE: Record<string, string> = { property: 'funded', lending: 'funded', planning: 'submitted', new_spv: 'acquired', new_director: 'leadership', distress: 'distress' };
 
 export async function signalFeed({ days = 30, buyersOnly = true, limit = 60 }: { days?: number; buyersOnly?: boolean; limit?: number } = {}): Promise<FeedItem[]> {
@@ -38,7 +38,7 @@ export async function signalFeed({ days = 30, buyersOnly = true, limit = 60 }: {
       const h = r.headlines?.lead || {};
       const src = /gazette/i.test(r.source || '') ? 'The Gazette' : /planning/i.test(r.source || '') ? 'Planning' : 'Press';
       const it = r.intel || {}; const stage = it.stage || (src === 'The Gazette' ? 'distress' : src === 'Planning' ? 'submitted' : 'news');
-      items.push({ id: r.id, key: 'lead', date, source: src, headline: h.headline || r.title || r.company || r.name, why: h.why || '', text: String(r.context || '').split('\n')[0].slice(0, 200), link: r.sourceUrl || '', cell: cellOf.get(r.id)?.cell || '', company: r.company || '', polished: !!h.headline, stage, sector: it.sector || '', value: it.valueBand || '', region: it.region || r.region || '', parties: it.parties || {}, play: STAGE_PLAY[stage as Stage] || '' });
+      items.push({ id: r.id, key: 'lead', date, source: src, headline: h.headline || r.title || r.company || r.name, why: h.why || '', text: String(r.context || '').split('\n')[0].slice(0, 200), link: r.sourceUrl || '', cell: cellOf.get(r.id)?.cell || '', company: r.company || '', polished: !!h.headline, stage, sector: it.sector || '', value: it.valueBand || '', region: it.region || r.region || '', parties: it.parties || {}, play: it.play || STAGE_PLAY[stage as Stage] || '', tier: it.tier || '', score: Number(it.score || 0), whyScore: it.why || '', call: it.call || '' });
     }
   }
   const seen = new Set<string>();
@@ -54,7 +54,7 @@ export async function signalFeed({ days = 30, buyersOnly = true, limit = 60 }: {
       const key = signalKey(sg.type, date); if (dis.has(key)) continue;
       const h = target.headlines?.[key] || r.headlines?.[key] || {};
       const stage = CH_STAGE[sg.type] || 'news';
-      items.push({ id: target.id, key, date, source: SOURCE[sg.type] || 'Companies House', headline: h.headline || headline(r.company, sg), why: h.why || '', text: `${sg.text || ''}${mates.length ? ` · ${mates.length} contact${mates.length > 1 ? 's' : ''} on the board` : ''}`, link: '', cell: cellOf.get(target.id)?.cell || '', company: r.company || '', polished: !!h.headline, stage, sector: '', value: '', region: r.region || '', parties: { developer: r.company || '' }, play: STAGE_PLAY[stage as Stage] || '' });
+      items.push({ id: target.id, key, date, source: SOURCE[sg.type] || 'Companies House', headline: h.headline || headline(r.company, sg), why: h.why || '', text: `${sg.text || ''}${mates.length ? ` · ${mates.length} contact${mates.length > 1 ? 's' : ''} on the board` : ''}`, link: '', cell: cellOf.get(target.id)?.cell || '', company: r.company || '', polished: !!h.headline, stage, sector: '', value: '', region: r.region || '', parties: { developer: r.company || '' }, play: STAGE_PLAY[stage as Stage] || '', tier: '', score: 0, whyScore: '', call: '' });
     }
   }
   return items.filter(i => !buyersOnly || (i.cell && i.cell !== 'C')).sort((a, b) => b.date.localeCompare(a.date)).slice(0, limit);

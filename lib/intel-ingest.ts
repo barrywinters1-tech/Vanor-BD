@@ -1,6 +1,7 @@
 // Turns scanner signals into leads in the board's review queue. Never touches founder evidence or stages.
 import { createHash } from 'node:crypto';
 import { CONFIG, scan, companiesHouseDirectors, leadContext, type Scored } from './intel';
+import { sellability } from './lead-classify';
 import { listScope, saveEntity, logEvent, type Entity } from './bd-store';
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -13,7 +14,7 @@ export const intelId = (link: string) => 'intel:' + createHash('sha1').update(li
 export async function runIntel({ write, limit = CONFIG.maxPerRun, minScore = CONFIG.minScore }: { write: boolean; limit?: number; minScore?: number }) {
   const result = await scan();
   const candidates = result.scored.filter(s => s.score >= minScore);
-  const preview = (s: Scored) => ({ score: s.score, title: s.title, organisation: s.organisation, buyer: s.buyerType, talkTo: s.talkTo, link: s.link, stage: s.lead.stage, sector: s.lead.sector, value: s.lead.valueBand, region: s.lead.region, parties: s.lead.parties });
+  const preview = (s: Scored) => ({ score: s.score, tier: s.sell.tier, why: s.sell.why, title: s.title, organisation: s.organisation, buyer: s.buyerType, talkTo: s.talkTo, link: s.link, stage: s.lead.stage, sector: s.lead.sector, value: s.lead.valueBand, region: s.lead.region, parties: s.lead.parties });
   if (!write) return { ...result, scored: undefined, candidates: candidates.length, top: candidates.slice(0, limit).map(preview) };
 
   const records = await listScope('source');
@@ -26,6 +27,7 @@ export async function runIntel({ write, limit = CONFIG.maxPerRun, minScore = CON
     const org = norm(s.organisation);
     const known = org.length > 3 ? records.filter(r => r.kind !== 'lead' && norm(r.company) === org) : [];
     const directors = await companiesHouseDirectors(s.organisation);
+    if (known.length) { s.sell = sellability(s.lead, s.buyerType, `${s.title} ${s.summary}`, s.date, { knownContacts: known.length }); s.score = s.sell.score; }
     const record: Entity = {
       id, kind: 'lead', origin: 'intel', addedBy: 'Vanor intel scanner',
       name: s.talkTo, company: (s.organisation || s.title).slice(0, 120), jobTitle: s.talkTo, title: s.title.slice(0, 160),
@@ -33,7 +35,7 @@ export async function runIntel({ write, limit = CONFIG.maxPerRun, minScore = CON
       context: leadContext(s, directors, known.map(k => `${k.name} (${k.jobTitle || 'role unknown'})`)),
       source: SOURCE_LABEL[s.source] || s.source, sourceUrl: s.link, sourceOwner: '', route: '',
       lastContact: '', nextAsk: '', nextDate: '', sourceStage: 'New lead', classification: 'New lead',
-      intel: { score: s.score, complexity: s.complexity, distress: s.distress, money: s.money, timing: s.timing, buyerType: s.buyerType, signs: s.signs, contractors: s.contractors, directors, signalDate: s.date, stage: s.lead.stage, sector: s.lead.sector, devType: s.lead.devType, size: s.lead.size, valueBand: s.lead.valueBand, region: s.lead.region, parties: s.lead.parties, isLarge: s.lead.isLarge },
+      intel: { score: s.score, complexity: s.complexity, distress: s.distress, money: s.money, timing: s.timing, buyerType: s.buyerType, signs: s.signs, contractors: s.contractors, directors, signalDate: s.date, stage: s.lead.stage, sector: s.lead.sector, devType: s.lead.devType, size: s.lead.size, valueBand: s.lead.valueBand, region: s.lead.region, parties: s.lead.parties, isLarge: s.lead.isLarge, tier: s.sell.tier, why: s.sell.why, play: s.sell.play, call: s.sell.call, parts: s.sell.parts },
       segment: '', region: s.lead.region,
       createdAt: new Date().toISOString(),
     };

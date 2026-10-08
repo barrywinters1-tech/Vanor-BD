@@ -39,35 +39,35 @@ const STAGES: [Stage, RegExp][] = [
   ['leadership', /\b(appoint(s|ed)? [\w\s]{0,40}(as )?(chief executive|ceo|managing director|development director|head of|director of|chairman|chair)|joins? (as|from)|steps? down|hires?|promot(es|ed)|new (chief executive|ceo|md|managing director|development director))\b/i],
 ];
 const SECTORS: [Sector, RegExp][] = [
-  ['data_centre', /\bdata ?cent(re|er)s?|hyperscale|colocation\b/i], ['life_sciences', /\blife[- ]sciences?|laborator(y|ies)|lab space|r&d (space|facility)|science park\b/i],
-  ['pbsa', /\bstudent (accommodation|housing|beds?|scheme)|pbsa|purpose[- ]built student\b/i], ['btr', /\bbuild[- ]to[- ]rent|btr|co[- ]living|rental (homes|apartments|scheme)\b/i],
-  ['later_living', /\blater living|retirement (village|living|homes?)|care home|extra care|senior living|assisted living\b/i],
-  ['hotel', /\bhotels?|hospitality|aparthotel|serviced apartments?|resort|inn\b/i], ['leisure', /\bleisure|cinema|stadium|arena|theatre|gym|spa|restaurant|pub\b/i],
-  ['heritage', /\blisted building|grade (i|ii)\*?|heritage|conservation area|historic\b/i], ['mixed_use', /\bmixed[- ]use|regeneration|masterplan|town centre|urban quarter\b/i],
-  ['office', /\boffices?|workspace|hq|headquarters|commercial space\b/i], ['retail', /\bretail|shopping centre|supermarket|store|shops?\b/i],
-  ['industrial', /\bindustrial|logistics|warehous(e|ing)|distribution (centre|hub)|sheds?|manufacturing (plant|facility)\b/i],
-  ['education', /\bschool|academy|college|university|campus\b/i], ['health', /\bhospital|nhs|health ?care|medical centre|clinic\b/i],
-  ['infrastructure', /\brail|station|highway|road scheme|bridge|tunnel|airport|port|energy|wind farm|solar|grid|water treatment|sewer\b/i],
-  ['residential', /\bhomes?|housing|apartments?|flats?|dwellings?|residential|houses\b/i],
-  ['public', /\bcivic (centre|hub)|library|leisure centre|town hall\b/i],
+  ['data_centre', /\b(?:data ?cent(re|er)s?|hyperscale|colocation)\b/i], ['life_sciences', /\b(?:life[- ]sciences?|laborator(y|ies)|lab space|r&d (space|facility)|science park)\b/i],
+  ['pbsa', /\b(?:student (accommodation|housing|beds?|scheme)|pbsa|purpose[- ]built student)\b/i], ['btr', /\b(?:build[- ]to[- ]rent|btr|co[- ]living|rental (homes|apartments|scheme))\b/i],
+  ['later_living', /\b(?:later living|retirement (village|living|homes?)|care home|extra care|senior living|assisted living)\b/i],
+  ['hotel', /\b(?:hotels?|hospitality|aparthotel|serviced apartments?|resort|inn)\b/i], ['leisure', /\b(?:leisure|cinema|stadium|arena|theatre|gym|spa|restaurant|pub)\b/i],
+  ['heritage', /\b(?:listed building|grade (i|ii)\*?|heritage|conservation area|historic)\b/i], ['mixed_use', /\b(?:mixed[- ]use|regeneration|masterplan|town centre|urban quarter)\b/i],
+  ['office', /\b(?:offices?|workspace|hq|headquarters|commercial space)\b/i], ['retail', /\b(?:retail|shopping centre|supermarket|store|shops?)\b/i],
+  ['industrial', /\b(?:industrial|logistics|warehous(e|ing)|distribution (centre|hub)|sheds?|manufacturing (plant|facility))\b/i],
+  ['education', /\b(?:school|academy|college|university|campus)\b/i], ['health', /\b(?:hospital|nhs|health ?care|medical centre|clinic)\b/i],
+  ['infrastructure', /\b(?:rail|station|highway|road scheme|bridge|tunnel|airport|port|energy|wind farm|solar|grid|water treatment|sewer)\b/i],
+  ['residential', /\b(?:homes?|housing|apartments?|flats?|dwellings?|residential|houses)\b/i],
+  ['public', /\b(?:civic (centre|hub)|library|leisure centre|town hall)\b/i],
 ];
 const DEV: [DevType, RegExp][] = [
-  ['demolition', /\bdemoli(sh|tion)\b/i], ['conversion', /\bconver(sion|t|ted)|change of use|repurpos|office[- ]to[- ]resi\b/i],
-  ['refurbishment', /\brefurb|renovat|retrofit|restor(e|ation)|remodel|upgrade works|fit[- ]out|cat ?[ab]\b/i], ['extension', /\bextension|extend(s|ed)?|additional storeys?|upward extension\b/i],
-  ['infrastructure', /\binfrastructure|civil engineering|highways?|rail\b/i], ['new_build', /\bnew[- ]build|erection of|construction of|build (a |an )?new|development of|scheme of|tower|block\b/i],
+  ['demolition', /\b(?:demoli(sh|tion))\b/i], ['conversion', /\b(?:conver(sion|t|ted)|change of use|repurpos|office[- ]to[- ]resi)\b/i],
+  ['refurbishment', /\b(?:refurb|renovat|retrofit|restor(e|ation)|remodel|upgrade works|fit[- ]out|cat ?[ab])\b/i], ['extension', /\b(?:extension|extend(s|ed)?|additional storeys?|upward extension)\b/i],
+  ['infrastructure', /\b(?:infrastructure|civil engineering|highways?|rail)\b/i], ['new_build', /\b(?:new[- ]build|erection of|construction of|build (a |an )?new|development of|scheme of|tower|block)\b/i],
 ];
 const REGIONS: [string, RegExp][] = [
-  ['London', /\blondon|westminster|camden|southwark|hackney|islington|tower hamlets|canary wharf|croydon|ealing|brent|lambeth|wandsworth|greenwich|lewisham|newham|barnet|hammersmith|kensington|chelsea|city of london|stratford|king'?s cross|shoreditch|battersea|nine elms|docklands|wembley|old oak\b/i],
-  ['South East', /\bsurrey|kent|sussex|hampshire|berkshire|oxford|reading|brighton|southampton|portsmouth|milton keynes|guildford|maidstone|slough|crawley|woking\b/i],
-  ['South West', /\bbristol|bath|devon|cornwall|exeter|plymouth|gloucester|swindon|bournemouth|dorset|somerset|cheltenham\b/i],
-  ['East of England', /\bcambridge|norwich|ipswich|essex|chelmsford|peterborough|luton|hertford|watford|stevenage|colchester|southend\b/i],
-  ['West Midlands', /\bbirmingham|coventry|wolverhampton|solihull|worcester|warwick|stoke|telford|west midlands\b/i],
-  ['East Midlands', /\bnottingham|leicester|derby|northampton|lincoln|east midlands\b/i],
-  ['North West', /\bmanchester|salford|liverpool|chester|preston|lancashire|cumbria|warrington|bolton|stockport|wigan|trafford|north west\b/i],
-  ['Yorkshire', /\bleeds|sheffield|york|bradford|hull|wakefield|doncaster|huddersfield|harrogate|yorkshire\b/i],
-  ['North East', /\bnewcastle|sunderland|durham|middlesbrough|gateshead|teesside|north east\b/i],
-  ['Scotland', /\bglasgow|edinburgh|aberdeen|dundee|scotland|scottish|inverness|stirling\b/i],
-  ['Wales', /\bcardiff|swansea|newport|wales|welsh\b/i], ['Northern Ireland', /\bbelfast|northern ireland|derry\b/i], ['Ireland', /\bdublin|cork|galway|limerick|ireland\b/i],
+  ['London', /\b(?:london|westminster|camden|southwark|hackney|islington|tower hamlets|canary wharf|croydon|ealing|brent|lambeth|wandsworth|greenwich|lewisham|newham|barnet|hammersmith|kensington|chelsea|city of london|stratford|king'?s cross|shoreditch|battersea|nine elms|docklands|wembley|old oak)\b/i],
+  ['South East', /\b(?:surrey|kent|sussex|hampshire|berkshire|oxford|reading|brighton|southampton|portsmouth|milton keynes|guildford|maidstone|slough|crawley|woking)\b/i],
+  ['South West', /\b(?:bristol|bath|devon|cornwall|exeter|plymouth|gloucester|swindon|bournemouth|dorset|somerset|cheltenham)\b/i],
+  ['East of England', /\b(?:cambridge|norwich|ipswich|essex|chelmsford|peterborough|luton|hertford|watford|stevenage|colchester|southend)\b/i],
+  ['West Midlands', /\b(?:birmingham|coventry|wolverhampton|solihull|worcester|warwick|stoke|telford|west midlands)\b/i],
+  ['East Midlands', /\b(?:nottingham|leicester|derby|northampton|lincoln|east midlands)\b/i],
+  ['North West', /\b(?:manchester|salford|liverpool|chester|preston|lancashire|cumbria|warrington|bolton|stockport|wigan|trafford|north west)\b/i],
+  ['Yorkshire', /\b(?:leeds|sheffield|york|bradford|hull|wakefield|doncaster|huddersfield|harrogate|yorkshire)\b/i],
+  ['North East', /\b(?:newcastle|sunderland|durham|middlesbrough|gateshead|teesside|north east)\b/i],
+  ['Scotland', /\b(?:glasgow|edinburgh|aberdeen|dundee|scotland|scottish|inverness|stirling)\b/i],
+  ['Wales', /\b(?:cardiff|swansea|newport|wales|welsh)\b/i], ['Northern Ireland', /\b(?:belfast|northern ireland|derry)\b/i], ['Ireland', /\b(?:dublin|cork|galway|limerick|ireland)\b/i],
 ];
 
 const num = (s: string) => parseFloat(s.replace(/,/g, ''));
@@ -90,10 +90,11 @@ export function partiesOf(text: string): Parties {
   const p: Parties = {}; const t = text.replace(/\s+/g, ' ');
   const name = '((?:[A-Z][\\w&\'’.-]*\\s?){1,5}(?:Ltd|Limited|plc|PLC|LLP|Group|Holdings|Capital|Partners|Developments?|Properties|Estates|Homes|Living|Investments?|Investors|Management|Trust|REIT|Bank|Fund|Construction|Contractors|Build|Interiors|Engineering|Architects|Studio|Design)?)';
   const grab = (re: RegExp) => { const m = t.match(re); return m ? m[1].trim().replace(/^(the|a|an)\s+/i, '') : undefined; };
-  p.developer = grab(new RegExp(`(?:developer|developers|development company|housebuilder|house builder|landowner|owner|investor|operator)\\s+${name}`)) || grab(new RegExp(`${name}\\s+(?:has|have)\\s+(?:submitted|lodged|secured|won|unveiled|revealed|acquired|bought|appointed|been granted|received|started|begun|completed)`));
-  p.funder = grab(new RegExp(`(?:funded by|financed by|loan from|facility from|lender|lenders|funder|backed by|finance from|debt from|provided by)\\s+${name}`)) || grab(new RegExp(`${name}\\s+(?:has|have)\\s+(?:provided|agreed|lent|lends|closed|completed)\\s+(?:a|an|the)?\\s?£`));
-  p.contractor = grab(new RegExp(`(?:contractor|main contractor|principal contractor|builder|appointed|awarded to|won by|delivered by|built by)\\s+${name}`)) || grab(new RegExp(`${name}\\s+(?:has|have)\\s+(?:won|been appointed|been awarded|landed|secured|started on site|begun work|broken ground)`));
-  p.architect = grab(new RegExp(`(?:designed by|architects?|architect)\\s+${name}`));
+  const ci = (words: string) => '(?:' + words.split('|').map(w => w.length ? `[${w[0].toUpperCase()}${w[0]}]${w.slice(1)}` : w).join('|') + ')';
+  p.developer = grab(new RegExp(`${ci('developer|developers|development company|housebuilder|house builder|landowner|owner|investor|operator')}\\s+${name}`)) || grab(new RegExp(`${name}\\s+(?:has|have|is|are)?\\s?(?:submitted|submits|lodged|lodges|secured|secures|won|wins|unveiled|unveils|revealed|reveals|acquired|acquires|bought|buys|appointed|appoints|been granted|received|receives|started|starts|begun|begins|completed|completes|plans|seeks|applies)\\b`));
+  p.funder = grab(new RegExp(`${ci('funded by|financed by|loan from|facility from|lender|lenders|funder|backed by|finance from|debt from|provided by')}\\s+${name}`)) || grab(new RegExp(`${name}\\s+(?:has|have)\\s+(?:provided|agreed|lent|lends|closed|completed)\\s+(?:a|an|the)?\\s?£`));
+  p.contractor = grab(new RegExp(`${ci('contractor|main contractor|principal contractor|builder|appointed|awarded to|won by|delivered by|built by')}\\s+${name}`)) || grab(new RegExp(`${name}\\s+(?:has|have)\\s+(?:won|been appointed|been awarded|landed|secured|started on site|begun work|broken ground)`));
+  p.architect = grab(new RegExp(`${ci('designed by|architects|architect')}\\s+${name}`));
   return Object.fromEntries(Object.entries(p).filter(([, v]) => v && v.length > 3 && v.length < 80)) as Parties;
 }
 export function classifyLead(text: string, hint: { applicant?: string; authority?: string; appType?: string; appState?: string; appSize?: string } = {}): Lead {
@@ -119,4 +120,42 @@ export function isLeadWorthy(l: Lead) {
   if (['news', 'leadership'].includes(l.stage)) return false;
   if (['infrastructure', 'public'].includes(l.sector) && l.stage !== 'distress') return false;
   return l.isLarge || !!l.parties.developer || !!l.parties.funder || l.stage === 'distress';
+}
+
+// ---- Sellability: can Vanor sell something off this signal, to whom, for how much, how soon? ----
+export type Sellability = { score: number; tier: 'Hot' | 'Warm' | 'Watch'; parts: { moment: number; buyer: number; size: number; access: number; fresh: number; sector: number; complexity: number }; play: string; call: string; why: string };
+const MOMENT: Record<Stage, number> = { funded: 1, granted: 0.95, tender: 0.9, stalled: 0.9, contractor_appointed: 0.7, acquired: 0.65, submitted: 0.6, on_site: 0.5, pre_planning: 0.35, distress: 0.3, appeal: 0.3, refused: 0.2, leadership: 0.3, completed: 0.15, news: 0.1 };
+const BUYER: Record<string, number> = { developer: 1, hotel_group: 1, owner_occupier: 1, fund: 0.95, family_office: 0.95, lender: 0.95, public_body: 0.6, contractor: 0.3, unknown: 0.35 };
+const SIZE_BAND: Record<string, number> = { '£100m+': 1, '£50m–£100m': 0.9, '£20m–£50m': 0.8, '£5m–£20m': 0.6, '£1m–£5m': 0.35, 'Under £1m': 0.15, 'Value unknown': 0.4 };
+const OFF_SECTOR: Sector[] = ['infrastructure', 'public', 'industrial', 'retail'];
+const COMPLEX = /\blisted|grade (i|ii)|heritage|live (environment|hospital|hotel|campus)|occupied|phased|decant|basement|m&e|mep|mechanical|commissioning|laborator|data ?cent|cut[- ]and[- ]carve|facade|cladding|remediation|gateway 2|higher[- ]risk building|hrb\b/i;
+export const CALL_FOR: Record<string, string> = { developer: 'Development Director or MD', hotel_group: 'Group Property Director or Head of Development', fund: 'Head of Asset Management', family_office: 'The principal or their asset manager', lender: 'Director, Real Estate Finance (they have a monitoring need)', owner_occupier: 'Director of Estates or Head of Capital Projects', public_body: 'Head of Capital Projects (framework route)', contractor: 'Not the contractor: the employer or funder they are working for', unknown: 'Whoever loses money if the date moves' };
+
+export function sellability(lead: Lead, buyerType: string, text: string, date: string, opts: { knownContacts?: number; warm?: boolean; today?: Date } = {}): Sellability {
+  const today = opts.today || new Date();
+  const isContractor = /\b(contractors?|construction|building|interiors|fit[- ]?out|m&e|mechanical|electrical|scaffold|groundwork|civil)\b/i.test(lead.parties.developer || '') && !/develop|homes|propert|estates|capital|living/i.test(lead.parties.developer || '');
+  const buyerKey = isContractor ? 'contractor' : (buyerType in BUYER ? buyerType : 'unknown');
+  const exposedParty = !!(lead.parties.funder || (lead.parties.developer && !isContractor));
+  let moment = MOMENT[lead.stage];
+  if (lead.stage === 'distress') moment = exposedParty ? 0.8 : lead.sector !== 'unknown' && !isContractor ? 0.5 : 0.3;
+  const complexity = COMPLEX.test(text) ? 1.12 : 1;
+  moment = Math.min(1, moment * complexity);
+  const buyer = lead.stage === 'distress' && !exposedParty ? Math.min(BUYER[buyerKey], 0.5) : BUYER[buyerKey];
+  const size = lead.valueBand === 'Value unknown' && lead.isLarge ? 0.6 : SIZE_BAND[lead.valueBand] ?? 0.4;
+  const named = !!(lead.parties.developer || lead.parties.funder);
+  const access = opts.warm ? 1 : (opts.knownContacts || 0) > 0 ? 0.9 : named ? 0.6 : 0.3;
+  const days = (today.getTime() - (Date.parse(date) || today.getTime())) / 864e5;
+  const fresh = days <= 14 ? 1 : days <= 30 ? 0.8 : days <= 90 ? 0.5 : 0.3;
+  const sector = OFF_SECTOR.includes(lead.sector) ? 0.6 : lead.sector === 'unknown' ? 0.85 : 1;
+  const score = Math.round((30 * moment + 25 * buyer + 20 * size + 15 * access + 10 * fresh) * sector);
+  const tier: Sellability['tier'] = score >= 65 ? 'Hot' : score >= 45 ? 'Warm' : 'Watch';
+  const why = [
+    `${STAGE_LABEL[lead.stage]}${lead.stage === 'distress' ? (exposedParty ? ', exposed party named' : ', no exposed party named yet') : ''}`,
+    buyerKey === 'contractor' ? 'contractor, not a buyer' : buyerKey === 'unknown' ? 'buyer type unclear' : `${buyerKey.replace('_', ' ')} buys this`,
+    lead.valueBand === 'Value unknown' ? (lead.isLarge ? 'large, value unstated' : 'size unknown') : lead.valueBand,
+    opts.warm ? 'warm contact on the board' : (opts.knownContacts || 0) > 0 ? `${opts.knownContacts} contact${opts.knownContacts === 1 ? '' : 's'} on the board` : named ? 'company named' : 'nobody named',
+    complexity > 1 ? 'complex: our edge' : '',
+    sector < 1 && lead.sector !== 'unknown' ? 'off-sector' : '',
+  ].filter(Boolean).join(' · ');
+  return { score, tier, parts: { moment: +moment.toFixed(2), buyer, size, access, fresh, sector, complexity }, play: STAGE_PLAY[lead.stage], call: CALL_FOR[buyerKey], why };
 }

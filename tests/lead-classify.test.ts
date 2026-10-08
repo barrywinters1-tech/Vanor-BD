@@ -27,3 +27,12 @@ test('planning hint drives stage', () => {
 test('value bands from size when no £', () => {
   assert.equal(valueBand(sizeOf('80 homes')), '£20m–£50m'); assert.equal(valueBand(sizeOf('a new shop')), 'Value unknown');
 });
+import { sellability } from '../lib/lead-classify.ts';
+test('sellability: funded scheme at a named developer beats a winding-up petition against an unknown Ltd', () => {
+  const funded = classifyLead('Watkin Jones secures £65m development loan from OakNorth Bank for 600-bed student scheme in Leeds');
+  const petition = classifyLead('Petition to wind up: HAZELBY EVANS DEVELOPMENTS LTD. Petition to wind up notice in The Gazette.');
+  const a = sellability(funded, 'lender', 'x', new Date().toISOString()), b = sellability(petition, 'developer', 'x', new Date().toISOString());
+  assert.ok(a.score > b.score + 30); assert.equal(a.tier, 'Hot'); assert.equal(b.tier, 'Watch');
+  const c = sellability(petition, 'developer', 'x', new Date().toISOString(), { knownContacts: 2 });
+  assert.ok(c.score > b.score);
+});
