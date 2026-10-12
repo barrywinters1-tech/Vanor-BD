@@ -43,7 +43,7 @@ export async function deriveTasks() {
   const add = async (x: Parameters<typeof addTask>[0]) => { if ((await addTask(x)).created) created++; };
   for (const r of records) {
     const d: Entity = dById.get(r.id) || { id: r.id }; const ask = d.nextAsk || r.nextAsk; const due = d.nextDate || r.nextDate;
-    if (ask && due && due >= addDays(t0, -30) && due <= addDays(t0, 60))
+    if (ask && due && due >= addDays(t0, -14) && due <= addDays(t0, 60))
       await add({ title: `${ask}`.slice(0, 140), owner: owner(r), due, priority: due <= addDays(t0, 3) ? 'High' : 'Normal', source: { kind: 'record', id: r.id, label: `${r.name || ''} · ${r.company || ''}` }, notes: '', createdBy: 'Engine' });
     const dr = d.draft; if (dr && dr.status === 'pushed' && dr.pushedAt && String(dr.pushedAt).slice(0, 10) >= addDays(t0, -7))
       await add({ title: `Send the draft to ${r.name || r.company} from Outlook`, owner: owner(r), due: addDays(String(dr.pushedAt).slice(0, 10), 1), priority: 'High', source: { kind: 'draft', id: r.id, label: dr.subject }, notes: 'It is in Outlook Drafts. Read it once, then send.', createdBy: 'Engine' });
@@ -74,6 +74,7 @@ export async function sweepTasks() {
     if (s.kind === 'draft' && s.id) { const dr = dec.get(s.id)?.draft; if (!dr || dr.status !== 'pushed') reason = 'draft no longer waiting in Outlook'; }
     if (s.kind === 'proposal' && s.id) { const pr = dec.get(s.id)?.proposal; if (!pr || pr.status !== 'pushed') reason = 'proposal no longer waiting in Outlook'; }
     if (s.kind === 'event' && s.id) { const e = ev.get(s.id); if (!e || e.archived || (t.title.startsWith('Decide and book') && e.date && e.date < t0) || (t.title.startsWith('Prepare for') && e.date && e.date < t0)) reason = 'event passed or archived'; }
+    if (!reason && s.kind === 'record' && t.createdBy === 'Engine' && t.due && t.due < addDays(t0, -21)) reason = 'stale next ask on the record (3+ weeks past); update the record if it still matters';
     if (!reason && t.due && t.due < addDays(t0, -45)) reason = 'more than 45 days overdue; closed by sweep, reopen if it still matters';
     if (reason) { await updateEntity('decision', t.id, cur => ({ ...cur, status: 'Done', doneAt: new Date().toISOString(), doneBy: 'Engine', notes: `${cur.notes || ''}\nClosed by sweep: ${reason}.`.trim() })); closed.push(`${t.title} (${reason})`); }
   }
