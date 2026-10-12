@@ -36,3 +36,11 @@ test('sellability: funded scheme at a named developer beats a winding-up petitio
   const c = sellability(petition, 'developer', 'x', new Date().toISOString(), { knownContacts: 2 });
   assert.ok(c.score > b.score);
 });
+
+test('architects named as the actor are not the developer', async () => {
+  const { partiesOf, classifyLead } = await import('../lib/lead-classify.ts');
+  const p = partiesOf('Gensler unveils towers to replace Birmingham’s House of Fraser store. Gensler has designed two residential towers of 1,000 homes.');
+  assert.equal(p.developer, undefined);
+  const q = classifyLead('Allies and Morrison adds up to 1,500 more homes to Croydon masterplan');
+  assert.equal(q.parties.developer, undefined);
+});

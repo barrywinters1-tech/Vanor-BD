@@ -97,7 +97,7 @@ export function contractorsIn(text: string) {
   return out.slice(0, 5);
 }
 
-const PLANNING_NOISE = /householder|pursuant to condition|deed of variation|s\.?106|section 106|changing (block|rooms?)|tennis court|condition \d+|details reserved by|non[- ]material amendment|\bnma\b|section 73|\bs73\b|minor material amendment|discharge of condition|approval of details|prior approval|prior notification|lawful development|certificate of lawful|advertisement consent|\badvert\b|tree works|tpo\b|listed building consent only|variation of condition|removal of condition|urgent works|unstable|retention of|change of use from (a |previous |an existing )?(dwelling|house|flat)|\bshopfront|replacement (windows|doors|roof)|internal alterations|repairs? to|re-?roofing|signage|\bcanopy\b|air[- ]?conditioning|\bplant\b.{0,20}\broof\b/i;
+const PLANNING_NOISE = /householder|pursuant to condition|deed of variation|s\.?106|section 106|changing (block|rooms?)|tennis court|condition \d+|details reserved by|non[- ]material amendment|\bnma\b|section 73|\bs73\b|minor material amendment|discharge of condition|approval of details|prior approval|prior notification|lawful development|certificate of lawful|advertisement consent|\badvert\b|tree works|tpo\b|listed building consent only|variation of condition|removal of condition|urgent works|unstable|retention of|loft conversion|dormer|velux|roof ?lights?|mansard|boundary treatment|vehicle gates?|pedestrian gates?|railings|\bhmo\b|house in multiple occupation|self[- ]contained flats?|dwelling ?house (into|to)|dwelling (into|to) \d|subdivision of (an |the )?existing dwelling|(single|two|double) storey (rear|side|infill)|rear extension|side extension|infill extension|retiling|screening opinion|\beia\b|non[- ]illuminated|illuminated (fascia|sign)|display of|sign measuring|fascia sign|\/(adv|clp|obs|tpo|cac|nma|pa|doc|con|scr|eia|ces|lbc)(\b|%)|change of use from (a |previous |an existing )?(dwelling|house|flat)|\bshopfront|replacement (windows|doors|roof)|internal alterations|repairs? to|re-?roofing|signage|\bcanopy\b|air[- ]?conditioning|\bplant\b.{0,20}\broof\b/i;
 export function isSignal(s: Signal) {
   const t = `${s.title} ${s.summary}`.toLowerCase();
   if (s.source === 'planit' || s.source === 'planning_data_gov' || s.source === 'london_datahub')
@@ -264,7 +264,7 @@ export function hiringSignal(src: 'reed' | 'adzuna', title: string, company: str
   const t = `${title}`.toLowerCase();
   if (!HIRING_TITLES.some(k => t.includes(k)) || HIRING_TITLE_OFF.test(title)) return null;
   if (!HIRING_CONTEXT.test(`${title} ${description}`) || HIRING_OFF.test(`${title} ${description.slice(0, 600)}`)) return null;
-  if (!company || isRecruiter(company, description)) return null;
+  if (!company || /^(anonymous|confidential|undisclosed)/i.test(company) || isRecruiter(company, description)) return null;
   return { source: `hiring_${src}`, applicant: company, hint: { applicant: company, hiring: true },
     title: `${company} hiring: ${title}`, link, date: date.slice(0, 10),
     summary: `Hiring ${title} (${location}${salary ? ', ' + salary : ''}). ${description.replace(/\s+/g, ' ').slice(0, 420)}`.slice(0, 600) };
@@ -277,7 +277,7 @@ export async function fetchHiring(errors: string[]): Promise<Signal[]> {
   if (reedKey) {
     for (const q of queries) {
       try {
-        const u = `https://www.reed.co.uk/api/1.0/search?keywords=${encodeURIComponent(q)}&locationName=London&distanceFromLocation=30&postedByDirectEmployer=true&resultsToTake=50`;
+        const u = `https://www.reed.co.uk/api/1.0/search?keywords=${encodeURIComponent(q)}&locationName=London&distanceFromLocation=30&resultsToTake=100`;
         const r = await fetch(u, { headers: { ...UA, Authorization: 'Basic ' + Buffer.from(reedKey + ':').toString('base64') }, signal: AbortSignal.timeout(15000), cache: 'no-store' });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const j = await r.json();

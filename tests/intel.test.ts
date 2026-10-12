@@ -92,3 +92,9 @@ test('business development and off-sector employers are not hiring signals', asy
   const ok = hiringSignal('reed', 'Development Manager', 'Regal London', 'Residential development company delivering mixed-use schemes; manage consultants and the main contractor through RIBA stages', 'https://c', '2026-10-12', 'London', '');
   assert.ok(ok);
 });
+
+test('small residential and advert applications are noise', () => {
+  for (const t of ['Newham: Proposed loft conversion with rear and side dormer extension', 'Brent: Conversion of existing maisonette flat into 2x self-contained flats', 'Westminster: Display of non illuminated other sign measuring 2.4m', 'Haringey: Removal of existing boundary treatments including vehicle gates', 'Enfield: Change of use from Use Class C3 (dwelling house) to Use Class C4 (HMO)'])
+    assert.equal(isSignal({ source: 'london_datahub', title: t, link: 'x', date: '', summary: 'residential hotel' }), false, t);
+  assert.equal(isSignal({ source: 'london_datahub', title: 'Manchester: Partial demolition, refurbishment and conversion of existing buildings together with construction of 53no. residential units', link: 'y', date: '', summary: 'residential | Size: Large' }), true);
+});
