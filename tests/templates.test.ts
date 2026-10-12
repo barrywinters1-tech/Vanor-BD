@@ -25,3 +25,12 @@ test('first approach uses template and week commencing', () => {
   const d = composeDraft({ r, warm: false, cell: 'A1', segment: 'developer' })!;
   assert.equal(d.template, 'first_approach'); assert.match(d.body, /w\/c \d+/); assert.match(d.body, /Hi Jane/);
 });
+
+test('a hiring lead with an email gets the capacity template with the role named', async () => {
+  const { composeDraft } = await import('../lib/outreach-logic.ts');
+  const r = { id: 'x', name: 'Managing Director', company: 'Cast Consultancy', email: 'md@cast.example', title: 'Cast Consultancy hiring: Associate Director Project Management', intel: { stage: 'hiring' }, fitSector: 'developer' };
+  const d = composeDraft({ r, warm: false, cell: 'A2', segment: 'consultancy' });
+  assert.ok(d && d.template === 'capacity');
+  assert.match(d!.body, /looking for an Associate Director Project Management/);
+  assert.match(d!.subject, /senior capacity while you recruit/);
+});

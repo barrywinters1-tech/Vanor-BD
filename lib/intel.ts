@@ -2,7 +2,7 @@
 // Plain code, no AI: fetch feeds -> keep real signals -> score -> leads for the board's review queue.
 
 import { classifyLead, isLeadWorthy, sellability, type Lead, type Sellability } from './lead-classify.ts';
-export type Signal = { title: string; link: string; date: string; summary: string; source: string; applicant?: string; hint?: { applicant?: string; authority?: string; appType?: string; appState?: string; appSize?: string } };
+export type Signal = { title: string; link: string; date: string; summary: string; source: string; applicant?: string; hint?: { applicant?: string; authority?: string; appType?: string; appState?: string; appSize?: string; hiring?: boolean } };
 export type Scored = Signal & {
   score: number; complexity: number; distress: number; money: number; timing: number;
   buyerType: string; talkTo: string; signs: string; organisation: string; contractors: string[]; lead: Lead; sell: Sellability;
@@ -44,9 +44,11 @@ export const BUYERS: Record<string, { talkTo: string; signs: string; weight: num
   lender: { talkTo: 'Director, Real Estate Finance', signs: 'Credit committee', weight: 0.9 },
   owner_occupier: { talkTo: 'Director of Estates / Head of Capital Projects', signs: 'Board or Finance Director', weight: 1.0 },
   public_body: { talkTo: 'Head of Capital Projects', signs: 'Cabinet / Board (framework route)', weight: 0.7 },
+  consultancy: { talkTo: 'Managing Director or head of project management', signs: 'Partners', weight: 0.85 },
   unknown: { talkTo: 'Whoever loses money if the date moves', signs: 'Unknown', weight: 0.5 },
 };
 const KEYS: [string, string[]][] = [
+  ['consultancy', ['consultancy', 'consultants', 'consulting', 'project management', 'cost management', 'chartered surveyors', 'surveyors', 'llp']],
   ['hotel_group', ['hotel', 'hotels', 'hospitality', 'resort', 'inn']],
   ['fund', ['capital', 'partners', 'asset management', 'investment', 'fund', 'reit']],
   ['family_office', ['family office', 'estates ltd', 'holdings']],
@@ -100,7 +102,7 @@ export function isSignal(s: Signal) {
   const t = `${s.title} ${s.summary}`.toLowerCase();
   if (s.source === 'planit' || s.source === 'planning_data_gov' || s.source === 'london_datahub')
     return !t.includes('size: small') && !PLANNING_NOISE.test(t) && CONFIG.sectors.some(k => t.includes(k));
-  if (s.source.startsWith('gazette')) return true;
+  if (s.source.startsWith('gazette') || s.source.startsWith('hiring')) return true;
   // Press: a stage we act on, a sector we serve, and a size or a named party (Glenigan's 10 homes / £250k rule).
   return isLeadWorthy(classifyLead(`${s.title}. ${s.summary}`, s.hint));
 }
@@ -115,6 +117,7 @@ export function score(s: Signal, today = new Date()): Scored {
   const timing = distress ? 10 : 4;
   const lead = classifyLead(text, s.hint || (s.applicant ? { applicant: s.applicant } : undefined));
   if ((s.source === 'planit' || s.source === 'london_datahub') && ['news', 'leadership'].includes(lead.stage)) lead.stage = 'submitted';
+  if (s.source.startsWith('hiring')) { lead.stage = 'hiring'; if (s.applicant) lead.parties.developer = s.applicant; }
   if (s.source.startsWith('gazette')) {
     // The insolvent company is the subject, never the buyer. The buyer is the employer or funder it owes a building to, if the notice names one (it rarely does).
     lead.stage = 'distress';
@@ -125,6 +128,7 @@ export function score(s: Signal, today = new Date()): Scored {
   let buyerType = classify(s.applicant || lead.parties.developer || lead.parties.funder || text);
   if (buyerType === 'unknown' && ((s.source === 'planit' || s.source === 'london_datahub') && s.applicant || lead.parties.developer)) buyerType = 'developer';
   if (buyerType === 'unknown' && lead.parties.funder) buyerType = 'lender';
+  if (s.source.startsWith('hiring') && !['developer', 'hotel_group', 'fund', 'lender', 'owner_occupier', 'public_body', 'family_office'].includes(buyerType)) buyerType = 'consultancy';
   const sell = sellability(lead, buyerType, text, s.date, { today });
   return {
     ...s, complexity, distress, money, timing, buyerType,
@@ -246,6 +250,54 @@ export async function fetchPlanningDataGov(errors: string[]): Promise<Signal[]> 
   } catch (e) { errors.push(`planning.data.gov.uk: ${e instanceof Error ? e.message : e}`); return []; }
 }
 
+// ---- Hiring signals: a consultancy, developer or owner advertising a senior delivery role has more work than people. ----
+// Reed (free API key, basic auth, has a direct-employer filter) and Adzuna (free app id + key). Both are optional: with no key the source is skipped and says so.
+const HIRING_TITLES = ['employers agent', "employer's agent", 'project manager', 'senior project manager', 'project director', 'development manager', 'commercial manager', 'programme manager', 'head of construction', 'head of development', 'head of projects', 'associate director project management'];
+const HIRING_CONTEXT = /\b(construction|development|property|real estate|built environment|developer|consultanc|employer'?s agent|project management|hotel|residential|mixed[- ]use|fit[- ]?out|data cent)/i;
+const HIRING_OFF = /\b(software|it project|digital|agile|scrum|saas|cyber|data engineer|marketing|pharma|clinical|nhs|rail|highways|nuclear|defence|utilities|water|aviation|telecom|archaeolog|archaeological|fire suppression|hvac engineer|electrical engineer|apprentice|graduate|trainee)\b/i;
+export const RECRUITER = /\b(recruit\w*|careers|personnel|resourcing|staffing|talent|search|selection|headhunt\w*|people solutions|jobs|employment|appointments?|hays|reed|randstad|adecco|manpower|michael page|page group|robert walters|morgan sindall recruitment|aldwych consulting|carriera|blayze|deverellsmith|madison berkeley|capstone|forsyth barnes|gleeson|emerson partners|cobalt|skilled careers|cotech|findcore|sphere solutions|3d personnel|fawkes|spencer ogden|owen daniels|walker & sloan|the shore group|datax|g2|office angels|rainfordberry|future build|green recruitment|construction professionals)\b/i;
+export function isRecruiter(company: string, description: string) {
+  return RECRUITER.test(company) || /\b(our client|on behalf of (our|a) client|my client|the client is)\b/i.test(description);
+}
+export function hiringSignal(src: 'reed' | 'adzuna', title: string, company: string, description: string, link: string, date: string, location: string, salary: string): Signal | null {
+  const t = `${title}`.toLowerCase();
+  if (!HIRING_TITLES.some(k => t.includes(k))) return null;
+  if (!HIRING_CONTEXT.test(`${title} ${description}`) || HIRING_OFF.test(`${title} ${description.slice(0, 600)}`)) return null;
+  if (!company || isRecruiter(company, description)) return null;
+  return { source: `hiring_${src}`, applicant: company, hint: { applicant: company, hiring: true },
+    title: `${company} hiring: ${title}`, link, date: date.slice(0, 10),
+    summary: `Hiring ${title} (${location}${salary ? ', ' + salary : ''}). ${description.replace(/\s+/g, ' ').slice(0, 420)}`.slice(0, 600) };
+}
+export async function fetchHiring(errors: string[]): Promise<Signal[]> {
+  const out: Signal[] = [];
+  const reedKey = process.env.REED_API_KEY; const adzId = process.env.ADZUNA_APP_ID; const adzKey = process.env.ADZUNA_APP_KEY;
+  if (!reedKey && !(adzId && adzKey)) { errors.push('hiring: no REED_API_KEY or ADZUNA_APP_ID/ADZUNA_APP_KEY set; hiring source skipped'); return out; }
+  const queries = ["employer's agent", 'senior project manager construction', 'project director construction', 'development manager', 'commercial manager construction'];
+  if (reedKey) {
+    for (const q of queries) {
+      try {
+        const u = `https://www.reed.co.uk/api/1.0/search?keywords=${encodeURIComponent(q)}&locationName=London&distanceFromLocation=30&postedByDirectEmployer=true&resultsToTake=50`;
+        const r = await fetch(u, { headers: { ...UA, Authorization: 'Basic ' + Buffer.from(reedKey + ':').toString('base64') }, signal: AbortSignal.timeout(15000), cache: 'no-store' });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = await r.json();
+        for (const x of (j.results || [])) { const sg = hiringSignal('reed', x.jobTitle || '', x.employerName || '', x.jobDescription || '', x.jobUrl || '', x.date ? x.date.split('/').reverse().join('-') : '', x.locationName || '', x.maximumSalary ? `to £${Math.round(x.maximumSalary / 1000)}k` : ''); if (sg) out.push(sg); }
+      } catch (e) { errors.push(`hiring_reed(${q}): ${e instanceof Error ? e.message : e}`); }
+    }
+  }
+  if (adzId && adzKey) {
+    for (const q of queries) {
+      try {
+        const u = `https://api.adzuna.com/v1/api/jobs/gb/search/1?app_id=${adzId}&app_key=${adzKey}&what_phrase=${encodeURIComponent(q)}&where=London&distance=40&max_days_old=14&results_per_page=50&content-type=application/json`;
+        const r = await fetch(u, { headers: UA, signal: AbortSignal.timeout(15000), cache: 'no-store' });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = await r.json();
+        for (const x of (j.results || [])) { const sg = hiringSignal('adzuna', x.title || '', x.company?.display_name || '', x.description || '', x.redirect_url || '', x.created || '', x.location?.display_name || '', x.salary_max ? `to £${Math.round(x.salary_max / 1000)}k` : ''); if (sg) out.push(sg); }
+      } catch (e) { errors.push(`hiring_adzuna(${q}): ${e instanceof Error ? e.message : e}`); }
+    }
+  }
+  return out;
+}
+
 // The Gazette notice-type feeds (thegazette.co.uk/data): titles are company names, so filter to construction/property firms.
 export const GAZETTE_TYPES: Record<string, string> = { '2450': 'Petition to wind up', '2441': 'Appointment of administrators', '2410': 'Appointment of liquidators' };
 const BUILT_ENV = /\b(construct\w*|build\w*|contract\w*|develop\w*|homes?|propert\w*|estates?|interiors?|fit[- ]?out|joinery|scaffold\w*|groundwork\w*|civil\w*|engineering|mechanical|electrical|m ?& ?e|plumbing|roofing|cladding|facades?|steel|concrete|demolition|housing|living|hotels?|hospitality|land|regeneration|refurb\w*|carpentry|brickwork|drylining|partition\w*|glazing|windows)\b/i;
@@ -290,7 +342,7 @@ export async function companiesHouseDirectors(name: string) {
 /** Fetch everything, keep real signals, score, dedupe by link, best first. */
 export async function scan(today = new Date()) {
   const errors: string[] = [];
-  const all = (await Promise.all([fetchFeeds(errors), fetchGazette(errors), fetchPlanIt(errors), fetchLondonDatahub(errors)])).flat();
+  const all = (await Promise.all([fetchFeeds(errors), fetchGazette(errors), fetchPlanIt(errors), fetchLondonDatahub(errors), fetchHiring(errors)])).flat();
   const seen = new Set<string>();
   const scored = all.filter(isSignal).filter(s => s.link && !seen.has(s.link) && seen.add(s.link)).map(s => score(s, today))
     .sort((a, b) => b.score - a.score);

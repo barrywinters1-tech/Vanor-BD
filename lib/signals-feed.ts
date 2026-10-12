@@ -36,7 +36,7 @@ export async function signalFeed({ days = 30, buyersOnly = true, limit = 60 }: {
       const date = String(r.intel?.signalDate || r.createdAt || '').slice(0, 10); if (date < since) continue;
       if (dismissed(r.id).has('lead')) continue;
       const h = r.headlines?.lead || {};
-      const src = /gazette/i.test(r.source || '') ? 'The Gazette' : /planning/i.test(r.source || '') ? 'Planning' : 'Press';
+      const src = /gazette/i.test(r.source || '') ? 'The Gazette' : /planning/i.test(r.source || '') ? 'Planning' : /hiring/i.test(r.source || '') ? 'Hiring' : 'Press';
       const it = r.intel || {}; const stage = it.stage || (src === 'The Gazette' ? 'distress' : src === 'Planning' ? 'submitted' : 'news');
       items.push({ id: r.id, key: 'lead', date, source: src, headline: h.headline || r.title || r.company || r.name, why: h.why || '', text: String(r.context || '').split('\n')[0].slice(0, 200), link: r.sourceUrl || '', cell: cellOf.get(r.id)?.cell || '', company: r.company || '', polished: !!h.headline, stage, sector: it.sector || '', value: it.valueBand || '', region: it.region || r.region || '', parties: it.parties || {}, play: it.play || STAGE_PLAY[stage as Stage] || '', tier: it.tier || '', score: Number(it.score || 0), whyScore: it.why || '', call: it.call || '' });
     }

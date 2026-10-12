@@ -2,17 +2,17 @@
 // stage in the project life, sector, development type, size and value, parties, region. Plain regex, no AI.
 // Thresholds follow Glenigan's "large project" rule as described to the ONS: 10+ homes or £250k+ non-residential.
 
-export type Stage = 'pre_planning' | 'submitted' | 'granted' | 'refused' | 'appeal' | 'funded' | 'acquired' | 'tender' | 'contractor_appointed' | 'on_site' | 'completed' | 'stalled' | 'distress' | 'leadership' | 'news';
+export type Stage = 'pre_planning' | 'submitted' | 'granted' | 'refused' | 'appeal' | 'funded' | 'acquired' | 'tender' | 'contractor_appointed' | 'on_site' | 'completed' | 'stalled' | 'distress' | 'leadership' | 'news' | 'hiring';
 export const STAGE_LABEL: Record<Stage, string> = {
   pre_planning: 'Pre-planning', submitted: 'Plans submitted', granted: 'Plans granted', refused: 'Plans refused', appeal: 'At appeal', funded: 'Funding secured', acquired: 'Site acquired',
-  tender: 'Out to tender', contractor_appointed: 'Contractor appointed', on_site: 'On site', completed: 'Completed', stalled: 'Stalled', distress: 'Distress', leadership: 'People move', news: 'News',
+  tender: 'Out to tender', contractor_appointed: 'Contractor appointed', on_site: 'On site', completed: 'Completed', stalled: 'Stalled', distress: 'Distress', leadership: 'People move', news: 'News', hiring: 'Hiring senior staff',
 };
 /** What Vanor offers at each stage, in the founders' words. */
 export const STAGE_PLAY: Record<Stage, string> = {
   pre_planning: 'Early: offer a delivery-risk view before the scheme is fixed', submitted: 'Pre-construction: peer review of programme and cost plan before tender', granted: 'Consent in: offer the pre-tender Stress Test, the window is now',
   refused: 'Watch: re-submission likely, keep warm', appeal: 'Watch: decision pending', funded: 'Funder has a monitoring need and the developer has a start date: call both', acquired: 'New owner, new scheme: get in before the team is appointed',
   tender: 'Tender stage: independent review of contractor programmes and bids', contractor_appointed: 'Contract let: offer monitoring or an early-warning review for the client or funder', on_site: 'On site: position finding if it has drifted; monitoring for the funder',
-  completed: 'Closing out: final account and claims support', stalled: 'Stalled: position finding and recovery plan', distress: 'Distress: call the employer or funder exposed, not the insolvent party', leadership: 'New decision-maker: introduce Vanor in their first 90 days', news: 'Context only',
+  completed: 'Closing out: final account and claims support', stalled: 'Stalled: position finding and recovery plan', distress: 'Distress: call the employer or funder exposed, not the insolvent party', leadership: 'New decision-maker: introduce Vanor in their first 90 days', news: 'Context only', hiring: 'More work than people: offer Barry and Graeme as senior capacity while they recruit',
 };
 export type DevType = 'new_build' | 'refurbishment' | 'conversion' | 'extension' | 'demolition' | 'infrastructure' | 'unknown';
 export type Sector = 'residential' | 'btr' | 'pbsa' | 'later_living' | 'hotel' | 'leisure' | 'office' | 'retail' | 'mixed_use' | 'industrial' | 'data_centre' | 'life_sciences' | 'education' | 'health' | 'public' | 'infrastructure' | 'heritage' | 'unknown';
@@ -101,7 +101,7 @@ export function partiesOf(text: string): Parties {
   if (p.developer && p.contractor && p.developer.toLowerCase() === p.contractor.toLowerCase()) delete p.developer;
   return Object.fromEntries(Object.entries(p).filter(([, v]) => v && v.length > 3 && v.length < 80 && !BARE.test(v))) as Parties;
 }
-export function classifyLead(text: string, hint: { applicant?: string; authority?: string; appType?: string; appState?: string; appSize?: string } = {}): Lead {
+export function classifyLead(text: string, hint: { applicant?: string; authority?: string; appType?: string; appState?: string; appSize?: string; hiring?: boolean } = {}): Lead {
   const t = `${text} ${hint.appType || ''} ${hint.appState || ''}`;
   let stage: Stage = 'news';
   if (hint.appState) { const s = hint.appState.toLowerCase(); stage = /permitted|granted|approved|conditions/.test(s) ? 'granted' : /refused|rejected/.test(s) ? 'refused' : /appeal/.test(s) ? 'appeal' : /withdrawn/.test(s) ? 'stalled' : 'submitted'; }
@@ -130,12 +130,12 @@ export function isLeadWorthy(l: Lead) {
 
 // ---- Sellability: can Vanor sell something off this signal, to whom, for how much, how soon? ----
 export type Sellability = { score: number; tier: 'Hot' | 'Warm' | 'Watch'; parts: { moment: number; buyer: number; size: number; access: number; fresh: number; sector: number; complexity: number }; play: string; call: string; why: string };
-const MOMENT: Record<Stage, number> = { funded: 1, granted: 0.95, tender: 0.9, stalled: 0.9, contractor_appointed: 0.7, acquired: 0.65, submitted: 0.6, on_site: 0.5, pre_planning: 0.35, distress: 0.3, appeal: 0.3, refused: 0.2, leadership: 0.3, completed: 0.15, news: 0.1 };
-const BUYER: Record<string, number> = { developer: 1, hotel_group: 1, owner_occupier: 1, fund: 0.95, family_office: 0.95, lender: 0.95, public_body: 0.6, contractor: 0.3, unknown: 0.35 };
+const MOMENT: Record<Stage, number> = { funded: 1, granted: 0.95, tender: 0.9, stalled: 0.9, contractor_appointed: 0.7, acquired: 0.65, submitted: 0.6, on_site: 0.5, pre_planning: 0.35, distress: 0.3, appeal: 0.3, refused: 0.2, leadership: 0.3, completed: 0.15, news: 0.1, hiring: 0.75 };
+const BUYER: Record<string, number> = { developer: 1, hotel_group: 1, owner_occupier: 1, fund: 0.95, family_office: 0.95, lender: 0.95, consultancy: 0.85, public_body: 0.6, contractor: 0.3, unknown: 0.35 };
 const SIZE_BAND: Record<string, number> = { '£100m+': 1, '£50m–£100m': 0.9, '£20m–£50m': 0.8, '£5m–£20m': 0.6, '£1m–£5m': 0.35, 'Under £1m': 0.15, 'Value unknown': 0.4 };
 const OFF_SECTOR: Sector[] = ['infrastructure', 'public', 'industrial', 'retail'];
 const COMPLEX = /\blisted|grade (i|ii)|heritage|live (environment|hospital|hotel|campus)|occupied|phased|decant|basement|m&e|mep|mechanical|commissioning|laborator|data ?cent|cut[- ]and[- ]carve|facade|cladding|remediation|gateway 2|higher[- ]risk building|hrb\b/i;
-export const CALL_FOR: Record<string, string> = { developer: 'Development Director or MD', hotel_group: 'Group Property Director or Head of Development', fund: 'Head of Asset Management', family_office: 'The principal or their asset manager', lender: 'Director, Real Estate Finance (they have a monitoring need)', owner_occupier: 'Director of Estates or Head of Capital Projects', public_body: 'Head of Capital Projects (framework route)', contractor: 'Not the contractor: the employer or funder they are working for', unknown: 'Whoever loses money if the date moves' };
+export const CALL_FOR: Record<string, string> = { developer: 'Development Director or MD', hotel_group: 'Group Property Director or Head of Development', fund: 'Head of Asset Management', family_office: 'The principal or their asset manager', lender: 'Director, Real Estate Finance (they have a monitoring need)', owner_occupier: 'Director of Estates or Head of Capital Projects', public_body: 'Head of Capital Projects (framework route)', consultancy: 'Managing Director or the partner who runs the project management team', contractor: 'Not the contractor: the employer or funder they are working for', unknown: 'Whoever loses money if the date moves' };
 
 export function sellability(lead: Lead, buyerType: string, text: string, date: string, opts: { knownContacts?: number; warm?: boolean; today?: Date } = {}): Sellability {
   const today = opts.today || new Date();

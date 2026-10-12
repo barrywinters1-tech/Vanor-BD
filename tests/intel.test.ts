@@ -73,3 +73,14 @@ test('minor works and generic party words are filtered', () => {
   assert.equal(isSignal({ source: 'london_datahub', title: 'Westminster: Urgent works for the removal of an unstable stone landing at the hotel', link: 'x', date: '', summary: 'hotel | Size: ' }), false);
   assert.equal(isSignal({ source: 'london_datahub', title: 'Redbridge: Retention of office use (Class E) following change of use from previous dwellinghouse', link: 'y', date: '', summary: 'office' }), false);
 });
+
+test('hiring signals keep direct employers and drop recruiters and off-sector roles', async () => {
+  const { hiringSignal, isRecruiter } = await import('../lib/intel.ts');
+  assert.equal(isRecruiter('Aldwych Consulting Ltd', ''), true);
+  assert.equal(isRecruiter('Cast Consultancy', 'Our client is a leading developer'), true);
+  assert.equal(isRecruiter('Cast Consultancy', 'We are a project management consultancy'), false);
+  const ok = hiringSignal('reed', 'Associate Director Project Management', 'Cast Consultancy', 'We are a construction consultancy growing our project management team in London.', 'https://x', '2026-10-12', 'London', 'to £95k');
+  assert.ok(ok && ok.source === 'hiring_reed' && ok.applicant === 'Cast Consultancy');
+  assert.equal(hiringSignal('reed', 'Project Manager', 'Faculty', 'Agile software delivery manager for digital products', 'https://y', '2026-10-12', 'London', ''), null);
+  assert.equal(hiringSignal('reed', 'Project Director', 'Skilled Careers', 'Our client needs a project director', 'https://z', '2026-10-12', 'London', ''), null);
+});
