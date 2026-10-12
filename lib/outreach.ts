@@ -68,7 +68,10 @@ export async function approvedDrafts(limit = 30) {
 }
 
 export async function markDraftPushed(id: string, outlookId: string) {
-  await updateEntity('decision', id, cur => ({ ...cur, draft: { ...(cur.draft || {}), status: 'pushed', pushedAt: new Date().toISOString(), outlookId } }));
+  const pushedAt = new Date().toISOString();
+  await updateEntity('decision', id, cur => ({ ...cur, draft: { ...(cur.draft || {}), status: 'pushed', pushedAt, outlookId },
+    // Which template went out, and when: the funnel attributes later sent/reply outcomes to it so we learn what works.
+    draftHistory: [...((cur.draftHistory as any[]) || []).slice(-19), { template: (cur.draft || {}).template || 'unknown', kind: (cur.draft || {}).kind || '', pushedAt, outlookId }] }));
   await logEvent({ entityId: id, recordId: id, type: 'Draft to Outlook', note: `Approved draft placed in Outlook Drafts (${outlookId.slice(0, 12)}…). Not sent.` });
   return { ok: true };
 }

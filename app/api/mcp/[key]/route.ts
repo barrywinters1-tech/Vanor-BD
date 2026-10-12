@@ -16,7 +16,7 @@ import { lookupPerson } from '../../../../lib/rocketreach';
 import { runIntel } from '../../../../lib/intel-ingest';
 import { priorityList } from '../../../../lib/priority';
 import { logOutcome, funnel, STEPS } from '../../../../lib/funnel';
-import { listTasks, addTask, completeTask, deriveTasks } from '../../../../lib/tasks';
+import { listTasks, addTask, completeTask, deriveTasks, sweepTasks } from '../../../../lib/tasks';
 import { generateDrafts, approvedDrafts, markDraftPushed, saveDraft, autoClassify, batchApprove, listTemplates, saveTemplate, saveProposal, approvedProposals, markProposalPushed, getSettings } from '../../../../lib/outreach';
 import { signalFeed, setHeadline } from '../../../../lib/signals-feed';
 import { researchCompany, normCompany } from '../../../../lib/company-intel';
@@ -401,6 +401,11 @@ function createServer() {
     description: 'Creates tasks from next asks, pushed drafts and proposals, event deadlines and event follow-ups. Runs daily anyway.',
     inputSchema: {}, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async () => out(await deriveTasks(), 'Derived.'));
+  server.registerTool('sweep_tasks', {
+    title: 'Overdue sweep',
+    description: 'Closes tasks whose reason has gone (contact archived, draft or proposal no longer waiting in Outlook, event passed, 45+ days overdue) and returns what is still overdue, oldest first, plus a one-line summary for the daily report. Nothing is deleted. Runs daily anyway.',
+    inputSchema: {}, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async () => out(await sweepTasks(), 'Swept.'));
 
   server.registerTool('signal_feed', {
     title: 'Signals feed (what the board shows under Signals)',

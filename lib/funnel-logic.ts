@@ -23,3 +23,17 @@ export function stepOf(e: { type?: unknown; [key: string]: unknown }): Step | nu
   }
   return null;
 }
+
+/** What the numbers say, in plain lines. Only speaks when there is enough data (5+ sends in a bucket); says so otherwise. Never auto-tunes: the founders decide. */
+export function lessons(byTemplate: Array<{ template: string; sent: number; replies: number; replyRate: number | null }>, byTrigger: Array<{ trigger: string; sent: number; replies: number; replyRate: number | null }>): string[] {
+  const out: string[] = [];
+  const enough = <R extends { sent: number; replyRate: number | null }>(rows: R[]) => rows.filter(r => r.sent >= 5 && r.replyRate !== null);
+  const t = enough(byTemplate).sort((a, b) => (b.replyRate! - a.replyRate!));
+  if (t.length >= 2) out.push(`Templates: "${t[0].template}" is replying at ${t[0].replyRate}% (${t[0].sent} sent) against "${t[t.length - 1].template}" at ${t[t.length - 1].replyRate}% (${t[t.length - 1].sent} sent). Use more of the first; rewrite or retire the second.`);
+  else if (byTemplate.length) out.push(`Templates: too few sends per template to judge yet (need 5+). ${byTemplate.map(x => `${x.template} ${x.sent}`).join(', ')}.`);
+  const g = enough(byTrigger).sort((a, b) => (b.replyRate! - a.replyRate!));
+  if (g.length >= 2) out.push(`Triggers: "${g[0].trigger}" replies at ${g[0].replyRate}%, "${g[g.length - 1].trigger}" at ${g[g.length - 1].replyRate}%. Weight the Signals feed towards the first.`);
+  const zero = byTemplate.filter(x => x.sent >= 8 && x.replies === 0);
+  for (const z of zero) out.push(`"${z.template}" has ${z.sent} sends and no reply: stop using it until it is rewritten.`);
+  return out;
+}

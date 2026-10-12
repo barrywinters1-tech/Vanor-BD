@@ -61,3 +61,22 @@ export async function deriveTasks() {
   }
   return { created };
 }
+
+/** Overdue sweep: closes tasks whose reason has gone (record archived, draft sent or replaced, event passed) and reports what is still overdue, oldest first. Nothing is deleted. */
+export async function sweepTasks() {
+  const t0 = today();
+  const [open, records, decisions, events] = await Promise.all([listTasks({ status: 'Open', limit: 1000 }), listScope('source'), listScope('decision'), listScope('planned_event')]);
+  const rec = new Map(records.map(r => [r.id, r])); const dec = new Map(decisions.map(d => [d.id, d])); const ev = new Map(events.map(e => [e.id, e]));
+  const closed: string[] = [];
+  for (const t of open) {
+    const s = t.source || ({} as Task['source']); let reason = '';
+    if (s.kind === 'record' && s.id && (rec.get(s.id)?.archived || !rec.has(s.id))) reason = 'contact archived';
+    if (s.kind === 'draft' && s.id) { const dr = dec.get(s.id)?.draft; if (!dr || dr.status !== 'pushed') reason = 'draft no longer waiting in Outlook'; }
+    if (s.kind === 'proposal' && s.id) { const pr = dec.get(s.id)?.proposal; if (!pr || pr.status !== 'pushed') reason = 'proposal no longer waiting in Outlook'; }
+    if (s.kind === 'event' && s.id) { const e = ev.get(s.id); if (!e || e.archived || (t.title.startsWith('Decide and book') && e.date && e.date < t0) || (t.title.startsWith('Prepare for') && e.date && e.date < t0)) reason = 'event passed or archived'; }
+    if (!reason && t.due && t.due < addDays(t0, -45)) reason = 'more than 45 days overdue; closed by sweep, reopen if it still matters';
+    if (reason) { await updateEntity('decision', t.id, cur => ({ ...cur, status: 'Done', doneAt: new Date().toISOString(), doneBy: 'Engine', notes: `${cur.notes || ''}\nClosed by sweep: ${reason}.`.trim() })); closed.push(`${t.title} (${reason})`); }
+  }
+  const overdue = open.filter(t => t.due && t.due < t0 && !closed.some(c => c.startsWith(t.title))).map(t => ({ id: t.id, title: t.title, owner: t.owner, due: t.due, daysLate: Math.round((Date.parse(t0) - Date.parse(t.due)) / DAY), label: t.source?.label || '' }));
+  return { closed, overdue, line: overdue.length ? `Overdue: ${overdue.length} (oldest ${overdue[0].daysLate}d: ${overdue[0].title.slice(0, 60)})` : 'Overdue: none' };
+}

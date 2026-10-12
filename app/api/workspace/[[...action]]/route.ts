@@ -9,7 +9,7 @@ import { saveIntel, researchBatch } from '../../../../lib/company-intel-store';
 import { autoClassify, generateDrafts, batchApprove, listTemplates, saveTemplate, getSettings } from '../../../../lib/outreach';
 import { runIntel } from '../../../../lib/intel-ingest';
 import { lookupPerson, searchPeople } from '../../../../lib/rocketreach';
-import { addTask, completeTask, snoozeTask, deriveTasks } from '../../../../lib/tasks';
+import { addTask, completeTask, snoozeTask, deriveTasks, sweepTasks } from '../../../../lib/tasks';
 import { logEvent, saveEntity as storeSave, updateEntity as storeUpdate } from '../../../../lib/bd-store';
 import { runBackup } from '../../../../lib/backup-job';
 
@@ -208,7 +208,7 @@ export async function POST(request: NextRequest, context: Context) {
       const key = String(body?.key || '');
       await saveTemplate(key, body?.reset ? { subject: undefined, body: undefined, reset: true } : { subject: body?.subject, body: body?.body }); return reply({ templates: await listTemplates() });
     }
-    if (action === 'sync-tasks') return reply(await deriveTasks());
+    if (action === 'sync-tasks') { const d = await deriveTasks(); return reply({ ...d, sweep: await sweepTasks() }); }
     if (action === 'task') {
       const { data } = await access.db.auth.getUser(); const actor = /graeme/i.test(data.user?.email || '') ? 'Graeme' : 'Barry';
       if (body?.op === 'done' || body?.op === 'reopen') return reply(await completeTask(String(body.id), actor, body.op === 'done'));
