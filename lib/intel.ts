@@ -207,17 +207,22 @@ export async function fetchPlanIt(errors: string[]): Promise<Signal[]> {
 
 /** Planning London Datahub (GLA): all London boroughs, guest Elasticsearch API, structured units/floorspace. */
 export async function fetchLondonDatahub(errors: string[]): Promise<Signal[]> {
-  const since = new Date(Date.now() - CONFIG.planningRecentDays * 86400000).toISOString().slice(0, 10);
-  const body = { size: 200, query: { bool: { must: [{ range: { valid_date: { gte: since } } }, { query_string: { query: '(' + CONFIG.planningKeywords.map(k => `"${k}"`).join(' OR ') + ' OR "residential units" OR "mixed use" OR hotel OR offices) AND NOT (householder OR "non-material" OR "discharge of" OR "prior approval" OR advertisement OR tree)', default_field: 'description' } }] } } };
+  // GLA Planning London Datahub: Elasticsearch 7.9 behind a guest endpoint. Per the GLA's published connection doc
+  // (planninglondondatahub_api_connection_technical_documentation_v1.pdf): no auth, but the request must carry
+  // X-API-AllowRequest, and valid_date is dd/MM/yyyy. Without the header or with ISO dates it answers HTTP 400.
+  const d = new Date(Date.now() - CONFIG.planningRecentDays * 86400000);
+  const since = `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}`;
+  const body = { size: 200, sort: [{ valid_date: { order: 'desc', unmapped_type: 'date' } }], query: { bool: { must: [{ range: { valid_date: { gte: since, format: 'dd/MM/yyyy' } } }, { query_string: { query: '(' + CONFIG.planningKeywords.map(k => `"${k}"`).join(' OR ') + ' OR "residential units" OR "mixed use" OR hotel OR offices) AND NOT (householder OR "non-material" OR "discharge of" OR "prior approval" OR advertisement OR tree)', fields: ['description', 'site_name'], default_operator: 'OR' } }] } },
+    _source: ['lpa_name', 'borough', 'lpa_app_no', 'description', 'site_name', 'site_number', 'street_name', 'postcode', 'status', 'decision', 'application_type', 'development_type', 'valid_date', 'decision_date', 'last_updated', 'url_planning_app', 'application_details', 'applicant_name', 'agent_name'] };
   try {
-    const r = await fetch('https://planningdata.london.gov.uk/api-guest/applications/_search', { method: 'POST', headers: { ...UA, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(25000), cache: 'no-store' });
+    const r = await fetch('https://planningdata.london.gov.uk/api-guest/applications/_search', { method: 'POST', headers: { ...UA, 'Content-Type': 'application/json', 'X-API-AllowRequest': 'be2rmRnt&' }, body: JSON.stringify(body), signal: AbortSignal.timeout(25000), cache: 'no-store' });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const json = await r.json();
     return (json.hits?.hits || []).map((h: any) => h._source || {}).filter((e: any) => e.description).map((e: any) => {
       const det = e.application_details || {}; const units = det.residential_details?.total_no_proposed_residential_units; const gia = det.total_gia_proposed;
       const addr = [e.site_name, e.site_number, e.street_name, e.postcode].filter(Boolean).join(' ');
       return {
-        source: 'london_datahub', applicant: '', hint: { authority: e.lpa_name || e.borough || '', appType: e.application_type || '', appState: e.status || e.decision || '', appSize: units >= 10 || gia >= 1000 ? 'Large' : '' },
+        source: 'london_datahub', applicant: String(e.applicant_name || '').trim(), hint: { applicant: String(e.applicant_name || '').trim(), authority: e.lpa_name || e.borough || '', appType: e.application_type || '', appState: e.status || e.decision || '', appSize: units >= 10 || gia >= 1000 ? 'Large' : '' },
         title: `${e.lpa_name || e.borough || 'London'}: ${String(e.description || '').slice(0, 110)}`,
         link: e.url_planning_app || `https://planningdata.london.gov.uk/?lpa_app_no=${encodeURIComponent(e.lpa_app_no || '')}`, date: e.valid_date || e.decision_date || e.last_updated || '',
         summary: `${e.description || ''} | Address: ${addr} | Status: ${e.status || ''} ${e.decision || ''} | Type: ${e.application_type || ''} ${e.development_type || ''} | Size: ${units ? units + ' homes' : ''} ${gia ? gia + ' sq m' : ''} | Ref: ${e.lpa_app_no || ''}`.slice(0, 600),
