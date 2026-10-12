@@ -68,3 +68,8 @@ test('gazette: the insolvent company is the subject, not an exposed buyer', () =
   const f = score({ source: 'property_week', title: 'Watkin Jones secures £65m development loan from OakNorth Bank for 600-bed student scheme in Leeds', summary: '', link: 'w', date: '2026-10-05' }, today);
   assert.ok(f.score > r.score + 30);
 });
+
+test('minor works and generic party words are filtered', () => {
+  assert.equal(isSignal({ source: 'london_datahub', title: 'Westminster: Urgent works for the removal of an unstable stone landing at the hotel', link: 'x', date: '', summary: 'hotel | Size: ' }), false);
+  assert.equal(isSignal({ source: 'london_datahub', title: 'Redbridge: Retention of office use (Class E) following change of use from previous dwellinghouse', link: 'y', date: '', summary: 'office' }), false);
+});

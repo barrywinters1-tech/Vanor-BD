@@ -97,7 +97,7 @@ export function partiesOf(text: string): Parties {
   p.funder = grab(new RegExp(`${ci('funded by|financed by|loan from|facility from|lender|lenders|funder|backed by|finance from|debt from|provided by')}\\s+${name}`)) || grab(new RegExp(`${name}\\s+(?:has|have)\\s+(?:provided|agreed|lent|lends|closed|completed)\\s+(?:a|an|the)?\\s?£`));
   p.contractor = grab(new RegExp(`${ci('contractor|main contractor|principal contractor|builder|appointed|awarded to|won by|delivered by|built by')}\\s+${name}`)) || grab(new RegExp(`${name}\\s+(?:has|have)\\s+(?:won|been appointed|been awarded|landed|secured|started on site|begun work|broken ground)`));
   p.architect = grab(new RegExp(`${ci('designed by|architects|architect')}\\s+${name}`));
-  const BARE = /^(the |a )?(construction|developments?|homes|group|holdings|properties|property|estates|capital|partners|living|investments?|management|building|contractors?|limited|ltd|plc)$/i;
+  const BARE = /^(the |a )?(construction|developments?|homes|group|holdings|properties|property|estates|capital|partners|living|investments?|management|building|contractors?|limited|ltd|plc|application|applicant|agent|council|borough|planning|proposal|scheme|site|owner|client)$/i;
   if (p.developer && p.contractor && p.developer.toLowerCase() === p.contractor.toLowerCase()) delete p.developer;
   return Object.fromEntries(Object.entries(p).filter(([, v]) => v && v.length > 3 && v.length < 80 && !BARE.test(v))) as Parties;
 }
