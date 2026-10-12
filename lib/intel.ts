@@ -117,7 +117,7 @@ export function score(s: Signal, today = new Date()): Scored {
   const timing = distress ? 10 : 4;
   const lead = classifyLead(text, s.hint || (s.applicant ? { applicant: s.applicant } : undefined));
   if ((s.source === 'planit' || s.source === 'london_datahub') && ['news', 'leadership'].includes(lead.stage)) lead.stage = 'submitted';
-  if (s.source.startsWith('hiring')) { lead.stage = 'hiring'; if (s.applicant) lead.parties.developer = s.applicant; }
+  if (s.source.startsWith('hiring')) lead.stage = 'hiring';
   if (s.source.startsWith('gazette')) {
     // The insolvent company is the subject, never the buyer. The buyer is the employer or funder it owes a building to, if the notice names one (it rarely does).
     lead.stage = 'distress';
@@ -126,9 +126,9 @@ export function score(s: Signal, today = new Date()): Scored {
     if (s.applicant && CONTRACTOR_NAME.test(s.applicant)) lead.parties.contractor = s.applicant;
   }
   let buyerType = classify(s.applicant || lead.parties.developer || lead.parties.funder || text);
-  if (buyerType === 'unknown' && ((s.source === 'planit' || s.source === 'london_datahub') && s.applicant || lead.parties.developer)) buyerType = 'developer';
+  if (buyerType === 'unknown' && !s.source.startsWith('hiring') && ((s.source === 'planit' || s.source === 'london_datahub') && s.applicant || lead.parties.developer)) buyerType = 'developer';
   if (buyerType === 'unknown' && lead.parties.funder) buyerType = 'lender';
-  if (s.source.startsWith('hiring') && !['developer', 'hotel_group', 'fund', 'lender', 'owner_occupier', 'public_body', 'family_office'].includes(buyerType)) buyerType = 'consultancy';
+  if (s.source.startsWith('hiring')) { if (!['developer', 'hotel_group', 'fund', 'lender', 'owner_occupier', 'public_body', 'family_office', 'consultancy'].includes(buyerType)) buyerType = /\b(developer|development company|homes|regeneration|investor|landlord|estate)\b/i.test(text) && !/consultanc/i.test(text) ? 'developer' : 'consultancy'; lead.parties.developer = s.applicant || lead.parties.developer; }
   const sell = sellability(lead, buyerType, text, s.date, { today });
   return {
     ...s, complexity, distress, money, timing, buyerType,
@@ -253,7 +253,8 @@ export async function fetchPlanningDataGov(errors: string[]): Promise<Signal[]> 
 // ---- Hiring signals: a consultancy, developer or owner advertising a senior delivery role has more work than people. ----
 // Reed (free API key, basic auth, has a direct-employer filter) and Adzuna (free app id + key). Both are optional: with no key the source is skipped and says so.
 const HIRING_TITLES = ['employers agent', "employer's agent", 'project manager', 'senior project manager', 'project director', 'development manager', 'commercial manager', 'programme manager', 'head of construction', 'head of development', 'head of projects', 'associate director project management'];
-const HIRING_CONTEXT = /\b(construction|development|property|real estate|built environment|developer|consultanc|employer'?s agent|project management|hotel|residential|mixed[- ]use|fit[- ]?out|data cent)/i;
+const HIRING_CONTEXT = /\b(construction|property development|real estate|built environment|developer|consultanc\w*|employer'?s agent|project management consultanc|cost consultan|quantity surveyor|rics|jct|nec[34]?\b|main contractor|refurbishment|fit[- ]?out|new[- ]build|residential development|mixed[- ]use|hotel development|data cent)/i;
+const HIRING_TITLE_OFF = /\b(business development|sales|account|marketing|software|digital|it\b|product|learning|training|hr\b|people|finance|fundrais|partnership|events?|customer|clinical|care|charity|retail|merchant|recruitment)\b/i;
 const HIRING_OFF = /\b(software|it project|digital|agile|scrum|saas|cyber|data engineer|marketing|pharma|clinical|nhs|rail|highways|nuclear|defence|utilities|water|aviation|telecom|archaeolog|archaeological|fire suppression|hvac engineer|electrical engineer|apprentice|graduate|trainee)\b/i;
 export const RECRUITER = /\b(recruit\w*|careers|personnel|resourcing|staffing|talent|search|selection|headhunt\w*|people solutions|jobs|employment|appointments?|hays|reed|randstad|adecco|manpower|michael page|page group|robert walters|morgan sindall recruitment|aldwych consulting|carriera|blayze|deverellsmith|madison berkeley|capstone|forsyth barnes|gleeson|emerson partners|cobalt|skilled careers|cotech|findcore|sphere solutions|3d personnel|fawkes|spencer ogden|owen daniels|walker & sloan|the shore group|datax|g2|office angels|rainfordberry|future build|green recruitment|construction professionals)\b/i;
 export function isRecruiter(company: string, description: string) {
@@ -261,7 +262,7 @@ export function isRecruiter(company: string, description: string) {
 }
 export function hiringSignal(src: 'reed' | 'adzuna', title: string, company: string, description: string, link: string, date: string, location: string, salary: string): Signal | null {
   const t = `${title}`.toLowerCase();
-  if (!HIRING_TITLES.some(k => t.includes(k))) return null;
+  if (!HIRING_TITLES.some(k => t.includes(k)) || HIRING_TITLE_OFF.test(title)) return null;
   if (!HIRING_CONTEXT.test(`${title} ${description}`) || HIRING_OFF.test(`${title} ${description.slice(0, 600)}`)) return null;
   if (!company || isRecruiter(company, description)) return null;
   return { source: `hiring_${src}`, applicant: company, hint: { applicant: company, hiring: true },

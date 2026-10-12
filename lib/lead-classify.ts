@@ -130,7 +130,7 @@ export function isLeadWorthy(l: Lead) {
 
 // ---- Sellability: can Vanor sell something off this signal, to whom, for how much, how soon? ----
 export type Sellability = { score: number; tier: 'Hot' | 'Warm' | 'Watch'; parts: { moment: number; buyer: number; size: number; access: number; fresh: number; sector: number; complexity: number }; play: string; call: string; why: string };
-const MOMENT: Record<Stage, number> = { funded: 1, granted: 0.95, tender: 0.9, stalled: 0.9, contractor_appointed: 0.7, acquired: 0.65, submitted: 0.6, on_site: 0.5, pre_planning: 0.35, distress: 0.3, appeal: 0.3, refused: 0.2, leadership: 0.3, completed: 0.15, news: 0.1, hiring: 0.75 };
+const MOMENT: Record<Stage, number> = { funded: 1, granted: 0.95, tender: 0.9, stalled: 0.9, contractor_appointed: 0.7, acquired: 0.65, submitted: 0.6, on_site: 0.5, pre_planning: 0.35, distress: 0.3, appeal: 0.3, refused: 0.2, leadership: 0.3, completed: 0.15, news: 0.1, hiring: 0.65 };
 const BUYER: Record<string, number> = { developer: 1, hotel_group: 1, owner_occupier: 1, fund: 0.95, family_office: 0.95, lender: 0.95, consultancy: 0.85, public_body: 0.6, contractor: 0.3, unknown: 0.35 };
 const SIZE_BAND: Record<string, number> = { '£100m+': 1, '£50m–£100m': 0.9, '£20m–£50m': 0.8, '£5m–£20m': 0.6, '£1m–£5m': 0.35, 'Under £1m': 0.15, 'Value unknown': 0.4 };
 const OFF_SECTOR: Sector[] = ['infrastructure', 'public', 'industrial', 'retail'];

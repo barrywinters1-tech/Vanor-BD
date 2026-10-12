@@ -84,3 +84,11 @@ test('hiring signals keep direct employers and drop recruiters and off-sector ro
   assert.equal(hiringSignal('reed', 'Project Manager', 'Faculty', 'Agile software delivery manager for digital products', 'https://y', '2026-10-12', 'London', ''), null);
   assert.equal(hiringSignal('reed', 'Project Director', 'Skilled Careers', 'Our client needs a project director', 'https://z', '2026-10-12', 'London', ''), null);
 });
+
+test('business development and off-sector employers are not hiring signals', async () => {
+  const { hiringSignal } = await import('../lib/intel.ts');
+  assert.equal(hiringSignal('reed', 'Business Development Manager', 'Compass Group UK', 'Grow our catering accounts across London hotels and offices', 'https://a', '2026-10-12', 'London', ''), null);
+  assert.equal(hiringSignal('reed', 'Development Manager', 'LycaHealth', 'Healthcare clinic growth role', 'https://b', '2026-10-12', 'London', ''), null);
+  const ok = hiringSignal('reed', 'Development Manager', 'Regal London', 'Residential development company delivering mixed-use schemes; manage consultants and the main contractor through RIBA stages', 'https://c', '2026-10-12', 'London', '');
+  assert.ok(ok);
+});
