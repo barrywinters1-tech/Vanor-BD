@@ -206,7 +206,10 @@ export async function fetchPlanIt(errors: string[]): Promise<Signal[]> {
     }
     await sleep(1500);
   }
-  return out;
+  // An "employer" with four or more senior adverts live at once is an agency, whatever it calls itself.
+  const perCo = new Map<string, number>(); for (const x of out) perCo.set(x.applicant || '', (perCo.get(x.applicant || '') || 0) + 1);
+  const seenLink = new Set<string>();
+  return out.filter(x => (perCo.get(x.applicant || '') || 0) < 4 && !seenLink.has(x.link) && seenLink.add(x.link));
 }
 
 /** Planning London Datahub (GLA): all London boroughs, guest Elasticsearch API, structured units/floorspace. */
@@ -254,9 +257,9 @@ export async function fetchPlanningDataGov(errors: string[]): Promise<Signal[]> 
 // Reed (free API key, basic auth, has a direct-employer filter) and Adzuna (free app id + key). Both are optional: with no key the source is skipped and says so.
 const HIRING_TITLES = ['employers agent', "employer's agent", 'project manager', 'senior project manager', 'project director', 'development manager', 'commercial manager', 'programme manager', 'head of construction', 'head of development', 'head of projects', 'associate director project management'];
 const HIRING_CONTEXT = /\b(construction|property development|real estate|built environment|developer|consultanc\w*|employer'?s agent|project management consultanc|cost consultan|quantity surveyor|rics|jct|nec[34]?\b|main contractor|refurbishment|fit[- ]?out|new[- ]build|residential development|mixed[- ]use|hotel development|data cent)/i;
-const HIRING_TITLE_OFF = /\b(business development|sales|account|marketing|software|digital|it\b|product|learning|training|hr\b|people|finance|fundrais|partnership|events?|customer|clinical|care|charity|retail|merchant|recruitment)\b/i;
+const HIRING_TITLE_OFF = /\b(assistant|junior|graduate|trainee|apprentice|intern|business development|sales|account|marketing|software|digital|it\b|product|learning|training|hr\b|people|finance|fundrais|partnership|events?|customer|clinical|care|charity|retail|merchant|recruitment)\b/i;
 const HIRING_OFF = /\b(software|it project|digital|agile|scrum|saas|cyber|data engineer|marketing|pharma|clinical|nhs|rail|highways|nuclear|defence|utilities|water|aviation|telecom|archaeolog|archaeological|fire suppression|hvac engineer|electrical engineer|apprentice|graduate|trainee)\b/i;
-export const RECRUITER = /\b(recruit\w*|careers|personnel|resourcing|staffing|talent|search|selection|headhunt\w*|people solutions|jobs|employment|appointments?|hays|reed|randstad|adecco|manpower|michael page|page group|robert walters|morgan sindall recruitment|aldwych consulting|carriera|blayze|deverellsmith|madison berkeley|capstone|forsyth barnes|gleeson|emerson partners|cobalt|skilled careers|cotech|findcore|sphere solutions|3d personnel|fawkes|spencer ogden|owen daniels|walker & sloan|the shore group|datax|g2|office angels|rainfordberry|future build|green recruitment|construction professionals)\b/i;
+export const RECRUITER = /\b(recruit\w*|careers|personnel|resourcing|staffing|talent|search|selection|headhunt\w*|people solutions|jobs|employment|appointments?|hays|reed|randstad|adecco|manpower|michael page|page group|robert walters|morgan sindall recruitment|aldwych consulting|carriera|blayze|deverellsmith|madison berkeley|capstone|forsyth barnes|gleeson|emerson partners|cobalt|skilled careers|cotech|findcore|sphere solutions|3d personnel|fawkes|spencer ogden|owen daniels|walker & sloan|the shore group|datax|g2|office angels|rainfordberry|future build|green recruitment|construction professionals|brandon james|conrad consulting|calibre search|psr solutions|tsa surveying|hunter mason|rgb network|setsquare|fusion people|mattinson|vertical advantage|cityscape|arc group|daniel owen|lja recruitment|russell taylor|streamline|kenna|humres|tempest jones|invictus|premises recruitment|hill mcglynn)\b/i;
 export function isRecruiter(company: string, description: string) {
   return RECRUITER.test(company) || /\b(our client|on behalf of (our|a) client|my client|the client is)\b/i.test(description);
 }
