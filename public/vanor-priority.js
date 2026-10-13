@@ -77,7 +77,9 @@
     var out = function (l, reason, move) { return { lane: l, reason: reason, move: move || p.play }; };
     if (p.grade === 'C') return out('Off', (d && d.status === 'Archive') ? 'Archived' : 'Not a buyer', 'Nothing to do');
     if (stage === 'Opportunity' || stage === 'Commercial') return out('Now', 'Live ' + stage.toLowerCase() + (h.nextAsk ? ': ' + String(h.nextAsk).slice(0, 70) : ''), h.nextAsk ? 'Do the next ask' : 'Agree the next step and a date');
-    if (backD <= 14 && backD <= sentD) return out('Now', 'They replied ' + Math.floor(backD) + ' days ago', 'Answer today and propose a date');
+    if (backD < 0) return out('Now', 'Meeting in ' + Math.ceil(-backD) + ' days', 'Prepare: who is in the room and the one ask');
+    if (backD <= 14 && backD <= sentD) return out('Now', backD < 1 ? 'They replied today' : 'They replied ' + Math.floor(backD) + ' days ago', 'Answer today and propose a date');
+    if (sentD < 4 && backD > sentD) return out('Next', 'Sent ' + Math.floor(sentD) + ' days ago, waiting', 'Nothing until day 4');
     if (sentD <= 35 && backD > sentD) return out(p.grade === 'A' ? 'Now' : 'Next', 'No reply for ' + Math.floor(sentD) + ' days', 'One plain chase with a date, then stop');
     if (r.intel && r.intel.stage === 'hiring' && hasEmail) return out('Now', 'Hiring senior staff: more work than people', 'Offer senior capacity while they recruit');
     if (p.grade === 'A' && sigD <= 30 && (hasEmail || p.warm)) return out('Now', 'Trigger ' + Math.floor(sigD) + ' days ago: ' + String(p.top.text || p.top.type).slice(0, 70), p.play);

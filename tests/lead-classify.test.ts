@@ -61,3 +61,12 @@ test('lanes: one word per person from the shared module', async () => {
   const noEmail = { id: 'd', fitScore: 2 };
   assert.equal(P.lane(noEmail, {}, [], P.compute(noEmail, {}, [], now), {}, now).lane, 'Later');
 });
+
+test('lanes: a fresh send waits, a future meeting is preparation', async () => {
+  // @ts-ignore plain script that sets a global
+  await import('../public/vanor-priority.js');
+  const P = (globalThis as any).VanorPriority; const now = Date.parse('2026-10-13');
+  const r = { id: 'e', email: 'e@y.z', fitScore: 2 }; const p = P.compute(r, {}, [], now);
+  assert.equal(P.lane(r, {}, [], p, { lastSent: '2026-10-13' }, now).lane, 'Next');
+  assert.match(P.lane(r, {}, [], p, { lastBack: '2026-10-20' }, now).reason, /Meeting in 7 days/);
+});
