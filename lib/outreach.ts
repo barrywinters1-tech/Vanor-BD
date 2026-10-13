@@ -20,7 +20,8 @@ function warmScore(r: Entity, d: Entity | undefined, works: Entity[]) {
   return v;
 }
 
-export async function generateDrafts({ limit = 40, cells = ['A1', 'A2', 'B1'], staleDays = 14, ids }: { limit?: number; cells?: string[]; staleDays?: number; ids?: string[] } = {}) {
+// Cells include B2 because the funnel (60 days to 13 Oct 2026) shows keep-warm conversations replying at 68% and cold signal-led at 0 of 3.
+export async function generateDrafts({ limit = 40, cells = ['A1', 'A2', 'B1', 'B2'], staleDays = 14, ids }: { limit?: number; cells?: string[]; staleDays?: number; ids?: string[] } = {}) {
   const [records, decisions, work, events, prio] = await Promise.all([listScope('source'), listScope('decision'), listScope('work'), listScope('event'), priorityList({ cell: 'All', limit: 5000 })]);
   const dById = new Map(decisions.map(d => [d.id, d]));
   const templates = templateMap(decisions.filter(d => String(d.id).startsWith('template:')).map(d => ({ key: String(d.id).slice(9), subject: d.subject, body: d.body })));
@@ -35,10 +36,13 @@ export async function generateDrafts({ limit = 40, cells = ['A1', 'A2', 'B1'], s
     if (t === 'Outcome: sent' || t === 'Interaction: email out') { if ((lastSent.get(rid) || '') < d) lastSent.set(rid, d); sends.set(rid, [...(sends.get(rid) || []), d]); }
     else if (/^Outcome: (reply|meeting|proposal|won)|^Interaction: (email in|meeting)/.test(t)) { if ((lastBack.get(rid) || '') < d) lastBack.set(rid, d); } }
 
+  const scoreOf = new Map<string, number>((prio.rows || []).map((x: any) => [x.id, Number(x.score || 0)]));
+  const warmRank = (r: Entity) => (warmScore(r, dById.get(r.id), wByRecord.get(r.id) || []) >= 2 ? 2 : 0) + (lastSent.has(r.id) && (lastBack.get(r.id) || '') < (lastSent.get(r.id) || '') ? 1 : 0);
   const targets = records.filter(r => r.kind !== 'opportunity' && (ids ? ids.includes(r.id) : (cells.includes(cellOf.get(r.id) || '') || (lastSent.has(r.id) && (lastBack.get(r.id) || '') < (lastSent.get(r.id) || '')))))
     .filter(r => { const d = dById.get(r.id); if (d?.status === 'Archive') return false; const dr = d?.draft as Draft | undefined;
       if (ids) return true; if (!dr) return true; if (dr.status === 'pushed' && (lastSent.get(r.id) || '') >= String(dr.pushedAt || '').slice(0, 10)) return true; if (['approved', 'pushed', 'edited'].includes(dr.status)) return false; return daysAgo(dr.generatedAt) > staleDays; })
-    .sort((a, b) => ((prio.rows.find((x: any) => x.id === b.id)?.score) || 0) - ((prio.rows.find((x: any) => x.id === a.id)?.score) || 0))
+    // Warm first: a known relationship or an unanswered thread outranks a cold A1, because that is where replies come from.
+    .sort((a, b) => warmRank(b) - warmRank(a) || (scoreOf.get(b.id) || 0) - (scoreOf.get(a.id) || 0))
     .slice(0, limit);
 
   let made = 0, skipped = 0; const out: Array<{ id: string; kind: string; angle: string }> = [];
