@@ -46,6 +46,7 @@ test('architects named as the actor are not the developer', async () => {
 });
 
 test('lanes: one word per person from the shared module', async () => {
+  // @ts-ignore plain script that sets a global
   await import('../public/vanor-priority.js');
   const P = (globalThis as any).VanorPriority;
   const now = Date.parse('2026-10-13');
