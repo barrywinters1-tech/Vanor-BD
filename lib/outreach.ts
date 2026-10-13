@@ -27,6 +27,7 @@ export async function generateDrafts({ limit = 40, cells = ['A1', 'A2', 'B1', 'B
   const templates = templateMap(decisions.filter(d => String(d.id).startsWith('template:')).map(d => ({ key: String(d.id).slice(9), subject: d.subject, body: d.body })));
   const wByRecord = new Map<string, Entity[]>(); for (const w of work) { const l = wByRecord.get(w.recordId) || []; l.push(w); wByRecord.set(w.recordId, l); }
   const cellOf = new Map<string, string>((prio.rows || []).map((x: any) => [x.id, x.cell]));
+  const laneOf = new Map<string, string>((prio.rows || []).map((x: any) => [x.id, x.lane]));
   // Warmest known person per company, for intro paths.
   const warmest = new Map<string, { r: Entity; v: number }>();
   for (const r of records) { if (r.kind === 'opportunity') continue; const k = norm(r.company); if (!k) continue; const v = warmScore(r, dById.get(r.id), wByRecord.get(r.id) || []); if (!v) continue; const cur = warmest.get(k); if (!cur || v > cur.v) warmest.set(k, { r, v }); }
@@ -38,7 +39,8 @@ export async function generateDrafts({ limit = 40, cells = ['A1', 'A2', 'B1', 'B
 
   const scoreOf = new Map<string, number>((prio.rows || []).map((x: any) => [x.id, Number(x.score || 0)]));
   const warmRank = (r: Entity) => (warmScore(r, dById.get(r.id), wByRecord.get(r.id) || []) >= 2 ? 2 : 0) + (lastSent.has(r.id) && (lastBack.get(r.id) || '') < (lastSent.get(r.id) || '') ? 1 : 0);
-  const targets = records.filter(r => r.kind !== 'opportunity' && (ids ? ids.includes(r.id) : (cells.includes(cellOf.get(r.id) || '') || (lastSent.has(r.id) && (lastBack.get(r.id) || '') < (lastSent.get(r.id) || '')))))
+  // Only the Now and Next lanes get drafts; Later and Off never do, whatever their cell.
+  const targets = records.filter(r => r.kind !== 'opportunity' && (ids ? ids.includes(r.id) : (['Now', 'Next'].includes(laneOf.get(r.id) || '') && (cells.includes(cellOf.get(r.id) || '') || (lastSent.has(r.id) && (lastBack.get(r.id) || '') < (lastSent.get(r.id) || ''))))))
     .filter(r => { const d = dById.get(r.id); if (d?.status === 'Archive') return false; const dr = d?.draft as Draft | undefined;
       if (ids) return true; if (!dr) return true; if (dr.status === 'pushed' && (lastSent.get(r.id) || '') >= String(dr.pushedAt || '').slice(0, 10)) return true; if (['approved', 'pushed', 'edited'].includes(dr.status)) return false; return daysAgo(dr.generatedAt) > staleDays; })
     // Warm first: a known relationship or an unanswered thread outranks a cold A1, because that is where replies come from.

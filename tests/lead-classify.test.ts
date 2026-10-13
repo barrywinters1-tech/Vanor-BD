@@ -44,3 +44,19 @@ test('architects named as the actor are not the developer', async () => {
   const q = classifyLead('Allies and Morrison adds up to 1,500 more homes to Croydon masterplan');
   assert.equal(q.parties.developer, undefined);
 });
+
+test('lanes: one word per person from the shared module', async () => {
+  await import('../public/vanor-priority.js');
+  const P = (globalThis as any).VanorPriority;
+  const now = Date.parse('2026-10-13');
+  const buyer = { id: 'a', email: 'x@y.z', fitScore: 2, lastContact: '2026-09-01', companyIntel: { signals: [{ type: 'planning', date: '2026-10-01', text: 'Scheme submitted' }] } };
+  const p = P.compute(buyer, {}, [], now);
+  assert.equal(P.lane(buyer, {}, [], p, {}, now).lane, 'Now');
+  assert.equal(P.lane(buyer, {}, [], p, { lastBack: '2026-10-10', lastSent: '2026-10-08' }, now).reason, 'They replied 3 days ago');
+  const quiet = { id: 'b', email: 'q@y.z', fitScore: 2, lastContact: '2026-01-01' };
+  assert.equal(P.lane(quiet, {}, [], P.compute(quiet, {}, [], now), {}, now).lane, 'Next');
+  const notBuyer = { id: 'c', fitScore: 0 };
+  assert.equal(P.lane(notBuyer, {}, [], P.compute(notBuyer, {}, [], now), {}, now).lane, 'Off');
+  const noEmail = { id: 'd', fitScore: 2 };
+  assert.equal(P.lane(noEmail, {}, [], P.compute(noEmail, {}, [], now), {}, now).lane, 'Later');
+});

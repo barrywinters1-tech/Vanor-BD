@@ -65,6 +65,31 @@
     return { grade: g, heat: heat, cell: cell, score: g === 'C' ? 0 : score, need: n.value, relationship: rel, live: live, warm: warm, top: n.top, play: PLAYS[playKey] };
   }
 
+
+  /* One word per contact. Now / Next / Later / Off, with the reason and the move in plain English.
+     h (optional history): { hasEmail, lastSent, lastBack, nextAsk, stage } — the board and the server pass what they have. */
+  function lane(r, d, works, p, h, now) {
+    now = now || Date.now(); h = h || {};
+    var hasEmail = h.hasEmail != null ? !!h.hasEmail : !!(r.email && String(r.email).indexOf('@') > 0);
+    var stage = h.stage || ''; (works || []).forEach(function (w) { if (!w.archived && !stage) stage = w.stage; });
+    var sentD = h.lastSent ? age(h.lastSent, now) : 9999, backD = h.lastBack ? age(h.lastBack, now) : 9999;
+    var sigD = p.top && p.top.date ? age(p.top.date, now) : 9999;
+    var out = function (l, reason, move) { return { lane: l, reason: reason, move: move || p.play }; };
+    if (p.grade === 'C') return out('Off', (d && d.status === 'Archive') ? 'Archived' : 'Not a buyer', 'Nothing to do');
+    if (stage === 'Opportunity' || stage === 'Commercial') return out('Now', 'Live ' + stage.toLowerCase() + (h.nextAsk ? ': ' + String(h.nextAsk).slice(0, 70) : ''), h.nextAsk ? 'Do the next ask' : 'Agree the next step and a date');
+    if (backD <= 14 && backD <= sentD) return out('Now', 'They replied ' + Math.floor(backD) + ' days ago', 'Answer today and propose a date');
+    if (sentD <= 35 && backD > sentD) return out(p.grade === 'A' ? 'Now' : 'Next', 'No reply for ' + Math.floor(sentD) + ' days', 'One plain chase with a date, then stop');
+    if (r.intel && r.intel.stage === 'hiring' && hasEmail) return out('Now', 'Hiring senior staff: more work than people', 'Offer senior capacity while they recruit');
+    if (p.grade === 'A' && sigD <= 30 && (hasEmail || p.warm)) return out('Now', 'Trigger ' + Math.floor(sigD) + ' days ago: ' + String(p.top.text || p.top.type).slice(0, 70), p.play);
+    if (p.cell === 'A1') return out('Now', 'Right buyer with a live need and a relationship', 'Call this week');
+    if (p.grade === 'A' && hasEmail) return out('Next', 'Right buyer, email known, nothing live', 'First approach when the quota allows');
+    if (p.grade === 'A' && p.live && !hasEmail) return out('Next', 'Live trigger, no email yet', 'Find the decision-maker (RocketReach)');
+    if (p.cell === 'B1') return out('Next', 'Knows the decision-maker', 'Ask for the introduction');
+    if (p.warm && age(r.lastContact, now) >= 60 && age(r.lastContact, now) < 9000) return out('Next', 'Gone quiet for ' + Math.floor(age(r.lastContact, now)) + ' days', 'Catch up: ask what is next');
+    return out('Later', p.grade === 'A' ? 'Right buyer, no email, nothing live' : 'Possible introducer, nothing live', 'Research will flag a trigger');
+  }
+  var LANE_ORDER = { Now: 0, Next: 1, Later: 2, Off: 3 };
+
   /** Company-level tier: the top `size` grade-A companies by their best contact score. */
   function tierOne(rows, size) {
     var best = {};
@@ -74,5 +99,5 @@
     return function (r) { return !!set[norm(r.company)]; };
   }
 
-  root.VanorPriority = { compute: compute, tierOne: tierOne, norm: norm, PLAYS: PLAYS };
+  root.VanorPriority = { compute: compute, lane: lane, LANE_ORDER: LANE_ORDER, tierOne: tierOne, norm: norm, PLAYS: PLAYS };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

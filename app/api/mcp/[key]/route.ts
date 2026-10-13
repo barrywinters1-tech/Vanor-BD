@@ -73,8 +73,10 @@ function createServer() {
     work.filter(w => !w.archived).forEach(w => { stages[w.stage] = (stages[w.stage] || 0) + 1; });
     const review: Record<string, number> = {};
     records.filter(r => r.kind !== 'opportunity').forEach(r => { const s = reviewStatus(r, decisions[r.id], at); review[s] = (review[s] || 0) + 1; });
+    const prio = await priorityList({ cell: 'All', limit: limit || 15, lane: 'Now' });
     const data = {
       today: at, contacts: records.length, withEmail: records.filter(r => r.email).length,
+      lanes: prio.lanes, workNow: prio.rows.map(x => ({ id: x.id, name: x.name, company: x.company, reason: x.reason, move: x.move })),
       boardStages: stages, reviewStatus: review, ...chaseList(records, decisions, work, at, limit || 15),
     };
     return out(data, `${records.length} contacts, ${work.filter(w => !w.archived).length} live board cards.`);
@@ -270,10 +272,10 @@ function createServer() {
 
   server.registerTool('priority_list', {
     title: 'Priority matrix: who to work, in order',
-    description: 'The board\'s priority matrix. Grade A/B/C = right buyer (fit); Heat 1-3 = live need (dated signals, fading after 90 days) + relationship (board stage, recent contact, known contact). Cells: A1 pursue now (calls), A2 signal-led email or nurture, A3 watch, B1 ask for intro, B2 keep warm, B3 low, C not buyers; T1 = top 40 grade-A accounts. Returns counts per cell and the ranked contacts for one cell with "why" and "move".',
-    inputSchema: { cell: z.enum(['All', 'A1', 'A2', 'A3', 'B1', 'B2', 'B3', 'T1']).optional(), limit: z.number().int().min(1).max(100).optional() },
+    description: 'Who to work, in order. Every contact has ONE lane: Now (work this week: live opportunity, they replied, unanswered thread, fresh trigger on a right buyer, hiring), Next (right buyer with email and nothing live, intro to ask for, gone quiet), Later (nothing to do until research flags a trigger), Off (not a buyer or archived). Each row carries lane, reason and move in plain English. Pass lane="Now" for the founders\' working list. The older cell/grade fields remain for reference: Grade A/B/C = right buyer, Heat 1-3 = need + relationship, cells A1…C, T1 = top 40 grade-A accounts.',
+    inputSchema: { lane: z.enum(['Now', 'Next', 'Later', 'Off']).optional(), cell: z.enum(['All', 'A1', 'A2', 'A3', 'B1', 'B2', 'B3', 'T1']).optional(), limit: z.number().int().min(1).max(100).optional() },
     annotations: { readOnlyHint: true },
-  }, async ({ cell, limit }) => out(await priorityList({ cell: cell || 'All', limit: limit || 30 }), 'Priority list.'));
+  }, async ({ cell, limit, lane }) => out(await priorityList({ cell: cell || 'All', limit: limit || 30, lane }), 'Priority list.'));
 
   server.registerTool('log_outcome', {
     title: 'Log an outreach outcome (closes the loop)',

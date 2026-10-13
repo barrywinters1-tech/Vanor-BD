@@ -2207,3 +2207,18 @@ html, body {
 @media (prefers-contrast:more){.vanor .panel{box-shadow:0 0 0 1px var(--ink)}.vanor .btn{border-color:var(--ink)}}
 .vanor .record-pane.hidden{display:none}
 .vanor .record-pane{animation:vanor-row-in .18s ease-out both}
+
+/* Lanes: one word per person */
+.tag.lane-now{background:var(--accent,#1f5f66);color:#fff;border-color:transparent}
+.tag.lane-next{background:rgba(31,95,102,.12);color:var(--accent,#1f5f66);border-color:transparent}
+.tag.lane-later{background:rgba(120,130,135,.14);color:#5f6f74;border-color:transparent}
+.tag.lane-off{background:transparent;color:#8a949a;border:1px dashed #c9d1ce}
+.lane-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}
+.lane-btn{display:grid;gap:2px;text-align:left;padding:12px 14px;border-radius:12px;border:1px solid var(--line,#d6ddd9);background:var(--card,#fff);cursor:pointer;transition:transform .12s ease,background .12s ease}
+.lane-btn:active{transform:scale(.97)}
+.lane-btn b{font-size:22px;font-variant-numeric:tabular-nums;line-height:1.1}
+.lane-btn span{font-weight:600}
+.lane-btn small{color:#5f6f74;font-size:12px}
+.lane-btn.active{outline:2px solid var(--accent,#1f5f66);outline-offset:1px}
+.lane-btn.lane-now b{color:var(--accent,#1f5f66)}
+@media (prefers-color-scheme:dark){.tag.lane-later{color:#9aacb2}.tag.lane-off{color:#7f8d93;border-color:#3a474c}.lane-btn small{color:#9aacb2}}
