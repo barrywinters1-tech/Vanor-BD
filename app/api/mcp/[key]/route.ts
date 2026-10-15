@@ -15,7 +15,7 @@ import {
 import { lookupPerson } from '../../../../lib/rocketreach';
 import { runIntel } from '../../../../lib/intel-ingest';
 import { priorityList, normRegion, workQueue } from '../../../../lib/priority';
-import { triage, setStep, followUpsDue } from '../../../../lib/pursuit';
+import { triage, setStep, followUpsDue, undoLast } from '../../../../lib/pursuit';
 import { logOutcome, funnel, STEPS } from '../../../../lib/funnel';
 import { listTasks, addTask, completeTask, deriveTasks, sweepTasks } from '../../../../lib/tasks';
 import { cleanBoard } from '../../../../lib/clean';
@@ -435,6 +435,12 @@ function createServer() {
     inputSchema: { id: z.string(), step: z.enum(['to_write', 'sent', 'replied', 'meeting', 'proposal', 'won', 'lost']), note: z.string().optional(), actor: z.enum(['Barry', 'Graeme']).optional() },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   }, async ({ id, step, note, actor }) => out(await setStep(id, step, actor || 'Barry', note || ''), 'Stepped.'));
+  server.registerTool('undo_pursuit', {
+    title: 'Undo the last board press on a lead',
+    description: 'Restores the lead to the state before the last Yes/No/Later or step press and retires the outcome event it logged (kept as "Undone: …"). Only when a founder says a press was a mistake.',
+    inputSchema: { id: z.string(), actor: z.enum(['Barry', 'Graeme']).optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  }, async ({ id, actor }) => out(await undoLast(id, actor || 'Barry'), 'Undone.'));
   server.registerTool('follow_ups_due', {
     title: 'Follow-ups due (the alert list)',
     description: 'Leads where an email was issued, the clock has run out and nobody has replied. Ordered by how long overdue. With tasks=true also creates a "Chase X" task per lead (idempotent) so the morning report carries it. Use this at the top of every daily and hourly report.',

@@ -11,7 +11,7 @@ import { runIntel } from '../../../../lib/intel-ingest';
 import { lookupPerson, searchPeople } from '../../../../lib/rocketreach';
 import { addTask, completeTask, snoozeTask, deriveTasks, sweepTasks } from '../../../../lib/tasks';
 import { normRegion, workQueue } from '../../../../lib/priority';
-import { triage, setStep, STEP_LABEL, followUpsDue } from '../../../../lib/pursuit';
+import { triage, setStep, STEP_LABEL, followUpsDue, undoLast } from '../../../../lib/pursuit';
 import { logEvent, saveEntity as storeSave, updateEntity as storeUpdate } from '../../../../lib/bd-store';
 import { runBackup } from '../../../../lib/backup-job';
 
@@ -226,6 +226,7 @@ export async function POST(request: NextRequest, context: Context) {
       const id = String(body?.id || ''); if (!id) return reply({ error: 'No id.' }, 400);
       if (body?.op === 'triage') { const t = String(body.decision || ''); if (!['yes', 'no', 'later'].includes(t)) return reply({ error: 'decision must be yes, no or later.' }, 400); return reply(await triage(id, t as any, actor, String(body.reason || ''), Number(body.days || 30))); }
       if (body?.op === 'step') { const s = String(body.step || ''); if (!Object.keys(STEP_LABEL).includes(s)) return reply({ error: 'Unknown step.' }, 400); return reply(await setStep(id, s as any, actor, String(body.note || ''))); }
+      if (body?.op === 'undo') return reply(await undoLast(id, actor));
       return reply({ error: 'Unknown pursue op.' }, 400);
     }
     if (action === 'find-contacts') {

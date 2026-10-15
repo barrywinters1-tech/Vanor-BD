@@ -16,10 +16,11 @@ const today = () => new Date().toISOString().slice(0, 10);
 export async function triage(id: string, decision: Triage, actor: string, reason = '', laterDays = 30) {
   const now = new Date().toISOString();
   const p: Pursuit = { triage: decision, triagedAt: now, triagedBy: actor, reason };
+  (p as any).prev = undefined;
   if (decision === 'yes') { p.step = 'to_write'; p.stepAt = now; }
   if (decision === 'later') p.laterUntil = new Date(Date.now() + laterDays * DAY).toISOString().slice(0, 10);
   const rec = await getOne('source', id); if (!rec) throw new Error(`No contact with id ${id}.`); const action = decision === 'yes' ? String((globalThis as any).VanorClassify?.actionLine?.(rec) || '') : '';
-  await updateEntity('decision', id, cur => ({ ...cur, pursuit: { ...(cur.pursuit || {}), ...p }, ...(action && !cur.nextAsk && /^Email/.test(action) ? { nextAsk: action.replace(/ \(.*\)$/, ''), nextDate: new Date(Date.now() + 3 * DAY).toISOString().slice(0, 10) } : {}), ...(decision === 'no' ? { status: 'Archive', archiveReason: reason || 'Not a lead', archivedBy: actor, archivedAt: now } : {}) }), true);
+  await updateEntity('decision', id, cur => ({ ...cur, pursuit: { ...(cur.pursuit || {}), ...p, prev: snapshot(cur) }, ...(action && !cur.nextAsk && /^Email/.test(action) ? { nextAsk: action.replace(/ \(.*\)$/, ''), nextDate: new Date(Date.now() + 3 * DAY).toISOString().slice(0, 10) } : {}), ...(decision === 'no' ? { status: 'Archive', archiveReason: reason || 'Not a lead', archivedBy: actor, archivedAt: now } : {}) }), true);
   await logEvent({ entityId: id, recordId: id, type: decision === 'yes' ? 'Lead accepted' : decision === 'no' ? 'Lead rejected' : 'Lead parked', actor, note: reason || (decision === 'later' ? `until ${p.laterUntil}` : '') });
   return { ok: true, pursuit: p };
 }
@@ -31,6 +32,7 @@ export async function setStep(id: string, step: Step, actor: string, note = '') 
   let out: Pursuit | undefined;
   await updateEntity('decision', id, cur => {
     const p: Pursuit = { triage: 'yes', triagedAt: now, triagedBy: actor, ...(cur.pursuit || {}) };
+    (p as any).prev = snapshot(cur);
     p.step = step; p.stepAt = now;
     if (step === 'sent') { const chases = (p.sentAt ? (p.chases || 0) + 1 : 0); p.chases = chases; p.sentAt = t0; p.followUpAt = followUpAfter(t0, chases); }
     if (step === 'replied' || step === 'meeting' || step === 'proposal') { p.followUpAt = undefined; }
@@ -44,6 +46,20 @@ export async function setStep(id: string, step: Step, actor: string, note = '') 
   else if (step === 'won') await logEvent({ entityId: id, recordId: id, type: 'Outcome: won', note: note || 'Won', date: t0, ref: `board:won:${id}:${t0}`, actor });
   else await logEvent({ entityId: id, recordId: id, type: step === 'lost' ? 'Lead lost' : 'Pursuit step', actor, note: note || STEP_LABEL[step] });
   return { ok: true, pursuit: out };
+}
+
+const snapshot = (cur: any) => ({ pursuit: cur.pursuit ? { ...cur.pursuit, prev: undefined } : null, status: cur.status, archiveReason: cur.archiveReason, nextAsk: cur.nextAsk, nextDate: cur.nextDate });
+
+/** Undo the last board press on this lead: restores the previous pursuit state and retires the event it logged (kept, retyped "Undone: …", so the funnel ignores it). */
+export async function undoLast(id: string, actor: string) {
+  const cur = await getOne('decision', id); const prev = cur?.pursuit?.prev;
+  if (!cur?.pursuit) throw new Error('Nothing to undo on this lead.');
+  const events = (await listScope('event')).filter(e => String(e.recordId || e.entityId) === id && typeof e.ref === 'string' && e.ref.startsWith('board:')).sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  const last = events[0];
+  if (last && String(last.at) >= String(cur.pursuit.stepAt || cur.pursuit.triagedAt || '')) await updateEntity('event', last.id, e => ({ ...e, type: 'Undone: ' + String(e.type).replace(/^Outcome: /, ''), undoneBy: actor, undoneAt: new Date().toISOString() }));
+  await updateEntity('decision', id, c => { const n: any = { ...c }; if (prev) { n.pursuit = prev.pursuit || undefined; n.status = prev.status; n.archiveReason = prev.archiveReason; n.nextAsk = prev.nextAsk; n.nextDate = prev.nextDate; } else { delete n.pursuit; if (n.archivedBy === actor && /^(Not a lead|Lost)/.test(String(n.archiveReason || ''))) { n.status = 'New'; delete n.archiveReason; } } return n; });
+  await logEvent({ entityId: id, recordId: id, type: 'Undo', actor, note: `Undid the last board press${last ? ` (${String(last.type).replace(/^Outcome: /, '')})` : ''}` });
+  return { ok: true, restored: prev || null };
 }
 
 /** Follow-ups that have fallen due: the alert list. Creates a task per lead so the morning report and the hourly message carry it. */
