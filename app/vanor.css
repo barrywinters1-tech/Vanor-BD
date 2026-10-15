@@ -2268,3 +2268,12 @@ html, body {
 .focus-row{grid-template-columns:28px minmax(0,1fr) minmax(0,1fr) minmax(150px,auto)}
 .focus-act{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;max-width:280px;align-items:center}
 @media (max-width:1500px){.focus-act .btn kbd.key{display:none}}
+/* Lean Today */
+.focus-head.lean{margin-bottom:14px}
+.focus-lean{max-width:860px}
+.focus-blurb{padding:8px 16px 0;margin:0}
+.focus-row.lean{grid-template-columns:28px minmax(0,1fr) auto;gap:14px;padding:12px 16px}
+.focus-row.lean .names small{display:block}
+.focus-row.lean .focus-reason{color:var(--ink,#1a1f1e);opacity:.8;margin-top:2px}
+.focus-row.lean .focus-act{max-width:none;flex-wrap:nowrap}
+@media (max-width:700px){.focus-row.lean{grid-template-columns:24px 1fr;grid-template-rows:auto auto}.focus-row.lean .focus-act{grid-column:2;justify-content:flex-start}}
