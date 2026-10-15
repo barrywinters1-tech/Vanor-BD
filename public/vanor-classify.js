@@ -69,9 +69,31 @@
     return 'Unknown';
   }
 
+  // Company names and job titles are evidence; imported segments are often wrong ("Other / Unclassified", or an architect filed as a developer).
+  var CO_CONSULT = /\b(architects?|architecture|studio|design|engineers?|engineering|consultants?|consultancy|consulting|surveyors?|partnership|llp|planning|cost|project management|quantity)\b/i;
+  var CO_FUND = /\b(capital|partners|fund|funds|investments?|investors|asset management|equity|bank|lending|finance|credit|debt|reit|trust)\b/i;
+  var CO_CONTRACT = /\b(construction|contractors?|contracting|building services|build|builders|fit[- ]?out|interiors|m ?& ?e|mechanical|electrical|scaffold|groundworks|civils?)\b/i;
+  var CO_OPER = /\b(hotels?|hospitality|resorts?|inns?|living|student|co-?living|serviced)\b/i;
+  var CO_DEV = /\b(developments?|properties|property|estates|homes|regeneration|land|realty|places)\b/i;
+  var CO_INTRO = /\b(solicitors|law|legal|agents|recruitment|insurance|accountants|brokers?)\b/i;
+  var TITLE_FUND = /loan|monitoring|debt|lending|credit|investment|fund|portfolio|asset manag/i;
+  var TITLE_DEV = /development director|head of development|land director|development manager|head of construction|construction director|project director/i;
+  function typeFromNames(r) {
+    var co = String(r.company || ''); var t = String(r.jobTitle || '');
+    if (CO_CONSULT.test(co) && !CO_DEV.test(co)) return 'Consultancy';
+    if (CO_CONTRACT.test(co)) return 'Contractor';
+    if (CO_FUND.test(co) || TITLE_FUND.test(t)) return 'Funder / Investor';
+    if (CO_OPER.test(co)) return 'Operator';
+    if (CO_DEV.test(co) || TITLE_DEV.test(t)) return 'Developer / Owner';
+    if (CO_INTRO.test(co)) return 'Introducer';
+    return '';
+  }
   function typeOf(r, d) {
     var seg = String((d && d.segment) || r.segment || r.fitSector || '').toLowerCase();
     var bt = r.intel && r.intel.buyer ? String(r.intel.buyer) : '';
+    var byName = typeFromNames(r);
+    // A founder-set segment wins; an imported one yields to clear evidence in the company name.
+    if (!(d && d.segment) && byName && (byName === 'Consultancy' || byName === 'Contractor' || /other|unclassified|unknown|supplier/.test(seg) || !seg)) return byName;
     if (/developer|asset owner|landlord|housebuilder|regeneration/.test(seg) || bt === 'developer') return 'Developer / Owner';
     if (/investor|private equity|fund|lender|bank|debt|finance|family office/.test(seg) || /fund|lender|family_office/.test(bt)) return 'Funder / Investor';
     if (/hotel|operational|operator|hospitality|student|bts|btr/.test(seg) || bt === 'hotel_group') return 'Operator';
@@ -79,7 +101,7 @@
     if (/contractor|builder|subcontract|m&e|fit[- ]?out/.test(seg) || bt === 'contractor') return 'Contractor';
     if (/introducer|legal|agent|network|broker|recruit|insurance|accountant/.test(seg)) return 'Introducer';
     if (/public|housing association|council|nhs|university/.test(seg) || /public_body|owner_occupier/.test(bt)) return 'Public body';
-    return 'Other';
+    return byName || 'Other';
   }
   var SECTORS = { residential: 'Residential', btr: 'BTR', pbsa: 'PBSA', hotel: 'Hotel', hospitality: 'Hospitality', office: 'Office', mixed_use: 'Mixed use', data_centre: 'Data centre', industrial: 'Industrial', retail: 'Retail', leisure: 'Leisure', education: 'Education', health: 'Health', heritage: 'Heritage', later_living: 'Later living', life_sciences: 'Life sciences', infrastructure: 'Infrastructure', public: 'Public', unknown: '' };
   var SECTOR_RX = [['data_centre', /data ?cent|hyperscale|colocation/i], ['pbsa', /\bpbsa\b|student accommodation|student beds/i], ['btr', /\bbtr\b|build[- ]to[- ]rent|co-?living/i], ['hotel', /\bhotels?\b|aparthotel|serviced apartment/i], ['hospitality', /hospitality|restaurant|members.? club|leisure/i], ['later_living', /later living|retirement|care home|extra care/i], ['life_sciences', /life science|laborator/i], ['office', /\boffices?\b|workplace|hq\b/i], ['mixed_use', /mixed[- ]use/i], ['residential', /residential|\bhomes\b|apartments|\bflats\b|housing/i], ['industrial', /industrial|logistics|warehouse/i], ['retail', /\bretail\b|shopping/i], ['education', /school|university|college|campus/i], ['health', /hospital|clinic|healthcare|nhs/i], ['heritage', /listed|heritage|grade (i|ii)/i]];
