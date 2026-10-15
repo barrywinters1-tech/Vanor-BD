@@ -11,10 +11,13 @@ const P = () => (globalThis as any).VanorPriority as { compute: (r: Entity, d: E
 const stepOf = (t: string) => /^Outcome: sent$|^Interaction: email out$/.test(t) ? 'sent' : /^Outcome: (reply|meeting|proposal|won)|^Interaction: (email in|meeting)/.test(t) ? 'back' : '';
 /** Last sent / last answered per contact, from the event log. */
 export async function history() {
-  const events = await listScope('event'); const lastSent = new Map<string, string>(), lastBack = new Map<string, string>();
-  for (const e of events) { const rid = String(e.recordId || e.entityId); const d = String(e.date || e.at || '').slice(0, 10); const st = stepOf(String(e.type || ''));
-    if (st === 'sent' && (lastSent.get(rid) || '') < d) lastSent.set(rid, d); if (st === 'back' && (lastBack.get(rid) || '') < d) lastBack.set(rid, d); }
-  return { lastSent, lastBack };
+  const events = await listScope('event'); const lastSent = new Map<string, string>(), lastBack = new Map<string, string>(), lastMet = new Map<string, string>(), lastProposal = new Map<string, string>();
+  const today = new Date().toISOString().slice(0, 10);
+  for (const e of events) { const rid = String(e.recordId || e.entityId); const d = String(e.date || e.at || '').slice(0, 10); const t = String(e.type || ''); const st = stepOf(t);
+    if (st === 'sent' && (lastSent.get(rid) || '') < d) lastSent.set(rid, d); if (st === 'back' && (lastBack.get(rid) || '') < d) lastBack.set(rid, d);
+    if (/^Outcome: meeting_(held|booked)$|^Meeting held$|^Interaction: meeting$/.test(t) && d <= today && (lastMet.get(rid) || '') < d) lastMet.set(rid, d);
+    if (/^Outcome: (proposal|won)$|^Commercial discussion$/.test(t) && (lastProposal.get(rid) || '') < d) lastProposal.set(rid, d); }
+  return { lastSent, lastBack, lastMet, lastProposal };
 }
 
 export async function priorityList({ cell = 'All', limit = 30, lane, region }: { cell?: string; limit?: number; lane?: Lane['lane']; region?: string } = {}) {
@@ -46,7 +49,7 @@ export async function workQueue({ bucket, region, limit = 50 }: { bucket?: Bucke
   for (const w of work) { const list = wByRecord.get(w.recordId) || []; list.push(w); wByRecord.set(w.recordId, list); }
   const Q = (globalThis as any).VanorPriority;
   const rows = records.filter(r => r.kind !== 'opportunity').map(r => { const d = dById.get(r.id); const w = wByRecord.get(r.id) || []; const p = P().compute(r, d, w); const active = w.find(x => !x.archived);
-    const q = Q.queue(r, d, w, p, { lastSent: h.lastSent.get(r.id), lastBack: h.lastBack.get(r.id), nextAsk: active?.nextAsk || d?.nextAsk || r.nextAsk, stage: active?.stage });
+    const q = Q.queue(r, d, w, p, { lastMet: h.lastMet.get(r.id), lastProposal: h.lastProposal.get(r.id), lastSent: h.lastSent.get(r.id), lastBack: h.lastBack.get(r.id), nextAsk: active?.nextAsk || d?.nextAsk || r.nextAsk, stage: active?.stage });
     if (d?.status === 'Archive' && q.bucket !== 'off') q.bucket = 'off';
     return { r, d, p, q, cls: classifyRecord(r, d) }; });
   const buckets: Record<string, number> = { followup: 0, todo: 0, inbox: 0, waiting: 0, later: 0, off: 0 };

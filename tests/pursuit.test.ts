@@ -45,3 +45,10 @@ test('ranking order across buckets: follow-ups, then to do, then inbox', () => {
   rows.sort((a, b) => (P.BUCKET_ORDER[a.bucket] - P.BUCKET_ORDER[b.bucket]) || b.rank - a.rank);
   assert.deepEqual(rows.map(x => x.bucket), ['followup', 'todo', 'inbox']);
 });
+
+test('met in the last 30 days with no proposal since sits at the top of to do', () => {
+  const x = q({}, { lastMet: '2026-10-09', lastSent: '2026-10-01' });
+  assert.equal(x.bucket, 'todo'); assert.match(x.reason, /Met 6 days ago, no proposal yet/);
+  assert.equal(q({}, { lastMet: '2026-10-09', lastProposal: '2026-10-12' }).bucket === 'todo' && /Met/.test(q({}, { lastMet: '2026-10-09', lastProposal: '2026-10-12' }).reason), false);
+  assert.notEqual(q({}, { lastMet: '2026-08-01' }).reason.slice(0, 3), 'Met');
+});
