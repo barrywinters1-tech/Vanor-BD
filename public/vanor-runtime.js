@@ -395,6 +395,8 @@ async function start({element,repo,seed,actor='Barry'}){
       if(x.q.bucket==='inbox')return pb('Yes','triage','yes',id,'small primary','Y')+pb('No','triage','no',id,'small ghost','N');
       if(x.q.bucket==='followup')return pb('Chased','step','sent',id,'small primary','E')+pb('Replied','step','replied',id,'small ghost','R');
       const stp=stepOf(x);
+      if(/^Met .*introducer/.test(x.q.reason))return pb('Intro asked','step','sent',id,'small primary','E')+pb('Park','triage','later',id,'small ghost','L');
+      if(/^Met .*buyer or introducer/.test(x.q.reason))return pb('Proposal sent','step','proposal',id,'small primary','P')+pb('Intro asked','step','sent',id,'small','E')+pb('Park','triage','later',id,'small ghost','L');
       if(stp==='to_write')return pb('Email sent','step','sent',id,'small primary','E')+pb('Drop','triage','no',id,'small ghost','N');
       if(stp==='replied')return pb('Meeting booked','step','meeting',id,'small primary','M')+pb('Drop','triage','no',id,'small ghost','N');
       if(stp==='meeting')return pb('Proposal sent','step','proposal',id,'small primary','P')+pb('Lost','step','lost',id,'small ghost');
@@ -407,7 +409,7 @@ async function start({element,repo,seed,actor='Barry'}){
       if(!open)return head;
       const hist=(data.events||[]).filter(e=>String(e.recordId||e.entityId)===x.r.id).sort((a,b)=>String(b.at||b.date||'').localeCompare(String(a.at||a.date||''))).slice(0,4).map(e=>`<li><span class="tiny muted">${E(friendly(String(e.happenedOn||e.date||e.at||'').slice(0,10)))}</span> ${E(String(e.type||'').replace(/^(Outcome|Interaction): /,''))}${e.note?': '+E(String(e.note).slice(0,120)):''}</li>`).join('');
       const draftBlock=dr&&['suggested','edited'].includes(dr.status)&&dr.kind!=='call'?`<div class="field-grid">${field({label:'Subject',value:dr.subject||'',path:'draft.subject',id:x.r.id,full:true})}${field({label:'Email',value:dr.body||'',path:'draft.body',id:x.r.id,type:'textarea',full:true,rows:8})}</div><div class="row wrap section-gap">${btn('Send to Outlook Drafts','approveDraft',x.r.id,'small primary','check')}${btn('Rewrite','regenDraft',x.r.id,'small ghost')}</div>`:dr&&dr.status==='pushed'?`<p class="tiny">In Outlook Drafts. Send it from there, then press Email sent.</p>`:x.q.bucket!=='inbox'&&x.r.email?`<div class="row wrap">${btn('Write me a draft','generateDraft',x.r.id,'small','mail')}</div>`:'';
-      return head+`<div class="focus-inline">${x.q.bucket==='todo'?oneDayBlock(x):''}<div class="focus-cols"><div>${x.q.move?`<p class="tiny" style="margin:0 0 8px"><b>${E(x.q.move)}</b></p>`:''}${draftBlock}</div><div><ul class="focus-hist">${hist||'<li class="tiny muted">Nothing logged yet</li>'}</ul><div class="row wrap" style="margin-top:8px">${btn('Full record','openRecord',x.r.id,'small ghost','arrow')}${decision(x.r.id).pursuit?pb('Undo last press','undo','',x.r.id,'small ghost','U'):''}${x.q.bucket==='inbox'?pb('Later','triage','later',x.r.id,'small ghost','L'):pb('Park','triage','later',x.r.id,'small ghost','L')}${repo.findContacts&&!x.r.email?btn('Find email','enrich',x.r.id,'small ghost','network'):''}</div></div></div></div>`;};
+      return head+`<div class="focus-inline">${x.q.bucket==='todo'&&!/introducer/.test(x.q.reason)?oneDayBlock(x):''}<div class="focus-cols"><div>${x.q.move?`<p class="tiny" style="margin:0 0 8px"><b>${E(x.q.move)}</b></p>`:''}${draftBlock}</div><div><ul class="focus-hist">${hist||'<li class="tiny muted">Nothing logged yet</li>'}</ul><div class="row wrap" style="margin-top:8px">${btn('Full record','openRecord',x.r.id,'small ghost','arrow')}${decision(x.r.id).pursuit?pb('Undo last press','undo','',x.r.id,'small ghost','U'):''}${x.q.bucket==='inbox'?pb('Later','triage','later',x.r.id,'small ghost','L'):pb('Park','triage','later',x.r.id,'small ghost','L')}${repo.findContacts&&!x.r.email?btn('Find email','enrich',x.r.id,'small ghost','network'):''}</div></div></div></div>`;};
     const tabs=BUCKETS.map(([k,l])=>`<button class="tab ${tab===k?'active':''} ${k==='followup'&&c[k]?'hot':''}" data-action="focusTab" data-tab="${k}">${l} <span class="count">${c[k]}</span></button>`).join('');
     const empties={followup:['Nothing to chase','Every email out is either answered or still inside its 5 working days.'],todo:['Nothing to do','Say Yes to someone in New.'],inbox:['Nothing new','New leads arrive from the morning scan and your mailbox.']};
     const blurb={followup:'No reply. Chase in Outlook, then press Chased.',todo:'Do the next thing, then press the button.',inbox:'Is this worth an email? Yes or No. Best first.'}[tab];
@@ -427,12 +429,14 @@ async function start({element,repo,seed,actor='Barry'}){
   const DEAL_CAT=x=>{const r=x.q.reason||'',pu=decision(x.r.id).pursuit||{};
     if(x.q.bucket==='followup')return {k:'chase',label:'Chase',branch:'email → reply'};
     if(x.q.bucket==='inbox')return {k:'new',label:'New, worth a look',branch:'new → conversation'};
-    if(/^Met .*no proposal/.test(r))return {k:'met',label:'Met, no proposal yet',branch:'meeting → proposal (the leak)'};
+    if(/^Met .*no proposal/.test(r))return {k:'met',label:'Met buyers, no proposal yet',branch:'meeting → proposal (the leak)'};
+    if(/^Met .*introducer/.test(r))return {k:'intro',label:'Met introducers',branch:'introducer → client conversation'};
+    if(/^Met .*buyer or introducer/.test(r))return {k:'which',label:'Met: buyer or introducer?',branch:'sort the branch first'};
     if(pu.step==='proposal'||/^Proposal/.test(r))return {k:'prop',label:'Proposals waiting for a decision',branch:'proposal → won'};
     if(/^Meeting in/.test(r))return {k:'meet',label:'Meetings coming up',branch:'meeting → proposal'};
     if(/replied/i.test(r))return {k:'reply',label:'Replies to answer',branch:'reply → meeting'};
     return {k:'live',label:'Other live deals',branch:'conversation → meeting'};};
-  const CAT_ORDER={met:0,prop:1,meet:2,reply:3,live:4,chase:5,new:6};
+  const CAT_ORDER={met:0,which:1,prop:2,meet:3,reply:4,intro:5,live:6,chase:7,new:8};
   function treeStrip(){const f=funnelStats(180).n;const nodes=[['Emailed',f.sent],['Replied',f.reply],['Meeting',Math.max(f.meeting_held,f.meeting_booked)],['Proposal',f.proposal],['Won',f.won]];
     const links=[];for(let i=0;i<nodes.length-1;i++){const a=nodes[i][1],b=nodes[i+1][1];links.push(a?b/a:0);}
     const weakest=links.indexOf(Math.min(...links.slice(0,4)));

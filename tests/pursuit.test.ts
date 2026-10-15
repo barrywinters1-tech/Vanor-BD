@@ -1,4 +1,6 @@
 import { test } from 'node:test';
+// @ts-ignore plain script
+import '../public/vanor-classify.js';
 import assert from 'node:assert/strict';
 import { addWorkingDays, followUpAfter } from '../lib/pursuit-logic.ts';
 // @ts-ignore plain script that sets a global
@@ -51,4 +53,13 @@ test('met in the last 30 days with no proposal since sits at the top of to do', 
   assert.equal(x.bucket, 'todo'); assert.match(x.reason, /Met 6 days ago, no proposal yet/);
   assert.equal(q({}, { lastMet: '2026-10-09', lastProposal: '2026-10-12' }).bucket === 'todo' && /Met/.test(q({}, { lastMet: '2026-10-09', lastProposal: '2026-10-12' }).reason), false);
   assert.notEqual(q({}, { lastMet: '2026-08-01' }).reason.slice(0, 3), 'Met');
+});
+
+test('met split: buyer gets a proposal prompt, introducer gets an introduction prompt; a press after the meeting clears it', () => {
+  const at = (company: string, dd: any = {}) => P.queue({ ...r, company, segment: '' }, dd, [], p, { lastMet: '2026-10-12' }, now);
+  assert.match(at('Southern Housing').reason, /no proposal yet/);
+  assert.match(at('Heyne Tillett Steel').reason, /introducer/);
+  assert.match(at('Heyne Tillett Steel').move, /named introduction/);
+  const acted = at('Heyne Tillett Steel', { pursuit: { triage: 'yes', step: 'sent', stepAt: '2026-10-13T09:00:00Z', sentAt: '2026-10-13', followUpAt: '2026-10-20' } });
+  assert.equal(acted.bucket, 'waiting');
 });

@@ -109,8 +109,15 @@
     var metD = h && h.lastMet ? age(h.lastMet, now) : 9999;
     var proposedSince = h && h.lastProposal && h.lastMet && h.lastProposal >= h.lastMet;
     var stepNow = pu && pu.step;
-    if (metD >= 0 && metD <= 30 && !proposedSince && !(pu && pu.triage === 'no') && stepNow !== 'proposal' && stepNow !== 'won' && stepNow !== 'lost')
-      return out('todo', 960 - metD, 'Met ' + (metD < 1 ? 'today' : Math.floor(metD) + ' days ago') + ', no proposal yet', 'Send the proposal, or close it');
+    var actedSince = pu && h && h.lastMet && String(pu.stepAt || pu.triagedAt || '').slice(0, 10) >= h.lastMet && stepNow !== 'meeting';
+    if (metD >= 0 && metD <= 30 && !proposedSince && !actedSince && !(pu && pu.triage === 'no') && stepNow !== 'proposal' && stepNow !== 'won' && stepNow !== 'lost') {
+      // MECE split: a buyer gets a proposal; an introducer gets asked for a named introduction; unclear gets a decision.
+      var Cl = root.VanorClassify; var ty = Cl && Cl.typeOf ? Cl.typeOf(r, d) : 'Other';
+      var when = metD < 1 ? 'today' : Math.floor(metD) + ' days ago';
+      if (/Developer|Funder|Operator|Public/.test(ty)) return out('todo', 960 - metD, 'Met ' + when + ', no proposal yet', 'Send the proposal, or close it');
+      if (/Consultancy|Contractor|Introducer/.test(ty)) return out('todo', 700 - metD, 'Met ' + when + ' (introducer), no introduction yet', 'Ask for one named introduction to a client');
+      return out('todo', 820 - metD, 'Met ' + when + ': buyer or introducer?', 'Decide: proposal, or ask for an introduction');
+    }
     if (pu && pu.triage === 'no') return out('off', -1000, pu.reason ? 'Not a lead: ' + pu.reason : 'Not a lead', 'Nothing to do');
     if (pu && pu.triage === 'later') {
       if (pu.laterUntil && pu.laterUntil > t0) return out('later', 0, 'Parked until ' + pu.laterUntil, 'Nothing until then');

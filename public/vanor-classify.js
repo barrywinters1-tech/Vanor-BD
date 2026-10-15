@@ -70,11 +70,11 @@
   }
 
   // Company names and job titles are evidence; imported segments are often wrong ("Other / Unclassified", or an architect filed as a developer).
-  var CO_CONSULT = /\b(architects?|architecture|studio|design|engineers?|engineering|consultants?|consultancy|consulting|surveyors?|partnership|llp|planning|cost|project management|quantity)\b/i;
+  var CO_CONSULT = /\b(architects?|architecture|studio|design|engineers?|engineering|consultants?|consultancy|consulting|surveyors?|partnership|llp|planning|cost|costplan|project management|quantity|steel|structures?|lighting|nulty)\b|tillett/i;
   var CO_FUND = /\b(capital|partners|fund|funds|investments?|investors|asset management|equity|bank|lending|finance|credit|debt|reit|trust)\b/i;
   var CO_CONTRACT = /\b(construction|contractors?|contracting|building services|build|builders|fit[- ]?out|interiors|m ?& ?e|mechanical|electrical|scaffold|groundworks|civils?)\b/i;
   var CO_OPER = /\b(hotels?|hospitality|resorts?|inns?|living|student|co-?living|serviced)\b/i;
-  var CO_DEV = /\b(developments?|properties|property|estates|homes|regeneration|land|realty|places)\b/i;
+  var CO_DEV = /\b(developments?|properties|property|estates|homes|housing|regeneration|land|realty|places|portfolio)\b/i;
   var CO_INTRO = /\b(solicitors|law|legal|agents|recruitment|insurance|accountants|brokers?)\b/i;
   var TITLE_FUND = /loan|monitoring|debt|lending|credit|investment|fund|portfolio|asset manag/i;
   var TITLE_DEV = /development director|head of development|land director|development manager|head of construction|construction director|project director/i;
