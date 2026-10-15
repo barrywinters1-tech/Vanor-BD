@@ -14,7 +14,8 @@ import {
 } from '../../../../lib/bd-store';
 import { lookupPerson } from '../../../../lib/rocketreach';
 import { runIntel } from '../../../../lib/intel-ingest';
-import { priorityList, normRegion } from '../../../../lib/priority';
+import { priorityList, normRegion, workQueue } from '../../../../lib/priority';
+import { triage, setStep, followUpsDue } from '../../../../lib/pursuit';
 import { logOutcome, funnel, STEPS } from '../../../../lib/funnel';
 import { listTasks, addTask, completeTask, deriveTasks, sweepTasks } from '../../../../lib/tasks';
 import { cleanBoard } from '../../../../lib/clean';
@@ -415,6 +416,31 @@ function createServer() {
     description: 'Closes tasks whose reason has gone (contact archived, draft or proposal no longer waiting in Outlook, event passed, 45+ days overdue) and returns what is still overdue, oldest first, plus a one-line summary for the daily report. Nothing is deleted. Runs daily anyway.',
     inputSchema: {}, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async () => out(await sweepTasks(), 'Swept.'));
+
+  server.registerTool('work_queue', {
+    title: 'The one ranked list (follow-ups due, to do, inbox)',
+    description: 'What the Focus screen shows. Every live contact in one of six buckets, ranked: followup (email issued, clock run out, no reply), todo (founder said yes; steps to_write / replied / meeting / proposal), inbox (nobody has said yes or no yet; only Now/Next lanes), waiting (email issued, clock still running), later (parked), off. Default returns followup + todo + inbox + waiting ranked. Filter by bucket and region.',
+    inputSchema: { bucket: z.enum(['followup', 'todo', 'inbox', 'waiting', 'later', 'off']).optional(), region: z.string().optional(), limit: z.number().int().min(1).max(500).optional() },
+    annotations: { readOnlyHint: true },
+  }, async ({ bucket, region, limit }) => out(await workQueue({ bucket, region, limit: limit || 50 }), 'Queue.'));
+  server.registerTool('triage_lead', {
+    title: 'Triage a lead: yes, no or later',
+    description: 'The founders\' decision on a lead. yes = a proper lead, goes on the To do list at step to_write. no = not a lead, archived with the reason (never deleted). later = parked for `days` (default 30), then back in the inbox. Only call this when Barry or Graeme has made the decision in chat; never decide for them.',
+    inputSchema: { id: z.string(), decision: z.enum(['yes', 'no', 'later']), reason: z.string().optional(), days: z.number().int().min(1).max(365).optional(), actor: z.enum(['Barry', 'Graeme']).optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ id, decision, reason, days, actor }) => out(await triage(id, decision, actor || 'Barry', reason || '', days || 30), 'Triaged.'));
+  server.registerTool('pursuit_step', {
+    title: 'Move a pursued lead along (email issued, replied, meeting, proposal, won, lost)',
+    description: 'Steps for a lead the founders said yes to. sent = "email issued": logs Outcome: sent and starts the follow-up clock (5 working days; 7 after the second chase); call it again when a chase goes. replied / meeting / proposal / won log the matching outcome and stop the clock. lost archives with the note. Only when a founder has said so in chat or the mailbox shows it (a reply or a sent email to that person).',
+    inputSchema: { id: z.string(), step: z.enum(['to_write', 'sent', 'replied', 'meeting', 'proposal', 'won', 'lost']), note: z.string().optional(), actor: z.enum(['Barry', 'Graeme']).optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  }, async ({ id, step, note, actor }) => out(await setStep(id, step, actor || 'Barry', note || ''), 'Stepped.'));
+  server.registerTool('follow_ups_due', {
+    title: 'Follow-ups due (the alert list)',
+    description: 'Leads where an email was issued, the clock has run out and nobody has replied. Ordered by how long overdue. With tasks=true also creates a "Chase X" task per lead (idempotent) so the morning report carries it. Use this at the top of every daily and hourly report.',
+    inputSchema: { tasks: z.boolean().optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ tasks }) => out(await followUpsDue({ createTasks: !!tasks }), 'Follow-ups.'));
 
   server.registerTool('signal_feed', {
     title: 'Signals feed (what the board shows under Signals)',

@@ -92,6 +92,49 @@
   }
   var LANE_ORDER = { Now: 0, Next: 1, Later: 2, Off: 3 };
 
+  /* The founders' decision on top of the lane. queue() is the one ranking the board uses:
+       bucket  inbox     = nobody has said yes/no yet (only Now/Next lanes reach the inbox)
+               todo      = said yes; working it (to_write, replied, meeting, proposal)
+               followup  = said yes, email issued, clock has run out, no reply
+               waiting   = said yes, email issued, clock still running
+               later     = parked, or lane Later
+               off       = said no, won, lost, archived, grade C
+       rank    one number, higher first, comparable across buckets so one list can be shown. */
+  var STEP_RANK = { replied: 900, meeting: 850, proposal: 800, to_write: 600 };
+  function queue(r, d, works, p, h, now) {
+    now = now || Date.now(); var t0 = new Date(now).toISOString().slice(0, 10);
+    var L = lane(r, d, works, p, h, now); var pu = d && d.pursuit; var score = (p && p.score) || 0;
+    var out = function (bucket, rank, reason, move) { return { bucket: bucket, rank: rank, lane: L.lane, reason: reason || L.reason, move: move || L.move }; };
+    if (pu && pu.triage === 'no') return out('off', -1000, pu.reason ? 'Not a lead: ' + pu.reason : 'Not a lead', 'Nothing to do');
+    if (pu && pu.triage === 'later') {
+      if (pu.laterUntil && pu.laterUntil > t0) return out('later', 0, 'Parked until ' + pu.laterUntil, 'Nothing until then');
+      return out('inbox', 500 + score, 'Parked, now back for a decision', 'Yes, no or park again');
+    }
+    if (pu && pu.triage === 'yes') {
+      var st = pu.step || 'to_write';
+      if (st === 'won' || st === 'lost') return out('off', -1000, st === 'won' ? 'Won' : 'Lost', 'Nothing to do');
+      if (st === 'sent') {
+        if (h && h.lastBack && pu.sentAt && h.lastBack >= pu.sentAt) return out('todo', 900 + score, 'They replied after your email', 'Answer today and propose a date');
+        if (pu.followUpAt && pu.followUpAt <= t0) { var over = age(pu.followUpAt, now); return out('followup', 1000 + Math.min(over, 30) * 10 + (pu.chases || 0) * 5, 'Follow-up due' + (over >= 1 ? ' (' + Math.floor(over) + ' days overdue)' : '') + (pu.chases ? ', chase ' + (pu.chases + 1) : ''), (pu.chases || 0) >= 2 ? 'Call, or park it' : 'One plain chase with a date'); }
+        return out('waiting', 100 + score, 'Email issued ' + pu.sentAt + ', waiting until ' + pu.followUpAt, 'Nothing until then');
+      }
+      var reasons = { to_write: 'On your list: email not yet issued', replied: 'They replied: book the meeting', meeting: 'Meeting stage', proposal: 'Proposal stage' };
+      var moves = { to_write: 'Write and issue the email', replied: 'Propose a date today', meeting: 'Prepare, then follow up within a day', proposal: 'Agree the decision date' };
+      var ageD = pu.stepAt ? age(pu.stepAt, now) : 0;
+      return out('todo', (STEP_RANK[st] || 500) + Math.min(ageD, 30) + score / 100, reasons[st] + (ageD >= 3 ? ' (' + Math.floor(ageD) + ' days)' : ''), moves[st]);
+    }
+    if (L.lane === 'Off') return out('off', -1000);
+    if (L.lane === 'Later') return out('later', score);
+    // Nobody has pressed yes, but the record is already in flight (an email went, a reply came, a meeting or a live opportunity). Bucket it by what happened; no second triage.
+    var sentD = h && h.lastSent ? age(h.lastSent, now) : 9999, backD = h && h.lastBack ? age(h.lastBack, now) : 9999;
+    if (/^Live |^Meeting in|^They replied/.test(L.reason)) return out('todo', 880 + score / 100, L.reason, L.move);
+    if (/^No reply for/.test(L.reason)) return out('followup', 990 + Math.min(sentD, 30) * 5, L.reason, L.move);
+    if (/^Sent /.test(L.reason)) return out('waiting', 90 + score, L.reason, L.move);
+    return out('inbox', (L.lane === 'Now' ? 300 : 200) + score);
+  }
+  var BUCKET_ORDER = { followup: 0, todo: 1, inbox: 2, waiting: 3, later: 4, off: 5 };
+  var BUCKET_LABEL = { followup: 'Follow-ups due', todo: 'To do', inbox: 'Inbox', waiting: 'Waiting', later: 'Later', off: 'Off' };
+
   /** Company-level tier: the top `size` grade-A companies by their best contact score. */
   function tierOne(rows, size) {
     var best = {};
@@ -101,5 +144,5 @@
     return function (r) { return !!set[norm(r.company)]; };
   }
 
-  root.VanorPriority = { compute: compute, lane: lane, LANE_ORDER: LANE_ORDER, tierOne: tierOne, norm: norm, PLAYS: PLAYS };
+  root.VanorPriority = { compute: compute, lane: lane, queue: queue, LANE_ORDER: LANE_ORDER, BUCKET_ORDER: BUCKET_ORDER, BUCKET_LABEL: BUCKET_LABEL, tierOne: tierOne, norm: norm, PLAYS: PLAYS };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

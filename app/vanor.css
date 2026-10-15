@@ -2252,3 +2252,19 @@ html, body {
 .linklike{background:none;border:0;color:inherit;text-decoration:underline;cursor:pointer;font:inherit;padding:0}
 .focus-row .names b{display:block;font-size:15px}
 .focus-row .names small{display:block;color:#5f6f74}
+/* Four-step flow on the Focus screen */
+.focus-tabs{padding:8px 12px 0;border-bottom:1px solid var(--line,#e3e8e6)}
+.focus-tabs button .count{display:inline-block;min-width:20px;padding:0 6px;margin-left:4px;border-radius:10px;background:rgba(31,95,102,.1);font-size:11px;text-align:center}
+.focus-tabs button.hot .count{background:#b23a3a;color:#fff}
+.focus-tabs button.active.hot .count{background:#b23a3a;color:#fff}
+.focus-row.first{border-top:0}
+.focus-act .btn kbd.key{margin-left:6px;padding:0 4px;border:1px solid currentColor;border-radius:3px;font:600 10px/16px ui-monospace,monospace;opacity:.7}
+.tag.step-to_write{background:#f1e9c9;border-color:transparent}
+.tag.step-sent{background:#d9e8ea;border-color:transparent}
+.tag.step-replied,.tag.step-meeting{background:var(--accent,#1f5f66);color:#fff;border-color:transparent}
+.tag.step-proposal,.tag.step-won{background:#2e7d4f;color:#fff;border-color:transparent}
+.tag.step-lost{background:#eee;border-color:transparent}
+@media (max-width:900px){.focus-act{display:flex;flex-wrap:wrap;gap:6px}.focus-act .btn kbd.key{display:none}}
+.focus-row{grid-template-columns:28px minmax(0,1fr) minmax(0,1fr) minmax(150px,auto)}
+.focus-act{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;max-width:280px;align-items:center}
+@media (max-width:1500px){.focus-act .btn kbd.key{display:none}}

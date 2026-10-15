@@ -1,4 +1,5 @@
 // Closed-loop outcome tracking: what we sent, who replied, what got booked. Lets the board show a funnel and learn which triggers work.
+import { followUpAfter } from './pursuit-logic';
 import { listScope, getOne, logEvent, updateEntity, type Entity } from './bd-store';
 import { priorityList } from './priority';
 
@@ -19,6 +20,16 @@ export async function logOutcome(o: Omit<Outcome, 'id'> & { id: string }) {
   await updateEntity('source', o.id, r => (!r.lastContact || String(r.lastContact).slice(0, 10) < o.date) ? { ...r, lastContact: o.date } : r);
   const eventId = await logEvent({ entityId: o.id, recordId: o.id, type: TYPE_PREFIX + o.step, note: o.note, date: o.date,
     ref: o.ref || '', trigger: o.trigger || '', channel: o.channel || 'email', source: o.source || '' });
+  // Keep the founders' pursuit step in line with what the mailbox shows: a reply, meeting or proposal moves the lead on and stops the follow-up clock; a sent email starts it.
+  const PURSUIT_STEP: Record<string, string> = { sent: 'sent', reply: 'replied', meeting_booked: 'meeting', proposal: 'proposal', won: 'won' };
+  const ORDER = ['to_write', 'sent', 'replied', 'meeting', 'proposal', 'won'];
+  const next = PURSUIT_STEP[o.step];
+  if (next) await updateEntity('decision', o.id, cur => {
+    const pu = cur.pursuit; if (!pu || pu.triage !== 'yes' || pu.step === 'lost') return cur;
+    if (next === 'sent') { if (pu.step !== 'to_write' && pu.step !== 'sent') return cur; const chases = pu.sentAt && pu.sentAt !== o.date ? (pu.chases || 0) + 1 : (pu.chases || 0); return { ...cur, pursuit: { ...pu, step: 'sent', stepAt: new Date().toISOString(), sentAt: o.date, chases, followUpAt: followUpAfter(o.date, chases) } }; }
+    if (ORDER.indexOf(next) <= ORDER.indexOf(pu.step || 'to_write')) return cur;
+    return { ...cur, pursuit: { ...pu, step: next, stepAt: new Date().toISOString(), followUpAt: undefined } };
+  });
   return { logged: true, eventId };
 }
 

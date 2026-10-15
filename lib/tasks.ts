@@ -74,7 +74,8 @@ export async function sweepTasks() {
     if (s.kind === 'draft' && s.id) { const dr = dec.get(s.id)?.draft; if (!dr || dr.status !== 'pushed') reason = 'draft no longer waiting in Outlook'; }
     if (s.kind === 'proposal' && s.id) { const pr = dec.get(s.id)?.proposal; if (!pr || pr.status !== 'pushed') reason = 'proposal no longer waiting in Outlook'; }
     if (s.kind === 'event' && s.id) { const e = ev.get(s.id); if (!e || e.archived || (t.title.startsWith('Decide and book') && e.date && e.date < t0) || (t.title.startsWith('Prepare for') && e.date && e.date < t0)) reason = 'event passed or archived'; }
-    if (!reason && s.kind === 'record' && t.createdBy === 'Engine' && t.due && t.due < addDays(t0, -21)) reason = 'stale next ask on the record (3+ weeks past); update the record if it still matters';
+    if (String(t.id).startsWith('task:chase:')) { const [, , rid, sentAt] = String(t.id).split(':'); const pu = dec.get(rid)?.pursuit; if (!pu || pu.step !== 'sent' || pu.sentAt !== sentAt) reason = 'lead moved on (chase issued, reply, meeting or parked)'; }
+    if (!reason && !String(t.id).startsWith('task:chase:') && s.kind === 'record' && t.createdBy === 'Engine' && t.due && t.due < addDays(t0, -21)) reason = 'stale next ask on the record (3+ weeks past); update the record if it still matters';
     if (!reason && t.due && t.due < addDays(t0, -45)) reason = 'more than 45 days overdue; closed by sweep, reopen if it still matters';
     if (reason) { await updateEntity('decision', t.id, cur => ({ ...cur, status: 'Done', doneAt: new Date().toISOString(), doneBy: 'Engine', notes: `${cur.notes || ''}\nClosed by sweep: ${reason}.`.trim() })); closed.push(`${t.title} (${reason})`); }
   }

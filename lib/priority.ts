@@ -36,3 +36,25 @@ export async function priorityList({ cell = 'All', limit = 30, lane, region }: {
       topOfTier: p.grade === 'A' && t1(r), why: p.top ? `${p.top.date} ${p.top.text}` : p.warm ? 'Warm relationship' : 'No trigger' }));
   return { counts, lanes, regions, rows: pick };
 }
+
+export type Bucket = 'followup' | 'todo' | 'inbox' | 'waiting' | 'later' | 'off';
+/** The one ranked list: every live contact with a bucket (follow-up due / to do / inbox / waiting / later / off) and a rank comparable across buckets. */
+export async function workQueue({ bucket, region, limit = 50 }: { bucket?: Bucket; region?: string; limit?: number } = {}) {
+  const [records, decisions, work, h] = await Promise.all([listScope('source'), listScope('decision'), listScope('work'), history()]);
+  const dById = new Map(decisions.map(d => [d.id, d]));
+  const wByRecord = new Map<string, Entity[]>();
+  for (const w of work) { const list = wByRecord.get(w.recordId) || []; list.push(w); wByRecord.set(w.recordId, list); }
+  const Q = (globalThis as any).VanorPriority;
+  const rows = records.filter(r => r.kind !== 'opportunity').map(r => { const d = dById.get(r.id); const w = wByRecord.get(r.id) || []; const p = P().compute(r, d, w); const active = w.find(x => !x.archived);
+    const q = Q.queue(r, d, w, p, { lastSent: h.lastSent.get(r.id), lastBack: h.lastBack.get(r.id), nextAsk: active?.nextAsk || d?.nextAsk || r.nextAsk, stage: active?.stage });
+    if (d?.status === 'Archive' && q.bucket !== 'off') q.bucket = 'off';
+    return { r, d, p, q, cls: classifyRecord(r, d) }; });
+  const buckets: Record<string, number> = { followup: 0, todo: 0, inbox: 0, waiting: 0, later: 0, off: 0 };
+  const want = (x: typeof rows[number]) => !region || x.cls.region === normRegion(region);
+  for (const x of rows) if (want(x)) buckets[x.q.bucket]++;
+  const pick = rows.filter(want).filter(x => bucket ? x.q.bucket === bucket : x.q.bucket !== 'off' && x.q.bucket !== 'later')
+    .sort((a, b) => (Q.BUCKET_ORDER[a.q.bucket] - Q.BUCKET_ORDER[b.q.bucket]) || b.q.rank - a.q.rank).slice(0, limit)
+    .map(({ r, d, p, q, cls }) => ({ id: r.id, name: r.name, company: r.company, jobTitle: r.jobTitle, email: r.email || '', bucket: q.bucket, rank: Math.round(q.rank), lane: q.lane, reason: q.reason, move: q.move, ...cls, cell: p.cell, score: p.score,
+      pursuit: d?.pursuit || null, why: p.top ? `${p.top.date} ${p.top.text}` : p.warm ? 'Warm relationship' : 'No trigger' }));
+  return { buckets, rows: pick };
+}

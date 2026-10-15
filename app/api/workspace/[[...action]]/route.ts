@@ -10,7 +10,8 @@ import { autoClassify, generateDrafts, batchApprove, listTemplates, saveTemplate
 import { runIntel } from '../../../../lib/intel-ingest';
 import { lookupPerson, searchPeople } from '../../../../lib/rocketreach';
 import { addTask, completeTask, snoozeTask, deriveTasks, sweepTasks } from '../../../../lib/tasks';
-import { normRegion } from '../../../../lib/priority';
+import { normRegion, workQueue } from '../../../../lib/priority';
+import { triage, setStep, STEP_LABEL, followUpsDue } from '../../../../lib/pursuit';
 import { logEvent, saveEntity as storeSave, updateEntity as storeUpdate } from '../../../../lib/bd-store';
 import { runBackup } from '../../../../lib/backup-job';
 
@@ -178,6 +179,8 @@ export async function GET(request: NextRequest, context: Context) {
       return reply({ revision: data?.[0]?.updated_at || '' });
     }
     if (action === 'templates') return reply({ templates: await listTemplates(), settings: await getSettings() });
+    if (action === 'queue') { const q = request.nextUrl.searchParams; return reply(await workQueue({ bucket: (q.get('bucket') || undefined) as any, region: q.get('region') || undefined, limit: Number(q.get('limit') || 50) })); }
+    if (action === 'follow-ups') return reply(await followUpsDue({ createTasks: request.nextUrl.searchParams.get('tasks') === '1' }));
     if (action === 'entity') {
       const scope = request.nextUrl.searchParams.get('scope') || '';
       const id = request.nextUrl.searchParams.get('id') || '';
@@ -216,6 +219,14 @@ export async function POST(request: NextRequest, context: Context) {
       if (body?.op === 'snooze') return reply(await snoozeTask(String(body.id), Number(body.days || 7), actor));
       if (body?.op === 'add') return reply(await addTask({ id: 'task:' + crypto.randomUUID(), title: String(body.title || '').slice(0, 140), owner: body.owner === 'Graeme' ? 'Graeme' : 'Barry', due: String(body.due || ''), priority: ['High', 'Low'].includes(body.priority) ? body.priority : 'Normal', source: { kind: 'manual', id: body.sourceId || undefined, label: body.sourceLabel || undefined }, notes: String(body.notes || ''), createdBy: actor }));
       return reply({ error: 'Unknown task op.' }, 400);
+    }
+    if (action === 'pursue') {
+      // The decision flow: triage yes/no/later, then steps (to_write, sent = "email issued", replied, meeting, proposal, won, lost).
+      const { data } = await access.db.auth.getUser(); const actor = /graeme/i.test(data.user?.email || '') ? 'Graeme' : 'Barry';
+      const id = String(body?.id || ''); if (!id) return reply({ error: 'No id.' }, 400);
+      if (body?.op === 'triage') { const t = String(body.decision || ''); if (!['yes', 'no', 'later'].includes(t)) return reply({ error: 'decision must be yes, no or later.' }, 400); return reply(await triage(id, t as any, actor, String(body.reason || ''), Number(body.days || 30))); }
+      if (body?.op === 'step') { const s = String(body.step || ''); if (!Object.keys(STEP_LABEL).includes(s)) return reply({ error: 'Unknown step.' }, 400); return reply(await setStep(id, s as any, actor, String(body.note || ''))); }
+      return reply({ error: 'Unknown pursue op.' }, 400);
     }
     if (action === 'find-contacts') {
       // On demand only: founders press the button once a lead is worth pursuing. Adds up to 3 decision-makers at the company as leads with whatever RocketReach returns.

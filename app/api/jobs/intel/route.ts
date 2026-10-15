@@ -5,6 +5,7 @@ import { runIntel } from '../../../../lib/intel-ingest';
 import { researchBatch } from '../../../../lib/company-intel-store';
 import { autoClassify, generateDrafts } from '../../../../lib/outreach';
 import { deriveTasks, sweepTasks } from '../../../../lib/tasks';
+import { followUpsDue } from '../../../../lib/pursuit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,7 +19,7 @@ export async function GET(request: Request) {
   const started = Date.now();
   const result: Record<string, unknown> = {};
   try { result.scan = await runIntel({ write: true }); } catch (e) { result.scanError = e instanceof Error ? e.message : String(e); }
-  try { result.tasks = await deriveTasks(); result.sweep = await sweepTasks(); } catch (e) { result.tasksError = e instanceof Error ? e.message : String(e); }
+  try { result.tasks = await deriveTasks(); result.followUps = await followUpsDue({ createTasks: true }); result.sweep = await sweepTasks(); } catch (e) { result.tasksError = e instanceof Error ? e.message : String(e); }
   try { result.classified = await autoClassify({ limit: 150 }); } catch (e) { result.classifyError = e instanceof Error ? e.message : String(e); }
   try { result.drafts = await generateDrafts({ limit: 40 }); } catch (e) { result.draftsError = e instanceof Error ? e.message : String(e); }
   try { result.companies = await researchBatch({ limit: 25, budgetMs: Math.max(5000, 45000 - (Date.now() - started)) }); }
