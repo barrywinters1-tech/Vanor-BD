@@ -14,7 +14,7 @@ import {
 } from '../../../../lib/bd-store';
 import { lookupPerson } from '../../../../lib/rocketreach';
 import { runIntel } from '../../../../lib/intel-ingest';
-import { priorityList } from '../../../../lib/priority';
+import { priorityList, normRegion } from '../../../../lib/priority';
 import { logOutcome, funnel, STEPS } from '../../../../lib/funnel';
 import { listTasks, addTask, completeTask, deriveTasks, sweepTasks } from '../../../../lib/tasks';
 import { generateDrafts, approvedDrafts, markDraftPushed, saveDraft, autoClassify, batchApprove, listTemplates, saveTemplate, saveProposal, approvedProposals, markProposalPushed, getSettings } from '../../../../lib/outreach';
@@ -273,9 +273,9 @@ function createServer() {
   server.registerTool('priority_list', {
     title: 'Priority matrix: who to work, in order',
     description: 'Who to work, in order. Every contact has ONE lane: Now (work this week: live opportunity, they replied, unanswered thread, fresh trigger on a right buyer, hiring), Next (right buyer with email and nothing live, intro to ask for, gone quiet), Later (nothing to do until research flags a trigger), Off (not a buyer or archived). Each row carries lane, reason and move in plain English. Pass lane="Now" for the founders\' working list. The older cell/grade fields remain for reference: Grade A/B/C = right buyer, Heat 1-3 = need + relationship, cells A1…C, T1 = top 40 grade-A accounts.',
-    inputSchema: { lane: z.enum(['Now', 'Next', 'Later', 'Off']).optional(), cell: z.enum(['All', 'A1', 'A2', 'A3', 'B1', 'B2', 'B3', 'T1']).optional(), limit: z.number().int().min(1).max(100).optional() },
+    inputSchema: { lane: z.enum(['Now', 'Next', 'Later', 'Off']).optional(), region: z.string().max(40).optional().describe('London, South East, North West, Scotland… or UK-wide'), cell: z.enum(['All', 'A1', 'A2', 'A3', 'B1', 'B2', 'B3', 'T1']).optional(), limit: z.number().int().min(1).max(100).optional() },
     annotations: { readOnlyHint: true },
-  }, async ({ cell, limit, lane }) => out(await priorityList({ cell: cell || 'All', limit: limit || 30, lane }), 'Priority list.'));
+  }, async ({ cell, limit, lane, region }) => out(await priorityList({ cell: cell || 'All', limit: limit || 30, lane, region }), 'Priority list.'));
 
   server.registerTool('log_outcome', {
     title: 'Log an outreach outcome (closes the loop)',
@@ -435,14 +435,15 @@ function createServer() {
     description: 'Save an email, phone or LinkedIn found via the RocketReach connector (or another named source) onto a contact. Only fills EMPTY fields; never overwrites what a founder entered. Always say where it came from.',
     inputSchema: {
       id: z.string(), email: z.string().email().optional(), phone: z.string().max(40).optional(), linkedin: z.string().url().optional(),
-      jobTitle: z.string().max(120).optional(), source: z.string().min(2).describe('e.g. "RocketReach connector"'),
+      jobTitle: z.string().max(120).optional(), region: z.string().max(60).optional().describe('Where they are based, as RocketReach or Companies House gives it (city or postcode is fine); the board normalises it to a UK region'), source: z.string().min(2).describe('e.g. "RocketReach connector"'),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ id, email, phone, linkedin, jobTitle, source }) => {
+  }, async ({ id, email, phone, linkedin, jobTitle, region, source }) => {
     const filled: string[] = [];
+    const C = (globalThis as any).VanorClassify; const reg = region ? (C?.normRegion(region) || region) : undefined;
     await updateEntity('source', id, r => {
       const next = { ...r };
-      for (const [k, v] of Object.entries({ email, phone, linkedin, jobTitle })) if (v && !r[k]) { next[k] = v; filled.push(k); }
+      for (const [k, v] of Object.entries({ email, phone, linkedin, jobTitle, region: reg })) if (v && (!r[k] || (k === 'region' && /^(uk|uk-wide|unknown)$/i.test(String(r[k]))))) { next[k] = v; filled.push(k); }
       next.enrichment = { ...(r.enrichment || {}), provider: source, at: new Date().toISOString(), filled };
       return next;
     });
@@ -467,6 +468,7 @@ function createServer() {
       email: r.email || result.emails[0]?.email || '',
       phone: r.phone || result.phones[0]?.number || '',
       linkedin: r.linkedin || result.linkedin || '',
+      region: (!r.region || /^(uk|uk-wide)$/i.test(String(r.region))) && result.location ? (normRegion(result.location) || r.region || '') : r.region,
       enrichment: { provider: 'RocketReach', at: new Date().toISOString(), ...result },
     }));
     await logEvent({ entityId: id, recordId: id, type: 'Contact enriched', note: `RocketReach: ${result.status}, ${result.emails.length} email(s), ${result.phones.length} phone(s).` });

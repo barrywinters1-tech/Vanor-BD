@@ -1,5 +1,8 @@
 // Server-side access to the shared priority matrix (public/vanor-priority.js).
 import '../public/vanor-priority.js';
+import '../public/vanor-classify.js';
+export const classifyRecord = (r: Entity, d?: Entity) => ((globalThis as any).VanorClassify?.classify(r, d) || { type: '', sector: '', stage: '', region: 'Unknown', size: '' }) as { type: string; sector: string; stage: string; region: string; size: string };
+export const normRegion = (v?: string) => ((globalThis as any).VanorClassify?.normRegion(v || '') || '') as string;
 import { listScope, type Entity } from './bd-store';
 
 type Prio = { grade: string; heat: number; cell: string; score: number; need: number; relationship: number; live: boolean; warm: boolean; top: any; play: string };
@@ -14,7 +17,7 @@ export async function history() {
   return { lastSent, lastBack };
 }
 
-export async function priorityList({ cell = 'All', limit = 30, lane }: { cell?: string; limit?: number; lane?: Lane['lane'] } = {}) {
+export async function priorityList({ cell = 'All', limit = 30, lane, region }: { cell?: string; limit?: number; lane?: Lane['lane']; region?: string } = {}) {
   const [records, decisions, work, h] = await Promise.all([listScope('source'), listScope('decision'), listScope('work'), history()]);
   const dById = new Map(decisions.map(d => [d.id, d]));
   const wByRecord = new Map<string, Entity[]>();
@@ -26,9 +29,10 @@ export async function priorityList({ cell = 'All', limit = 30, lane }: { cell?: 
   const counts: Record<string, number> = {}; const lanes: Record<string, number> = { Now: 0, Next: 0, Later: 0, Off: 0 };
   for (const x of rows) { counts[x.p.cell] = (counts[x.p.cell] || 0) + 1; lanes[x.l.lane]++; }
   counts.T1 = rows.filter(x => x.p.grade === 'A' && t1(x.r)).length;
-  const pick = rows.filter(x => lane ? x.l.lane === lane : cell === 'All' ? x.p.cell !== 'C' : cell === 'T1' ? x.p.grade === 'A' && t1(x.r) : x.p.cell === cell)
+  const regions: Record<string, number> = {}; for (const x of rows) { const g = classifyRecord(x.r, dById.get(x.r.id)).region; regions[g] = (regions[g] || 0) + 1; }
+  const pick = rows.filter(x => !region || classifyRecord(x.r, dById.get(x.r.id)).region === normRegion(region)).filter(x => lane ? x.l.lane === lane : cell === 'All' ? x.p.cell !== 'C' : cell === 'T1' ? x.p.grade === 'A' && t1(x.r) : x.p.cell === cell)
     .sort((a, b) => (P().LANE_ORDER[a.l.lane] - P().LANE_ORDER[b.l.lane]) || b.p.score - a.p.score).slice(0, limit)
-    .map(({ r, p, l }) => ({ id: r.id, name: r.name, company: r.company, jobTitle: r.jobTitle, email: r.email || '', lane: l.lane, reason: l.reason, move: l.move, cell: p.cell, score: p.score,
+    .map(({ r, p, l }) => ({ id: r.id, name: r.name, company: r.company, jobTitle: r.jobTitle, email: r.email || '', lane: l.lane, reason: l.reason, move: l.move, ...classifyRecord(r, dById.get(r.id)), cell: p.cell, score: p.score,
       topOfTier: p.grade === 'A' && t1(r), why: p.top ? `${p.top.date} ${p.top.text}` : p.warm ? 'Warm relationship' : 'No trigger' }));
-  return { counts, lanes, rows: pick };
+  return { counts, lanes, regions, rows: pick };
 }

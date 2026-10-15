@@ -6,11 +6,11 @@ export type Enrichment = {
   status: 'found' | 'not_found' | 'pending' | 'error';
   emails: { email: string; type?: string; valid?: string }[];
   phones: { number: string; type?: string }[];
-  linkedin?: string; title?: string; employer?: string; rocketreachId?: number; message?: string;
+  linkedin?: string; title?: string; employer?: string; rocketreachId?: number; message?: string; location?: string;
 };
 
 type Person = {
-  id?: number; status?: string; current_title?: string; current_employer?: string; linkedin_url?: string;
+  id?: number; status?: string; current_title?: string; current_employer?: string; linkedin_url?: string; location?: string; city?: string; region?: string; country?: string;
   emails?: { email?: string; type?: string; smtp_valid?: string }[]; phones?: { number?: string; type?: string }[];
 };
 
@@ -31,6 +31,7 @@ function shape(person: Person): Enrichment {
   return {
     status: !done ? 'pending' : emails.length || phones.length ? 'found' : 'not_found',
     emails, phones, linkedin: person.linkedin_url, title: person.current_title, employer: person.current_employer, rocketreachId: person.id,
+    location: person.location || [person.city, person.region, person.country].filter(Boolean).join(', ') || undefined,
   };
 }
 

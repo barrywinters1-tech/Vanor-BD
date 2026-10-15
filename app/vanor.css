@@ -2222,3 +2222,9 @@ html, body {
 .lane-btn.active{outline:2px solid var(--accent,#1f5f66);outline-offset:1px}
 .lane-btn.lane-now b{color:var(--accent,#1f5f66)}
 @media (prefers-color-scheme:dark){.tag.lane-later{color:#9aacb2}.tag.lane-off{color:#7f8d93;border-color:#3a474c}.lane-btn small{color:#9aacb2}}
+
+/* Classification chips: type, sector, stage, region, size */
+.class-row{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.tag.class-tag{font-size:11px;padding:1px 7px;background:rgba(31,95,102,.07);border-color:transparent;color:#2f4a50}
+.tag.class-tag.muted{color:#8a949a;background:transparent;border:1px dashed #c9d1ce}
+@media (prefers-color-scheme:dark){.tag.class-tag{background:rgba(111,194,201,.12);color:#b9d9dc}}

@@ -10,6 +10,7 @@ import { autoClassify, generateDrafts, batchApprove, listTemplates, saveTemplate
 import { runIntel } from '../../../../lib/intel-ingest';
 import { lookupPerson, searchPeople } from '../../../../lib/rocketreach';
 import { addTask, completeTask, snoozeTask, deriveTasks, sweepTasks } from '../../../../lib/tasks';
+import { normRegion } from '../../../../lib/priority';
 import { logEvent, saveEntity as storeSave, updateEntity as storeUpdate } from '../../../../lib/bd-store';
 import { runBackup } from '../../../../lib/backup-job';
 
@@ -242,7 +243,7 @@ export async function POST(request: NextRequest, context: Context) {
       if (!rec || !rec.name) return reply({ error: 'No named person on this record.' }, 400);
       const result = await lookupPerson({ name: rec.name, company: rec.company, linkedin: rec.linkedin || undefined });
       if (result.status === 'error') return reply({ error: result.message || 'RocketReach lookup failed.' }, 502);
-      await storeUpdate('source', id, r => ({ ...r, email: r.email || result.emails[0]?.email || '', phone: r.phone || result.phones[0]?.number || '', linkedin: r.linkedin || result.linkedin || '', jobTitle: r.jobTitle || result.title || '', enrichment: { provider: 'RocketReach', at: new Date().toISOString(), ...result } }));
+      await storeUpdate('source', id, r => ({ ...r, email: r.email || result.emails[0]?.email || '', phone: r.phone || result.phones[0]?.number || '', linkedin: r.linkedin || result.linkedin || '', jobTitle: r.jobTitle || result.title || '', region: (!r.region || /^(uk|uk-wide)$/i.test(String(r.region))) && result.location ? (normRegion(result.location) || r.region || '') : r.region, enrichment: { provider: 'RocketReach', at: new Date().toISOString(), ...result } }));
       await logEvent({ entityId: id, recordId: id, type: 'Contact enriched', actor: 'RocketReach search', note: `On request: ${result.status}, ${result.emails.length} email(s), ${result.phones.length} phone(s).` });
       return reply({ status: result.status, email: result.emails[0]?.email || '', phone: result.phones[0]?.number || '', linkedin: result.linkedin || '' });
     }

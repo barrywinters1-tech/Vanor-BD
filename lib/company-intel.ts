@@ -5,7 +5,7 @@ import { parseFeed } from './intel.ts';
 export type Signal = { type: 'lending' | 'property' | 'planning' | 'distress' | 'new_director' | 'new_spv' | 'inactive'; date: string; text: string; url?: string };
 export type CompanyIntel = {
   name: string; checkedAt: string; matchedName?: string; companyNumber?: string; status?: string; incorporated?: string;
-  sic?: string[]; locality?: string; directors?: string[]; lastAccounts?: string; signals: Signal[];
+  sic?: string[]; locality?: string; postcode?: string; directors?: string[]; lastAccounts?: string; signals: Signal[];
   active: 'active' | 'quiet' | 'inactive' | 'unknown'; need: string; sources: string[]; errors: string[];
 };
 
@@ -85,7 +85,7 @@ export async function researchCompany(name: string): Promise<CompanyIntel> {
       const [profile, officers, charges] = await Promise.all([ch(`/company/${n}`), ch(`/company/${n}/officers?items_per_page=35`), ch(`/company/${n}/charges?items_per_page=25`)]);
       Object.assign(intel, {
         matchedName: profile?.company_name || best.i.title, companyNumber: n, status: profile?.company_status,
-        incorporated: profile?.date_of_creation, sic: profile?.sic_codes || [], locality: profile?.registered_office_address?.locality,
+        incorporated: profile?.date_of_creation, sic: profile?.sic_codes || [], locality: profile?.registered_office_address?.locality, postcode: profile?.registered_office_address?.postal_code,
         lastAccounts: profile?.accounts?.last_accounts?.made_up_to,
         directors: (officers?.items || []).filter((o: any) => !o.resigned_on && ['director', 'llp-designated-member', 'llp-member'].includes(o.officer_role)).map((o: any) => o.name).slice(0, 8),
       });
