@@ -8,7 +8,8 @@ const normEmail = (s = '') => s.toLowerCase().trim();
 
 /** How much a record knows: used to pick which duplicate survives. Human-touched records always win. */
 export function richness(r: Rec, touched: boolean) {
-  return (touched ? 1000 : 0) + (r.email ? 8 : 0) + (r.phone ? 4 : 0) + (r.linkedin ? 3 : 0) + (r.jobTitle ? 2 : 0) + (r.lastContact ? 4 : 0) + (r.companyIntel ? 2 : 0) + (r.notes ? 1 : 0) + (r.context ? 1 : 0);
+  // A relationship record always outranks a lead-register row for the same person.
+  return (touched ? 1000 : 0) + (r.kind === 'relationship' ? 500 : 0) + (r.email ? 8 : 0) + (r.phone ? 4 : 0) + (r.linkedin ? 3 : 0) + (r.jobTitle ? 2 : 0) + (r.lastContact ? 4 : 0) + (r.companyIntel ? 2 : 0) + (r.notes ? 1 : 0) + (r.context ? 1 : 0);
 }
 
 export function planClean(records: Rec[], touchedIds: Set<string>, archivedIds: Set<string>): Plan {
