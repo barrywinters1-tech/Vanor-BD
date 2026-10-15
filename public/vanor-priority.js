@@ -127,7 +127,7 @@
     if (L.lane === 'Later') return out('later', score);
     // Nobody has pressed yes, but the record is already in flight (an email went, a reply came, a meeting or a live opportunity). Bucket it by what happened; no second triage.
     var sentD = h && h.lastSent ? age(h.lastSent, now) : 9999, backD = h && h.lastBack ? age(h.lastBack, now) : 9999;
-    if (/^Live |^Meeting in|^They replied/.test(L.reason)) return out('todo', 880 + score / 100, L.reason, L.move);
+    if (/^Live (opportunity|commercial)|^Meeting in|^They replied/.test(L.reason)) return out('todo', 880 + score / 100, L.reason, L.move);
     if (/^No reply for/.test(L.reason)) return out('followup', 990 + Math.min(sentD, 30) * 5, L.reason, L.move);
     if (/^Sent /.test(L.reason)) return out('waiting', 90 + score, L.reason, L.move);
     return out('inbox', (L.lane === 'Now' ? 300 : 200) + score);
