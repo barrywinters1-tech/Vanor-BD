@@ -2228,3 +2228,27 @@ html, body {
 .tag.class-tag{font-size:11px;padding:1px 7px;background:rgba(31,95,102,.07);border-color:transparent;color:#2f4a50}
 .tag.class-tag.muted{color:#8a949a;background:transparent;border:1px dashed #c9d1ce}
 @media (prefers-color-scheme:dark){.tag.class-tag{background:rgba(111,194,201,.12);color:#b9d9dc}}
+
+/* One screen */
+.focus-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin:6px 0 18px}
+.focus-head h1{font-size:30px;margin:4px 0 6px;letter-spacing:-.01em}
+.focus-head p{margin:0;color:#5f6f74}
+.focus-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(280px,.8fr);gap:16px;align-items:start}
+@media (max-width:900px){.focus-grid{grid-template-columns:1fr}}
+.focus-row{display:grid;grid-template-columns:28px minmax(0,1.1fr) minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 16px;border-top:1px solid var(--line,#e3e8e6);cursor:pointer}
+.focus-row:hover{background:rgba(31,95,102,.04)}
+.focus-row.open{background:rgba(31,95,102,.06)}
+.focus-no{width:24px;height:24px;border-radius:50%;background:#e9f0ee;color:#1f5f66;font-size:12px;font-weight:600;display:grid;place-items:center}
+.focus-why b{display:block;font-weight:600;font-size:14px}
+.focus-why small{display:block;color:#5f6f74;margin-top:2px}
+.focus-act{display:flex;align-items:center;gap:8px}
+.focus-inline{padding:4px 16px 16px 56px;border-top:1px dashed var(--line,#e3e8e6);background:rgba(31,95,102,.03)}
+.focus-cols{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:18px}
+@media (max-width:900px){.focus-cols{grid-template-columns:1fr}.focus-row{grid-template-columns:24px 1fr auto;grid-template-rows:auto auto}.focus-why{grid-column:2/4}.focus-inline{padding-left:16px}}
+.focus-hist{margin:0;padding-left:16px;font-size:13px}
+.focus-hist li{margin:2px 0}
+.nav-more{display:grid;gap:2px;margin-top:4px;padding-top:6px;border-top:1px solid rgba(255,255,255,.08)}
+.nav-button.sub{padding-left:28px;font-size:13px;opacity:.9}
+.linklike{background:none;border:0;color:inherit;text-decoration:underline;cursor:pointer;font:inherit;padding:0}
+.focus-row .names b{display:block;font-size:15px}
+.focus-row .names small{display:block;color:#5f6f74}
