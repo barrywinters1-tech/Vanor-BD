@@ -2,6 +2,7 @@
 // Stored on the contact's decision entity as decision.pursuit. Everything else (lanes, tasks, drafts) reads from it.
 import { getOne, updateEntity, logEvent, listScope } from './bd-store';
 import { addTask } from './tasks';
+import '../public/vanor-classify.js';
 
 export type Triage = 'yes' | 'no' | 'later';
 export type Step = 'to_write' | 'sent' | 'replied' | 'meeting' | 'proposal' | 'won' | 'lost';
@@ -13,12 +14,12 @@ const DAY = 864e5;
 const today = () => new Date().toISOString().slice(0, 10);
 
 export async function triage(id: string, decision: Triage, actor: string, reason = '', laterDays = 30) {
-  if (!await getOne('source', id)) throw new Error(`No contact with id ${id}.`);
   const now = new Date().toISOString();
   const p: Pursuit = { triage: decision, triagedAt: now, triagedBy: actor, reason };
   if (decision === 'yes') { p.step = 'to_write'; p.stepAt = now; }
   if (decision === 'later') p.laterUntil = new Date(Date.now() + laterDays * DAY).toISOString().slice(0, 10);
-  await updateEntity('decision', id, cur => ({ ...cur, pursuit: { ...(cur.pursuit || {}), ...p }, ...(decision === 'no' ? { status: 'Archive', archiveReason: reason || 'Not a lead', archivedBy: actor, archivedAt: now } : {}) }), true);
+  const rec = await getOne('source', id); if (!rec) throw new Error(`No contact with id ${id}.`); const action = decision === 'yes' ? String((globalThis as any).VanorClassify?.actionLine?.(rec) || '') : '';
+  await updateEntity('decision', id, cur => ({ ...cur, pursuit: { ...(cur.pursuit || {}), ...p }, ...(action && !cur.nextAsk && /^Email/.test(action) ? { nextAsk: action.replace(/ \(.*\)$/, ''), nextDate: new Date(Date.now() + 3 * DAY).toISOString().slice(0, 10) } : {}), ...(decision === 'no' ? { status: 'Archive', archiveReason: reason || 'Not a lead', archivedBy: actor, archivedAt: now } : {}) }), true);
   await logEvent({ entityId: id, recordId: id, type: decision === 'yes' ? 'Lead accepted' : decision === 'no' ? 'Lead rejected' : 'Lead parked', actor, note: reason || (decision === 'later' ? `until ${p.laterUntil}` : '') });
   return { ok: true, pursuit: p };
 }

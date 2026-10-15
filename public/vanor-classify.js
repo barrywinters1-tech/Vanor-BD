@@ -127,5 +127,36 @@
   function classify(r, d) {
     return { type: typeOf(r, d), sector: sectorOf(r, d), stage: stageOf(r), region: regionOf(r), size: sizeOf(r) };
   }
-  root.VanorClassify = { classify: classify, regionOf: regionOf, typeOf: typeOf, sectorOf: sectorOf, stageOf: stageOf, sizeOf: sizeOf, normRegion: normRegion, regionFromText: regionFromText, REGIONS: REGIONS, TYPES: TYPES };
+  /* Jev-style routing of a signal: fixed questions, typed answers, one action.
+       verdict    approach | watch | ignore
+       who        the role to contact
+       offer      the one Vanor service this signal sells
+       when       this week | this month | when it moves
+       confidence high | medium | low
+     Pure function of the record's intel block, so it applies to every lead the scanner ever added. */
+  var ROLE = { developer: 'Development Director or MD', hotel_group: 'Group Property Director or Head of Development', fund: 'Head of Asset Management', family_office: 'The principal or their asset manager', lender: 'Director, Real Estate Finance', owner_occupier: 'Director of Estates or Head of Capital Projects', public_body: 'Head of Capital Projects', consultancy: 'Managing Director', contractor: 'the employer or funder behind the job', unknown: 'whoever loses money if the date moves' };
+  var OFFER = { funded: 'peer review of the contractor\'s programme and cost before it starts', granted: 'peer review of programme and procurement before tender', tender: 'independent review of tender returns and programme', contractor_appointed: 'peer review of the contractor\'s programme before mobilisation', on_site: 'position finding on progress and cost', stalled: 'position finding: where the job really is and the options', distress: 'position finding and recovery for the exposed party', acquired: 'delivery assurance for the new owner', hiring: 'senior capacity while they recruit', submitted: 'watch until planning is decided', pre_planning: 'watch until it is submitted', appeal: 'watch until the appeal is decided', refused: 'watch', completed: 'none', news: 'none', leadership: 'none' };
+  var APPROACH = { funded: 1, granted: 1, tender: 1, contractor_appointed: 1, on_site: 1, stalled: 1, distress: 1, acquired: 1, hiring: 1 };
+  var WATCH = { submitted: 1, pre_planning: 1, appeal: 1, refused: 1 };
+  function route(r, ctx) {
+    ctx = ctx || {}; var i = (r && r.intel) || null;
+    if (!i) return null;
+    var stage = i.stage || 'news', buyer = i.buyerType || 'unknown', tier = i.tier || 'Watch', score = i.score || 0;
+    var parties = i.parties || {}; var named = !!(parties.developer || parties.funder);
+    var funderOnly = buyer === 'lender' || buyer === 'fund';
+    var offer = OFFER[stage] || 'none'; if (funderOnly && APPROACH[stage]) offer = 'monitoring for the funder: programme, cost and drawdown';
+    var out = function (verdict, when, conf, reason) { return { verdict: verdict, who: ROLE[buyer] || ROLE.unknown, offer: offer, when: when, confidence: conf, reason: reason, stage: stage, buyer: buyer }; };
+    if (buyer === 'contractor') return out('ignore', 'never', 'high', 'Contractor, not a buyer');
+    if (stage === 'news' || stage === 'leadership' || stage === 'completed') return out('ignore', 'never', 'high', 'Nothing to sell off this');
+    if ((i.sector === 'infrastructure' || i.sector === 'public') && stage !== 'distress') return out('ignore', 'never', 'medium', 'Off-sector');
+    if (stage === 'distress' && !named) return out('watch', 'when it moves', 'medium', 'Distress, but no exposed party named yet');
+    if (WATCH[stage]) return out('watch', 'when it moves', named ? 'high' : 'medium', 'Too early: ' + stage.replace('_', ' '));
+    if (!APPROACH[stage] || score < 35) return out('watch', 'when it moves', 'low', 'Weak signal');
+    var conf = (tier === 'Hot' && named && buyer !== 'unknown') ? 'high' : (tier === 'Hot' || (named && buyer !== 'unknown')) ? 'medium' : 'low';
+    var when = tier === 'Hot' ? 'this week' : tier === 'Warm' ? 'this month' : 'when it moves';
+    if (conf === 'low' && tier === 'Watch') return out('watch', when, conf, 'Right stage, but nobody named and buyer unclear');
+    return out('approach', when, conf, (i.why || '').split(' · ').slice(0, 2).join(', '));
+  }
+  function actionLine(r, ctx) { var x = route(r, ctx); if (!x) return ''; if (x.verdict === 'ignore') return 'Ignore: ' + x.reason; if (x.verdict === 'watch') return 'Watch: ' + x.reason; return 'Email the ' + x.who + ' at ' + (r.company || 'the company') + ': ' + x.offer + ' (' + x.when + ', confidence ' + x.confidence + ')'; }
+  root.VanorClassify = { route: route, actionLine: actionLine, classify: classify, regionOf: regionOf, typeOf: typeOf, sectorOf: sectorOf, stageOf: stageOf, sizeOf: sizeOf, normRegion: normRegion, regionFromText: regionFromText, REGIONS: REGIONS, TYPES: TYPES };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

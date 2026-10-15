@@ -123,6 +123,11 @@
       var ageD = pu.stepAt ? age(pu.stepAt, now) : 0;
       return out('todo', (STEP_RANK[st] || 500) + Math.min(ageD, 30) + score / 100, reasons[st] + (ageD >= 3 ? ' (' + Math.floor(ageD) + ' days)' : ''), moves[st]);
     }
+    // Scanner leads: the Jev-style route decides. Ignore = off, watch = later, approach = inbox ranked by confidence.
+    var C = root.VanorClassify; var rt = C && C.route && r.origin === 'intel' ? C.route(r) : null;
+    if (rt && rt.verdict === 'ignore') return out('off', -1000, 'Ignore: ' + rt.reason, 'Nothing to do');
+    if (rt && rt.verdict === 'watch') return out('later', score, 'Watch: ' + rt.reason, 'Comes back when the signal moves');
+    if (rt && rt.verdict === 'approach') return out(L.lane === 'Off' ? 'off' : 'inbox', 400 + (rt.confidence === 'high' ? 200 : rt.confidence === 'medium' ? 100 : 0) + score, rt.reason, C.actionLine(r));
     if (L.lane === 'Off') return out('off', -1000);
     if (L.lane === 'Later') return out('later', score);
     // Nobody has pressed yes, but the record is already in flight (an email went, a reply came, a meeting or a live opportunity). Bucket it by what happened; no second triage.
