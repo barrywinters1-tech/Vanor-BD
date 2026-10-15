@@ -2281,3 +2281,18 @@ html, body {
 .focus-more{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-top:1px solid var(--line,#e3e8e6)}
 .focus-group{padding:14px 16px 6px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted,#5b6663);border-top:1px solid var(--line,#e3e8e6)}
 .focus-lean .focus-group:first-child{border-top:0}
+/* Logic tree strip on Today (Bulletproof Problem Solving, step 2) */
+.tree{max-width:860px;margin:0 0 16px;padding:14px 16px;background:var(--panel,#fff);border:1px solid var(--line,#e3e8e6);border-radius:8px}
+.tree-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.tree-row{display:flex;align-items:center;gap:0;overflow-x:auto}
+.tree-node{display:grid;justify-items:center;min-width:72px;padding:6px 4px;border-radius:6px}
+.tree-node b{font:600 20px/1.1 ui-monospace,Menlo,monospace}
+.tree-node span{font-size:11px;color:var(--muted,#5b6663)}
+.tree-link{flex:1;min-width:52px;display:grid;justify-items:center;border-top:2px solid var(--line,#d6dfdd);padding-top:3px;font-size:11px;color:var(--muted,#5b6663)}
+.tree-link.leak{border-top:3px solid #b4472f;color:#b4472f;font-weight:600}
+.tree-link em{font-style:normal;text-transform:uppercase;letter-spacing:.08em;font-size:10px}
+.tree-node.leak-to b{color:#b4472f}
+.focus-group span{margin-left:8px;text-transform:none;letter-spacing:0;font-size:11px;opacity:.75}
+.focus-group.leak{color:#b4472f}
+.warn-text{color:#b4472f;font-weight:600}
+.oneday{padding:4px 0 12px;border-bottom:1px dashed var(--line,#e3e8e6);margin-bottom:12px}
