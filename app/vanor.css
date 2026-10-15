@@ -2277,3 +2277,7 @@ html, body {
 .focus-row.lean .focus-reason{color:var(--ink,#1a1f1e);opacity:.8;margin-top:2px}
 .focus-row.lean .focus-act{max-width:none;flex-wrap:nowrap}
 @media (max-width:700px){.focus-row.lean{grid-template-columns:24px 1fr;grid-template-rows:auto auto}.focus-row.lean .focus-act{grid-column:2;justify-content:flex-start}}
+.focus-sub{margin:4px 0 0;color:var(--muted,#5b6663)}
+.focus-more{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-top:1px solid var(--line,#e3e8e6)}
+.focus-group{padding:14px 16px 6px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted,#5b6663);border-top:1px solid var(--line,#e3e8e6)}
+.focus-lean .focus-group:first-child{border-top:0}

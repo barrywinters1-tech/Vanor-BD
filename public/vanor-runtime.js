@@ -387,10 +387,10 @@ async function start({element,repo,seed,actor='Barry'}){
   // ONE SCREEN. Everything Barry needs to do today, in the order to do it. Everything else lives behind "More".
   const BUCKETS=[['followup','Follow up'],['todo','To do'],['inbox','New']];
   function focusTab(){const c=bucketCounts();if(app.focusTab&&['followup','todo','inbox'].includes(app.focusTab))return app.focusTab;return c.followup?'followup':c.todo?'todo':'inbox';}
-  function renderFocus(){const c=bucketCounts();const tab=focusTab();const rows=queueRows(tab);
-    if(app.focusOpen&&!rows.some(x=>x.r.id===app.focusOpen))app.focusOpen=null;
+  function renderFocusTabs(){const c=bucketCounts();const tab=focusTab();const rows=queueRows(tab);
+    if(!app._todayRows&&app.focusOpen&&!rows.some(x=>x.r.id===app.focusOpen))app.focusOpen=null;
     const pb=(label,op,arg,id,cls,key)=>`<button class="btn ${cls||'small'}" data-action="pursue" data-op="${op}" data-arg="${arg}" data-id="${E(id)}" title="${key?'Key: '+key:''}">${E(label)}</button>`;
-    const stepOf=x=>{const pu=decision(x.r.id).pursuit||{};let stp=pu.step||'to_write';if(x.q.bucket==='todo'&&(!pu.triage||stp==='sent')){stp=/replied/i.test(x.q.reason)?'replied':/^Meeting in|^Live/.test(x.q.reason)?'meeting':'to_write';}return stp;};
+    const stepOf=x=>{const pu=decision(x.r.id).pursuit||{};let stp=pu.step||'to_write';if(x.q.bucket==='todo'&&(!pu.triage||stp==='sent')){stp=/replied/i.test(x.q.reason)?'replied':/^Meeting in/.test(x.q.reason)?'meeting':'to_write';}return stp;};
     const buttons=x=>{const id=x.r.id;
       if(x.q.bucket==='inbox')return pb('Yes','triage','yes',id,'small primary','Y')+pb('No','triage','no',id,'small ghost','N');
       if(x.q.bucket==='followup')return pb('Chased','step','sent',id,'small primary','E')+pb('Replied','step','replied',id,'small ghost','R');
@@ -412,8 +412,26 @@ async function start({element,repo,seed,actor='Barry'}){
     const empties={followup:['Nothing to chase','Every email out is either answered or still inside its 5 working days.'],todo:['Nothing to do','Say Yes to someone in New.'],inbox:['Nothing new','New leads arrive from the morning scan and your mailbox.']};
     const blurb={followup:'No reply. Chase in Outlook, then press Chased.',todo:'Do the next thing, then press the button.',inbox:'Is this worth an email? Yes or No. Best first.'}[tab];
     const page=app.focusMore?rows:rows.slice(0,10);
+    if(app._todayRows){const list=app._todayRows;app._todayRows=null;return list.map(row).join('');}
     return `<div class="focus-head lean"><div><div class="eyebrow">${new Intl.DateTimeFormat('en-GB',{weekday:'long',day:'numeric',month:'long',timeZone:'Europe/London'}).format(new Date()).toUpperCase()}</div><h1>${c.followup?`${c.followup} to chase.`:c.todo?`${c.todo} to do.`:c.inbox?`${c.inbox} to look at.`:'Nothing needs you.'}</h1></div><div class="row">${btn('Find anyone','search','','ghost','search')}</div></div>
       <section class="panel focus-lean"><div class="tabs focus-tabs">${tabs}</div><p class="tiny muted focus-blurb">${blurb} Keys: J/K move, Y/N, E, R, M, P, W.</p>${rows.length?page.map(row).join('')+(rows.length>page.length?`<div class="footer-row">${btn(`Next ${Math.min(rows.length-page.length,rows.length)} of ${rows.length}`,'focusMore','','small ghost')}</div>`:''):empty(empties[tab][0],empties[tab][1])}</section>`;}
+  /* Today: one ranked list, at most 12 things. Chases and live deals first, then up to 5 new leads. Everything else is one click away. */
+  function todayRows(){const P=globalThis.VanorPriority;const all=queueRows();const chase=all.filter(x=>x.q.bucket==='followup');const deals=all.filter(x=>x.q.bucket==='todo');const fresh=all.filter(x=>x.q.bucket==='inbox').slice(0,5);
+    // Closest to money first (Conn: impact x can-influence). Deals up to 6, chases up to 4 (freshest first: a 30-day silence is nearly dead), new up to 2; spare slots backfill in the same order.
+    const dealRank=x=>/^Meeting in/.test(x.q.reason)?3:/replied/i.test(x.q.reason)?2:/^Proposal|^Live/.test(x.q.reason)?1:0;
+    const D=deals.slice().sort((a,b)=>dealRank(b)-dealRank(a)||b.q.rank-a.q.rank),Cq=chase.slice().sort((a,b)=>(a.q.reason.match(/\d+/)||[0])[0]-(b.q.reason.match(/\d+/)||[0])[0]),N=all.filter(x=>x.q.bucket==='inbox');
+    const take=(arr,n)=>arr.splice(0,n);const out=[...take(D,6),...take(Cq,4),...take(N,2)];
+    for(const pool of [D,Cq,N]){while(out.length<12&&pool.length)out.push(pool.shift());}
+    const order=x=>x.q.bucket==='todo'?0:x.q.bucket==='followup'?1:2;out.sort((a,b)=>order(a)-order(b));
+    return {rows:out,chase:chase.length,deals:deals.length,fresh:N.length+out.filter(x=>x.q.bucket==='inbox').length};}
+  function renderFocus(){if(app.focusAll)return renderFocusTabs().replace('<div class="row">','<div class="row">'+btn('Back to today','focusAllOff','','small ghost'));
+    const t=todayRows();const rows=t.rows;if(app.focusOpen&&!rows.some(x=>x.r.id===app.focusOpen))app.focusOpen=null;
+    app._todayRows=rows;let list=renderFocusTabs();
+    const parts=list.split('<div class="focus-row lean');const label={todo:'Live deals',followup:'Chase',inbox:'New, worth a look'};let out=parts[0],prev='';
+    parts.slice(1).forEach((p,i)=>{const b=rows[i].q.bucket;if(b!==prev){out+=`<div class="focus-group">${label[b]}</div>`;prev=b;}out+='<div class="focus-row lean'+p;});list=out;
+    const left=t.chase+t.deals+t.fresh-rows.length;
+    return `<div class="focus-head lean"><div><div class="eyebrow">${new Intl.DateTimeFormat('en-GB',{weekday:'long',day:'numeric',month:'long',timeZone:'Europe/London'}).format(new Date()).toUpperCase()}</div><h1>${rows.length?`${rows.length} things today.`:'Nothing needs you today.'}</h1><p class="focus-sub">Top to bottom. Do it, press the button, it drops off.</p></div><div class="row">${btn('Find anyone','search','','ghost','search')}</div></div>
+      <section class="panel focus-lean">${rows.length?list:empty('Clear','No chases due, no live deal waiting on you, no new lead worth an email.')}<div class="footer-row focus-more"><span class="tiny muted">${left>0?`${left} more waiting behind these.`:''}</span>${btn('See everything','focusAllOn','','small ghost')}</div></section>`;}
   function renderToday(){const ws=currentWork(),at=D.today(),asks=ws.map(w=>({w,a:D.attention(w,at)})).filter(x=>x.a&&x.w.stage!=='Watch').sort((x,y)=>Number(y.w.pinned)-Number(x.w.pinned)||x.a.rank-y.a.rank||(x.w.nextDate||'9999').localeCompare(y.w.nextDate||'9999'));const watches=ws.filter(w=>w.stage==='Watch');const watchDue=watches.filter(w=>D.watchDue(w));
     const f=funnelStats(30);
     const drafts=priorities().rows.filter(x=>{const dr=decision(x.r.id).draft;return dr&&['suggested','edited'].includes(dr.status)&&dr.kind!=='call'&&matchesOwner(actualOwner(x.r));}).sort((a,b)=>b.p.score-a.p.score);
@@ -667,6 +685,8 @@ async function start({element,repo,seed,actor='Barry'}){
     if(a==='moreNav'){app.moreNav=!app.moreNav;render();return;}
     if(a==='focusTab'){app.focusTab=el.dataset.tab;app.focusOpen=null;app.focusMore=false;render();return;}
     if(a==='focusMore'){app.focusMore=true;render();return;}
+    if(a==='focusAllOn'){app.focusAll=true;app.focusOpen=null;render();return;}
+    if(a==='focusAllOff'){app.focusAll=false;app.focusOpen=null;render();return;}
     if(a==='pursue'){if(!await flush())return;const op=el.dataset.op,arg=el.dataset.arg;const r=byId(id);if(!r||!repo.pursue)return;let reason='';if(op==='triage'&&arg==='no'){reason=prompt('Why not? (one line, optional)')||'';if(reason===null)return;}
       const res=await repo.pursue(op==='triage'?{id,op,decision:arg,reason}:op==='undo'?{id,op}:{id,op,step:arg});if(res&&res.error)throw new Error(res.error);const cur=decision(id);if(op==='undo'){await reload();prioCache=null;toast('Undone.');app.focusOpen=null;render();return;}data.decisions[id]={...cur,pursuit:res.pursuit||cur.pursuit,...((op==='triage'&&arg==='no')||arg==='lost'?{status:'Archive'}:{})};prioCache=null;reload().catch(()=>{});
       const msgs={yes:'On your list.',no:'Archived as not a lead.',later:'Parked for 30 days.',sent:'Email issued. Follow-up due '+((res.pursuit&&res.pursuit.followUpAt)?friendly(res.pursuit.followUpAt):'in 5 working days')+'.',replied:'Marked replied. Clock stopped.',meeting:'Meeting stage.',proposal:'Proposal stage.',won:'Won. Well done.',lost:'Archived as lost.',to_write:'Back to write.'};toast(msgs[arg]||'Done.');app.focusOpen=null;render();return;}
