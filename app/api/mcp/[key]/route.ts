@@ -15,7 +15,8 @@ import {
 import { lookupPerson } from '../../../../lib/rocketreach';
 import { runIntel } from '../../../../lib/intel-ingest';
 import { priorityList, normRegion, workQueue } from '../../../../lib/priority';
-import { triage, setStep, followUpsDue, undoLast } from '../../../../lib/pursuit';
+import { triage, setStep, followUpsDue, undoLast, recordProposal, openProposals, decisionsDue } from '../../../../lib/pursuit';
+import { PRICE_LIST, RULES, firstStep, options as feeOptions, offerLines, decisionDateFrom } from '../../../../lib/fees';
 import { logOutcome, funnel, STEPS } from '../../../../lib/funnel';
 import { listTasks, addTask, completeTask, deriveTasks, sweepTasks } from '../../../../lib/tasks';
 import { cleanBoard } from '../../../../lib/clean';
@@ -447,6 +448,29 @@ function createServer() {
     inputSchema: { tasks: z.boolean().optional() },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ tasks }) => out(await followUpsDue({ createTasks: !!tasks }), 'Follow-ups.'));
+
+  server.registerTool('price_list', {
+    title: 'Vanor price list and the first step to offer a lead',
+    description: 'The fixed price list (from the pricing workbook, 16 Oct 2026) and, for a given contact id, the first-step product to offer, options A/B/C, a decision date ten working days out and the two sentences to put in the follow-up email in Barry\'s voice. Read-only. Use it when drafting any follow-up to a buyer meeting: every buyer follow-up carries a priced first step and a decision date.',
+    inputSchema: { id: z.string().optional().describe('Contact id; omit for the bare list'), decisionDate: z.string().optional().describe('yyyy-mm-dd if the client has a deadline of their own') },
+    annotations: { readOnlyHint: true },
+  }, async ({ id, decisionDate }) => {
+    const rec: any = id ? await getOne('source', id) : null; if (id && !rec) throw new Error(`No contact with id ${id}.`);
+    const dd = decisionDate || decisionDateFrom();
+    return out({ rules: RULES, priceList: PRICE_LIST, ...(rec ? { contact: { id, name: rec.name, company: rec.company, type: rec.type, stage: rec.stage }, firstStep: firstStep(rec), options: feeOptions(rec), decisionDate: dd, offerLines: offerLines(rec, dd) } : {}) }, 'Price list.');
+  });
+  server.registerTool('record_proposal', {
+    title: 'Record a priced ask put to a client',
+    description: 'Call this when an email Barry or Graeme actually SENT (Sent Items) or a meeting put a price and a decision date to a client. Moves the lead to step proposal, stores price and decision date, starts the decision clock. Never for drafts.',
+    inputSchema: { id: z.string(), product: z.string().optional().describe('price_list key or name'), price: z.number().min(0), unit: z.enum(['fixed', 'month']).optional(), options: z.string().max(200).optional().describe('e.g. "A £9,500 / B £25,000 / C £13,000 a month"'), decisionDate: z.string().describe('yyyy-mm-dd'), note: z.string().max(500).optional(), ref: z.string().max(300).optional().describe('Outlook message id or calendar event id'), actor: z.enum(['Barry', 'Graeme']).optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async (input) => out(await recordProposal(input), 'Proposal recorded.'));
+  server.registerTool('proposals_open', {
+    title: 'Open proposals and decisions due',
+    description: 'Every open proposal with price, decision date and days left (negative = overdue). With tasks=true also creates a "Decision due" task for each one whose date has arrived or that has no date. Use at the top of every daily report after follow_ups_due.',
+    inputSchema: { tasks: z.boolean().optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ tasks }) => out(tasks ? await decisionsDue({ createTasks: true }) : { open: await openProposals() }, 'Proposals.'));
 
   server.registerTool('signal_feed', {
     title: 'Signals feed (what the board shows under Signals)',

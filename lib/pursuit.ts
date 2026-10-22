@@ -76,3 +76,48 @@ export async function followUpsDue({ createTasks = true } = {}) {
   }
   return { due, created };
 }
+
+// ---- Proposals: price, decision date, chase at the decision date ----
+import { PRICE_LIST, fmt as money } from './fees';
+export type ProposalInput = { id: string; product?: string; price: number; unit?: 'fixed' | 'month'; options?: string; decisionDate: string; note?: string; ref?: string; actor?: string };
+
+/** Record a priced ask put to a client: moves the lead to step "proposal", stores the price and decision date on the one-day answer, logs Outcome: proposal. */
+export async function recordProposal(o: ProposalInput) {
+  const r = await getOne('source', o.id); if (!r) throw new Error(`No contact with id ${o.id}.`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(o.decisionDate)) throw new Error('decisionDate must be yyyy-mm-dd.');
+  const actor = o.actor || 'Barry'; const now = new Date().toISOString(); const t0 = today();
+  const prod = PRICE_LIST.find(p => p.key === o.product || p.name === o.product);
+  const label = `${prod ? prod.name : (o.product || 'Proposal')}: ${money(o.price)}${(o.unit || prod?.unit) === 'month' ? ' a month' : ''}${o.options ? ` (${o.options})` : ''}; decision by ${o.decisionDate}`;
+  await updateEntity('decision', o.id, cur => {
+    const p: Pursuit = { triage: 'yes', triagedAt: now, triagedBy: actor, ...(cur.pursuit || {}) };
+    (p as any).prev = snapshot(cur);
+    if (p.step !== 'won' && p.step !== 'lost') { p.step = 'proposal'; p.stepAt = now; p.followUpAt = undefined; }
+    const oneDay = { ...(cur.oneDay || {}), resolution: cur.oneDay?.resolution || label, decisionDate: o.decisionDate };
+    return { ...cur, pursuit: p, oneDay, proposal: { product: prod?.key || o.product || '', price: o.price, unit: o.unit || prod?.unit || 'fixed', options: o.options || '', decisionDate: o.decisionDate, sentAt: t0, status: 'open' } };
+  }, true);
+  const ref = o.ref || `board:proposal:${o.id}:${t0}`;
+  const dup = (await listScope('event')).find(e => e.ref === ref);
+  if (!dup) await logEvent({ entityId: o.id, recordId: o.id, type: 'Outcome: proposal', note: o.note ? `${label}. ${o.note}` : label, date: t0, ref, actor });
+  return { ok: true, label };
+}
+
+/** Every open proposal with its price, decision date and days left (negative = overdue). */
+export async function openProposals() {
+  const [records, decisions] = await Promise.all([listScope('source'), listScope('decision')]);
+  const byId = new Map(records.map(r => [r.id, r])); const t0 = today();
+  return decisions.filter(d => d.pursuit?.step === 'proposal' && d.status !== 'Archive')
+    .map(d => { const r: any = byId.get(d.id) || {}; const pr = d.proposal || {}; const dd = pr.decisionDate || d.oneDay?.decisionDate || ''; return { id: d.id, name: r.name || '', company: r.company || '', product: pr.product || '', price: pr.price ?? null, unit: pr.unit || 'fixed', options: pr.options || '', sentAt: pr.sentAt || (d.pursuit.stepAt || '').slice(0, 10), decisionDate: dd, daysLeft: dd ? Math.round((Date.parse(dd) - Date.parse(t0)) / DAY) : null }; })
+    .sort((a, b) => (a.decisionDate || '9999').localeCompare(b.decisionDate || '9999'));
+}
+
+/** Proposals whose decision date has arrived: creates a "Decision due" task per lead so the morning report carries it. Proposals with no date get a task to set one. */
+export async function decisionsDue({ createTasks = true } = {}) {
+  const t0 = today(); const all = await openProposals();
+  const due = all.filter(p => !p.decisionDate || p.decisionDate <= t0);
+  let created = 0;
+  if (createTasks) for (const p of due) {
+    const res = await addTask({ id: `task:decision:${p.id}:${p.decisionDate || 'none'}`, title: p.decisionDate ? `Decision due from ${p.name || p.company}: ${p.product ? p.product + ', ' : ''}${p.price != null ? money(p.price) : ''}. Call, then log won or lost` : `Proposal to ${p.name || p.company} has no decision date: agree one`, owner: 'Barry', due: p.decisionDate || t0, priority: 'High', source: { kind: 'record', id: p.id, label: `${p.name} · ${p.company}` }, notes: 'From the proposal clock on the board.', createdBy: 'Engine' });
+    if (res.created) created++;
+  }
+  return { due, created, open: all.length };
+}

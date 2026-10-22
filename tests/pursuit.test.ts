@@ -63,3 +63,20 @@ test('met split: buyer gets a proposal prompt, introducer gets an introduction p
   const acted = at('Heyne Tillett Steel', { pursuit: { triage: 'yes', step: 'sent', stepAt: '2026-10-13T09:00:00Z', sentAt: '2026-10-13', followUpAt: '2026-10-20' } });
   assert.equal(acted.bucket, 'waiting');
 });
+
+import { firstStep, options, offerLines, decisionDateFrom, PRICE_LIST } from '../lib/fees.ts';
+test('fees: lenders get the monitoring report, distress gets the Stress Test, default is the Stress Test', () => {
+  assert.equal(firstStep({ type: 'Funder / Investor', stage: 'on_site' }).key, 'lender_report');
+  assert.equal(firstStep({ type: 'Developer / Owner', stage: 'Stalled' }).key, 'stress_test');
+  assert.equal(firstStep({ type: 'Developer / Owner', stage: 'contractor_appointed' }).key, 'review');
+  assert.equal(firstStep({}).key, 'stress_test');
+  const o = options({ type: 'Developer / Owner', stage: 'stalled' });
+  assert.ok(o.A.fee < o.B.fee); assert.equal(o.C.unit, 'month');
+});
+test('fees: offer lines carry a price and the decision date, and the date is a working day', () => {
+  const dd = decisionDateFrom('2026-10-22', 10);
+  assert.equal(dd, '2026-11-05');
+  const lines = offerLines({ type: 'Developer / Owner', stage: 'stalled' }, dd);
+  assert.match(lines[0], /£9,500/); assert.match(lines[1], /Thursday 5 November/);
+  assert.ok(PRICE_LIST.every(p => p.fee % 100 === 0));
+});
