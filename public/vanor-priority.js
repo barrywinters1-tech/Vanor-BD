@@ -144,6 +144,13 @@
     if (rt && rt.verdict === 'ignore') return out('off', -1000, 'Ignore: ' + rt.reason, 'Nothing to do');
     if (rt && rt.verdict === 'watch') return out('later', score, 'Watch: ' + rt.reason, 'Comes back when the signal moves');
     if (rt && rt.verdict === 'approach') return out(L.lane === 'Off' ? 'off' : 'inbox', 400 + (rt.confidence === 'high' ? 200 : rt.confidence === 'medium' ? 100 : 0) + score, rt.reason, C.actionLine(r));
+    // Old contacts (29 Oct 2026): nothing is shown unprompted. A contact reaches New leads only on a Companies House signal inside 14 days that passes the bar (funding closed or distress, on a buyer), or if it was added by hand in the last 30 days. Everything else waits in Find anyone.
+    var sigs = (r.companyIntel && r.companyIntel.signals) || []; var fresh = null;
+    sigs.forEach(function (sg) { if (!sg || sg.type === 'inactive') return; var dd = C && C.isoDate ? C.isoDate(sg.date) : String(sg.date || '').slice(0, 10); if (!dd) return; var ageD = (now - Date.parse(dd + 'T00:00:00Z')) / 864e5; if (ageD >= 0 && ageD <= 14 && (sg.type === 'lending' || sg.type === 'property' || sg.type === 'distress') && (!fresh || dd > fresh.d)) fresh = { d: dd, sg: sg }; });
+    var ty = C && C.typeOf ? C.typeOf(r, d) : ''; var buyer = /Developer|Funder|Operator|Public/.test(ty);
+    if (fresh && buyer) { var lab = fresh.sg.type === 'distress' ? 'Distress' : 'Funding closed'; return out('inbox', 400 + (fresh.sg.type === 'distress' ? 800 : 400) + score, lab + ': ' + String(fresh.sg.text || r.company).slice(0, 110), L.move); }
+    var addedD = r.createdAt ? age(String(r.createdAt).slice(0, 10), now) : 9999;
+    if (!pu && r.kind === 'lead' && r.origin === 'manual' && addedD <= 30) return out('inbox', 300 + score, 'Added ' + (addedD < 1 ? 'today' : Math.floor(addedD) + ' days ago') + (r.source ? ' from ' + r.source : ''), 'Yes, no or park');
     if (L.lane === 'Off') return out('off', -1000);
     if (L.lane === 'Later') return out('later', score);
     // Nobody has pressed yes, but the record is already in flight (an email went, a reply came, a meeting or a live opportunity). Bucket it by what happened; no second triage.
@@ -151,7 +158,7 @@
     if (/^Live (opportunity|commercial)|^Meeting in|^They replied/.test(L.reason)) return out('todo', 880 + score / 100, L.reason, L.move);
     if (/^No reply for/.test(L.reason)) return out('followup', 990 + Math.min(sentD, 30) * 5, L.reason, L.move);
     if (/^Sent /.test(L.reason)) return out('waiting', 90 + score, L.reason, L.move);
-    return out('inbox', (L.lane === 'Now' ? 300 : 200) + score);
+    return out('later', score, L.reason, L.move);
   }
   /** Same story from two sources is one signal: same company and stage among New leads, keep the highest rank. rows: [{ r, n }]. */
   function dedupeNew(rows) {

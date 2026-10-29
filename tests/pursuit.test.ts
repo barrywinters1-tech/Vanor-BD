@@ -15,13 +15,14 @@ test('working days skip weekends', () => {
 });
 
 const now = Date.parse('2026-10-15T12:00:00Z');
-const r = { id: 'x', name: 'A B', company: 'Co', email: 'a@co.com', segment: 'Developer', lastContact: '2026-09-01' };
+const r = { id: 'x', kind: 'lead', origin: 'manual', createdAt: '2026-10-10', name: 'A B', company: 'Co', email: 'a@co.com', segment: 'Developer', lastContact: '2026-09-01' };
 const p = { grade: 'A', cell: 'A2', score: 60, live: false, warm: false, top: null, play: 'Approach' };
 const q = (d: any, h: any = {}) => P.queue(r, d, [], p, h, now);
 
-test('untriaged grade-A with email sits in the inbox', () => {
+test('a lead added by hand in the last 30 days sits in the inbox; an old relationship with nothing live does not', () => {
   const x = q({});
-  assert.equal(x.bucket, 'inbox'); assert.equal(x.lane, 'Next');
+  assert.equal(x.bucket, 'inbox');
+  assert.equal(P.queue({ ...r, kind: 'relationship', origin: undefined, createdAt: '2026-01-01' }, {}, [], p, {}, now).bucket, 'later');
 });
 test('no = off, later = parked until the date then back to the inbox', () => {
   assert.equal(q({ pursuit: { triage: 'no', reason: 'agency' } }).bucket, 'off');
@@ -169,4 +170,14 @@ test('dedupeNew: same company and stage from two sources is one signal', () => {
   const c = { r: sig({ id: 'c', company: 'Acme Ltd', stage: 'distress' }), n: { section: 'new', rank: 1200 } };
   const keep = Q.dedupeNew([a, b, c]);
   assert.deepEqual(keep.map((x: any) => x.r.id).sort(), ['a', 'c']); assert.equal(b.n.section, 'off'); assert.equal(b.n.dup, 'a');
+});
+test('old contacts stay out of New leads unless a Companies House signal inside 14 days passes the bar, or they were added by hand recently', () => {
+  const old = { id: 'R-1', kind: 'relationship', name: 'A', company: 'Old Co', jobTitle: 'Development Director', createdAt: '2026-03-01' };
+  assert.equal(Q.next(old, undefined, [], { score: 80 }, {}, NOW).section, 'off', 'nothing live: not shown');
+  const funded = { ...old, companyIntel: { signals: [{ type: 'property', date: '2026-10-25', text: 'Property charge in favour of Barclays' }] } };
+  const n = Q.next(funded, undefined, [], { score: 80 }, {}, NOW); assert.equal(n.section, 'new'); assert.match(n.sentence, /^Funding closed: /);
+  const stale = { ...old, companyIntel: { signals: [{ type: 'property', date: '2026-08-25', text: 'x' }] } };
+  assert.equal(Q.next(stale, undefined, [], { score: 80 }, {}, NOW).section, 'off');
+  const hand = { id: 'claude:1', kind: 'lead', origin: 'manual', name: 'B', company: 'New Co', jobTitle: 'MD', createdAt: '2026-10-20' };
+  assert.equal(Q.next(hand, undefined, [], { score: 10 }, {}, NOW).section, 'new');
 });
