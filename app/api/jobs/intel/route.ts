@@ -1,7 +1,7 @@
 // Daily: market + planning scan into the review queue, then company research with the time left.
 // Triggered by Vercel Cron (see vercel.json) with CRON_SECRET.
 import { timingSafeEqual } from 'node:crypto';
-import { runIntel } from '../../../../lib/intel-ingest';
+import { runIntel, autoAcceptSignals } from '../../../../lib/intel-ingest';
 import { researchBatch } from '../../../../lib/company-intel-store';
 import { autoClassify, generateDrafts } from '../../../../lib/outreach';
 import { deriveTasks, sweepTasks } from '../../../../lib/tasks';
@@ -21,7 +21,8 @@ export async function GET(request: Request) {
   try { result.scan = await runIntel({ write: true }); } catch (e) { result.scanError = e instanceof Error ? e.message : String(e); }
   try { result.tasks = await deriveTasks(); result.followUps = await followUpsDue({ createTasks: true }); result.decisions = await decisionsDue({ createTasks: true }); result.outcomes = await applyProposedOutcomes(); result.sweep = await sweepTasks(); } catch (e) { result.tasksError = e instanceof Error ? e.message : String(e); }
   try { result.classified = await autoClassify({ limit: 150 }); } catch (e) { result.classifyError = e instanceof Error ? e.message : String(e); }
-  try { result.drafts = await generateDrafts({ limit: 40 }); } catch (e) { result.draftsError = e instanceof Error ? e.message : String(e); }
+  // v3: no cold first approaches. The engine drafts only for signals it accepted itself (rank 1: distress with a named exposed client).
+  try { const acc = await autoAcceptSignals(); result.accepted = acc; result.drafts = acc.ids.length ? await generateDrafts({ limit: 10, ids: acc.ids, cells: ['A1', 'A2', 'A3', 'B1', 'B2', 'B3', 'C'] }) : { generated: 0 }; } catch (e) { result.draftsError = e instanceof Error ? e.message : String(e); }
   try { result.companies = await researchBatch({ limit: 25, budgetMs: Math.max(5000, 45000 - (Date.now() - started)) }); }
   catch (e) { result.companiesError = e instanceof Error ? e.message : String(e); }
   return Response.json(result);

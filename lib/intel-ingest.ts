@@ -54,3 +54,19 @@ export async function runIntel({ write, limit = CONFIG.maxPerRun, minScore = CON
   }
   return { fetched: result.fetched, signals: result.signals, candidates: candidates.length, added, triggers, errors: result.errors };
 }
+
+/** v3 (29 Oct 2026): a rank-1 signal (distress with a named exposed client) is accepted without a press and goes straight to Write; ranks 2 to 4 wait for Yes or No and drop after 14 days. */
+export async function autoAcceptSignals() {
+  const C = (globalThis as any).VanorClassify; if (!C?.bar) return { accepted: 0, ids: [] as string[] };
+  const { triage } = await import('./pursuit');
+  const [records, decisions] = await Promise.all([listScope('source'), listScope('decision')]);
+  const dById = new Map(decisions.map(d => [d.id, d])); const ids: string[] = [];
+  for (const r of records) {
+    if (r.origin !== 'intel' || r.kind !== 'lead') continue;
+    const d = dById.get(r.id); if (d?.pursuit || d?.status === 'Archive') continue;
+    const b = C.bar(r, Date.now()); if (!b || !b.pass || b.rank !== 1) continue;
+    await triage(r.id, 'yes', 'Engine', `Auto-accepted: ${b.reason}`);
+    ids.push(r.id);
+  }
+  return { accepted: ids.length, ids };
+}
