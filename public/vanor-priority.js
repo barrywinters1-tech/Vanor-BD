@@ -204,6 +204,12 @@
       if (L1.kind === 'promised') return out('chase', 'Chase ' + who + ' for the introduction to ' + L1.counterpart + ' (promised ' + nice(L1.date) + ')', L1.due, 1050, 'Chased', 'sent');
       if (L1.kind === 'made') return out('write', 'Ask ' + L1.counterpart + ' how it went with ' + who + ' (you introduced them ' + nice(L1.date) + ')', L1.due, 905, 'Sent', 'sent');
     } }
+    var tc = touch(r, d, h, now);
+    var out0 = out; out = function (section, sentence, due, rank, verb, step) { var o = out0(section, sentence, due, rank, verb, step); o.tier = tc.tier; o.lastTouch = tc.last; o.nextTouch = tc.next; return o; };
+    // Keep in touch: a contact with nothing live whose tier cadence has run out. Write, below the live rows; the morning message takes the top three.
+    if ((q.bucket === 'off' || q.bucket === 'later') && tc.overdue && pu.triage !== 'no' && pu.outcome !== 'done' && !(pu.triage === 'later' && pu.laterUntil && pu.laterUntil > t0)) {
+      var o2 = out('write', 'Keep in touch with ' + who + ' (tier ' + tc.tier + ', last touch ' + nice(tc.last) + ')', tc.next, 400 - Math.min(Math.floor(age(tc.next, now)), 200) + (tc.tier === 'A' ? 150 : tc.tier === 'B' ? 60 : 0), 'Sent', 'sent'); o2.kind = 'touch'; return o2;
+    }
     if (q.bucket === 'off') return out('off', q.reason, '', -1000, '', '');
     if (q.bucket === 'later') return out('off', q.reason, pu.laterUntil || '', -500, '', '');
     // Relationship: nothing chased until the re-engage date; then back to Write.
@@ -240,8 +246,34 @@
     }
     return out('off', q.reason, '', -1000, '', '');
   }
+  // ---- Tier and cadence (v3, 29 Oct 2026). One tier per contact, one cadence per tier, due-ness computed from the newest touch; nothing is scheduled.
+  var CADENCE = { A: 30, B: 90, C: 365 };
+  function tierOf(r, d, h) {
+    var t = d && d.tier; if (t && (CADENCE[t] || t === 'Parked')) return t;
+    var pu = (d && d.pursuit) || {};
+    if (pu.triage === 'no' || pu.outcome === 'done' || pu.step === 'lost' || (d && d.status === 'Archive')) return 'Parked';
+    if (pu.step === 'won') return 'A';
+    var Cl = root.VanorClassify; var ty = Cl && Cl.typeOf ? Cl.typeOf(r, d) : '';
+    var buyer = /Developer|Funder|Operator|Public/.test(ty), intro = /Consultancy|Contractor|Introducer/.test(ty);
+    var lg = h && h.ledger; var favours = lg && (lg.given || lg.received);
+    if ((h && (h.lastMet || h.lastProposal)) || favours || pu.outcome === 'opportunity' || pu.outcome === 'relationship') return (buyer || intro) ? 'B' : 'C';
+    if (h && h.lastBack) return 'C';
+    return 'Parked';
+  }
+  function lastTouch(h, pu) {
+    var ds = [h && h.lastSent, h && h.lastBack, h && h.lastMet, pu && pu.sentAt, pu && pu.outcomeAt ? String(pu.outcomeAt).slice(0, 10) : ''].filter(Boolean).map(String);
+    var lg = h && h.ledger; if (lg && lg.open) lg.open.forEach(function (x) { if (x.date) ds.push(String(x.date).slice(0, 10)); });
+    return ds.length ? ds.sort().pop() : '';
+  }
+  /** { tier, cadence, last, next, overdue } for one contact. */
+  function touch(r, d, h, now) {
+    now = now || Date.now(); var t0 = new Date(now).toISOString().slice(0, 10);
+    var tier = tierOf(r, d, h); var last = lastTouch(h, d && d.pursuit); var cad = CADENCE[tier] || 0;
+    var next = tier !== 'Parked' && last && cad ? new Date(Date.parse(last + 'T00:00:00Z') + cad * 864e5).toISOString().slice(0, 10) : '';
+    return { tier: tier, cadence: cad, last: last, next: next, overdue: !!(next && next <= t0) };
+  }
   function owesLine(h) { var lg = h && h.ledger; if (!lg || !lg.owes) return ''; return lg.owes > 0 ? 'owes you ' + lg.owes : 'you owe ' + Math.abs(lg.owes); }
   var SECTION_ORDER = { chase: 0, write: 1, waiting: 2, new: 3, off: 9 };
   var SECTION_LABEL = { chase: 'Chase', write: 'Write', waiting: 'Waiting', new: 'New leads', off: 'Off' };
-  root.VanorPriority = { dedupeNew: dedupeNew, compute: compute, lane: lane, queue: queue, next: next, owesLine: owesLine, addWorkingDays: addWorkingDays, SECTION_ORDER: SECTION_ORDER, SECTION_LABEL: SECTION_LABEL, LANE_ORDER: LANE_ORDER, BUCKET_ORDER: BUCKET_ORDER, BUCKET_LABEL: BUCKET_LABEL, tierOne: tierOne, norm: norm, PLAYS: PLAYS };
+  root.VanorPriority = { tierOf: tierOf, touch: touch, CADENCE: CADENCE, dedupeNew: dedupeNew, compute: compute, lane: lane, queue: queue, next: next, owesLine: owesLine, addWorkingDays: addWorkingDays, SECTION_ORDER: SECTION_ORDER, SECTION_LABEL: SECTION_LABEL, LANE_ORDER: LANE_ORDER, BUCKET_ORDER: BUCKET_ORDER, BUCKET_LABEL: BUCKET_LABEL, tierOne: tierOne, norm: norm, PLAYS: PLAYS };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

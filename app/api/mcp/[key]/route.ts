@@ -454,9 +454,15 @@ function createServer() {
   server.registerTool('today', {
     title: 'The Today screen: chase, write, waiting',
     description: 'What Barry sees. One row per live contact: section (chase = a clock has run out: no reply, or a proposal past its decision date; write = someone replied or was met and nothing has gone back; waiting = sent, clock running; new = untriaged), one sentence of what to do, the due date and the one button. Use this first in every report; it replaces work_queue + follow_ups_due + proposals_open for reading. Those remain for writing tasks.',
-    inputSchema: { section: z.enum(['chase', 'write', 'waiting', 'new']).optional(), region: z.string().max(40).optional(), limit: z.number().int().min(1).max(300).optional() },
+    inputSchema: { section: z.enum(['chase', 'write', 'waiting', 'new', 'touch']).optional(), region: z.string().max(40).optional(), limit: z.number().int().min(1).max(300).optional() },
     annotations: { readOnlyHint: true },
   }, async ({ section, region, limit }) => out(await todayScreen({ section, region, limit: limit || 100 }), 'Today.'));
+  server.registerTool('touches_due', {
+    title: 'Keep in touch: contacts whose tier cadence has run out',
+    description: 'v3 (29 Oct 2026). Every contact has a tier (A monthly, B quarterly, C yearly, Parked = no cadence), worked out from the record unless a founder set it, and a last touch (newest sent, reply, meeting or intro). This lists the ones overdue with nothing live, best first (A before B before C, then most overdue). Draft at most three a day: a short note in Barry\'s voice with one specific item (their scheme, a piece of news, an introduction) and no ask; "no ask" is the rule.',
+    inputSchema: { limit: z.number().int().min(1).max(50).optional() },
+    annotations: { readOnlyHint: true },
+  }, async ({ limit }) => { const t = await todayScreen({ section: 'touch', limit: limit || 10 }); return out({ count: t.counts.touch, rows: t.rows.map(r => ({ id: r.id, name: r.name, company: r.company, email: r.email, tier: r.tier, lastTouch: r.lastTouch, nextTouch: r.nextTouch, type: r.type, sentence: r.sentence })) }, 'Touches due.'); });
   server.registerTool('meeting_outcome', {
     title: 'The one press after a buyer meeting: opportunity, relationship or done',
     description: 'opportunity = a scheme is named; the follow-up offers a bounded free first look (2 hours, one page, inside a week) and states the stage-2 price and a decision date. relationship = no job now; re-engage on a date (default 60 days), nothing chased until then. done = thanks and move on; archived. Only call when a founder confirmed it in chat, or propose it in the report for one-click confirmation; when a transcript makes it obvious (a scheme named and a next step agreed), call it with the scheme and say so in the report.',

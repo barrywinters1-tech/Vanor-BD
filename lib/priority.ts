@@ -63,7 +63,7 @@ export async function workQueue({ bucket, region, limit = 50 }: { bucket?: Bucke
   return { buckets, rows: pick };
 }
 
-export type Section = 'chase' | 'write' | 'waiting' | 'new' | 'off';
+export type Section = 'chase' | 'write' | 'waiting' | 'new' | 'off' | 'touch';
 /** The Today screen, server side: one object per contact {section, sentence, due, verb, step}. Same derivation the board uses (VanorPriority.next), so jobs and the screen never disagree. */
 export async function today({ section, region, limit = 100 }: { section?: Section; region?: string; limit?: number } = {}) {
   const [records, decisions, work, events, h] = await Promise.all([listScope('source'), listScope('decision'), listScope('work'), listScope('event'), history()]);
@@ -79,11 +79,11 @@ export async function today({ section, region, limit = 100 }: { section?: Sectio
     if (d?.status === 'Archive') n.section = 'off';
     return { r, d, n, cls: classifyRecord(r, d) }; });
   Q.dedupeNew(rows);
-  const want = (x: typeof rows[number]) => (!region || x.cls.region === normRegion(region)) && (section ? x.n.section === section : x.n.section !== 'off' && x.n.section !== 'new');
-  const counts: Record<string, number> = { chase: 0, write: 0, waiting: 0, new: 0, off: 0 };
-  for (const x of rows) if (!region || x.cls.region === normRegion(region)) counts[x.n.section]++;
+  const want = (x: typeof rows[number]) => (!region || x.cls.region === normRegion(region)) && (section === 'touch' ? x.n.kind === 'touch' : section ? x.n.section === section && x.n.kind !== 'touch' : x.n.section !== 'off' && x.n.section !== 'new');
+  const counts: Record<string, number> = { chase: 0, write: 0, waiting: 0, new: 0, off: 0, touch: 0 };
+  for (const x of rows) if (!region || x.cls.region === normRegion(region)) { if (x.n.kind === 'touch') counts.touch++; else counts[x.n.section]++; }
   const pick = rows.filter(want)
     .sort((a, b) => (Q.SECTION_ORDER[a.n.section] - Q.SECTION_ORDER[b.n.section]) || ((a.n.section === 'chase' || a.n.section === 'waiting') ? (a.n.due || '9999').localeCompare(b.n.due || '9999') : 0) || b.n.rank - a.n.rank).slice(0, limit)
-    .map(({ r, d, n, cls }) => ({ id: r.id, name: r.name, company: r.company, email: r.email || '', section: n.section, sentence: n.sentence, due: n.due, verb: n.verb, step: n.step, type: cls.type, region: cls.region, proposal: d?.proposal || null, outcome: d?.pursuit?.outcome || null, owes: ledger.get(r.id)?.owes || 0 }));
+    .map(({ r, d, n, cls }) => ({ id: r.id, name: r.name, company: r.company, email: r.email || '', section: n.section, sentence: n.sentence, due: n.due, verb: n.verb, step: n.step, type: cls.type, region: cls.region, proposal: d?.proposal || null, outcome: d?.pursuit?.outcome || null, owes: ledger.get(r.id)?.owes || 0, kind: n.kind || 'live', tier: n.tier || '', lastTouch: n.lastTouch || '', nextTouch: n.nextTouch || '' }));
   return { counts, rows: pick };
 }

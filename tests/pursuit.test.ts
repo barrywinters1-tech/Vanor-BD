@@ -186,3 +186,27 @@ test('a hand-added lead that was emailed keeps its clock instead of asking for t
   const x = Q.queue(hand, {}, [], { score: 10 }, { lastSent: '2026-10-15' }, NOW);
   assert.notEqual(x.bucket, 'inbox');
 });
+
+// ---- Tier and cadence (v3, 29 Oct 2026) ----
+test('tier: won = A; met buyer or introducer = B; replied only = C; nothing = Parked; an explicit tier wins', () => {
+  const buyer = { id: 'b', kind: 'relationship', name: 'B', company: 'Dev Co', jobTitle: 'Development Director' };
+  assert.equal(Q.tierOf(buyer, { pursuit: { triage: 'yes', step: 'won' } }, {}), 'A');
+  assert.equal(Q.tierOf(buyer, {}, { lastMet: '2026-07-01' }), 'B');
+  assert.equal(Q.tierOf(buyer, {}, { lastBack: '2026-07-01' }), 'C');
+  assert.equal(Q.tierOf(buyer, {}, {}), 'Parked');
+  assert.equal(Q.tierOf(buyer, { tier: 'A' }, {}), 'A');
+  assert.equal(Q.tierOf(buyer, { pursuit: { triage: 'no' } }, { lastMet: '2026-07-01' }), 'Parked');
+});
+test('touch: next = last touch + cadence; B at 95 days is overdue, at 60 is not', () => {
+  const buyer = { id: 'b', kind: 'relationship', name: 'B', company: 'Dev Co', jobTitle: 'Development Director' };
+  const t = Q.touch(buyer, {}, { lastMet: '2026-07-20' }, NOW); // 101 days
+  assert.equal(t.tier, 'B'); assert.equal(t.next, '2026-10-18'); assert.equal(t.overdue, true);
+  assert.equal(Q.touch(buyer, {}, { lastMet: '2026-09-01' }, NOW).overdue, false);
+});
+test('next: an overdue tier with nothing live lands in Write as keep in touch; in-flight rows are untouched', () => {
+  const buyer = { id: 'b', kind: 'relationship', name: 'Bob', company: 'Dev Co', jobTitle: 'Development Director', email: 'b@dev.co', createdAt: '2026-01-01' };
+  const n = Q.next(buyer, {}, [], { score: 40 }, { lastMet: '2026-07-01', lastSent: '2026-07-02' }, NOW);
+  assert.equal(n.section, 'write'); assert.equal(n.kind, 'touch'); assert.match(n.sentence, /^Keep in touch with Bob at Dev Co \(tier B/); assert.equal(n.tier, 'B');
+  const live = Q.next(buyer, { pursuit: { triage: 'yes', step: 'sent', sentAt: '2026-10-27', followUpAt: '2026-11-03' } }, [], { score: 40 }, { lastMet: '2026-07-01', lastSent: '2026-10-27' }, NOW);
+  assert.equal(live.section, 'waiting'); assert.notEqual(live.kind, 'touch');
+});
