@@ -34,12 +34,13 @@ export async function setStep(id: string, step: Step, actor: string, note = '') 
     const p: Pursuit = { triage: 'yes', triagedAt: now, triagedBy: actor, ...(cur.pursuit || {}) };
     (p as any).prev = snapshot(cur);
     p.step = step; p.stepAt = now;
-    if (step === 'sent') { const chases = (p.sentAt ? (p.chases || 0) + 1 : 0); p.chases = chases; p.sentAt = t0; p.followUpAt = followUpAfter(t0, chases); }
+    if (step === 'sent') { const chases = (p.sentAt && p.sentAt !== t0 ? (p.chases || 0) + 1 : (p.chases || 0)); p.chases = chases; p.sentAt = t0; p.followUpAt = followUpAfter(t0, chases); }
     if (step === 'replied' || step === 'meeting' || step === 'proposal') { p.followUpAt = undefined; }
     if (step === 'won' || step === 'lost') { p.followUpAt = undefined; }
     out = p; return { ...cur, pursuit: p, ...(step === 'lost' ? { status: 'Archive', archiveReason: note || 'Lost', archivedBy: actor, archivedAt: now } : {}) };
   }, true);
-  if (step === 'sent') await logEvent({ entityId: id, recordId: id, type: 'Outcome: sent', note: note || 'Email issued (marked in the board)', date: t0, ref: `board:sent:${id}:${t0}`, trigger: 'warm', channel: 'email', source: 'board', actor });
+  const sentToday = step === 'sent' && (await listScope('event')).some(e => String(e.recordId || e.entityId) === id && String(e.type) === 'Outcome: sent' && String(e.happenedOn || e.date || e.at || '').slice(0, 10) === t0);
+  if (step === 'sent' && !sentToday) await logEvent({ entityId: id, recordId: id, type: 'Outcome: sent', note: note || 'Email issued (marked in the board)', date: t0, ref: `board:sent:${id}:${t0}`, trigger: 'warm', channel: 'email', source: 'board', actor });
   else if (step === 'replied') await logEvent({ entityId: id, recordId: id, type: 'Outcome: reply', note: note || 'Reply received (marked in the board)', date: t0, ref: `board:reply:${id}:${t0}`, actor });
   else if (step === 'meeting') await logEvent({ entityId: id, recordId: id, type: 'Outcome: meeting_booked', note: note || 'Meeting (marked in the board)', date: t0, ref: `board:meeting:${id}:${t0}`, actor });
   else if (step === 'proposal') await logEvent({ entityId: id, recordId: id, type: 'Outcome: proposal', note: note || 'Proposal (marked in the board)', date: t0, ref: `board:proposal:${id}:${t0}`, actor });
@@ -48,16 +49,16 @@ export async function setStep(id: string, step: Step, actor: string, note = '') 
   return { ok: true, pursuit: out };
 }
 
-const snapshot = (cur: any) => ({ pursuit: cur.pursuit ? { ...cur.pursuit, prev: undefined } : null, status: cur.status, archiveReason: cur.archiveReason, nextAsk: cur.nextAsk, nextDate: cur.nextDate });
+const snapshot = (cur: any) => ({ pursuit: cur.pursuit ? { ...cur.pursuit, prev: undefined } : null, status: cur.status, archiveReason: cur.archiveReason, nextAsk: cur.nextAsk, nextDate: cur.nextDate, proposal: cur.proposal ? { ...cur.proposal } : undefined, oneDay: cur.oneDay ? { ...cur.oneDay } : undefined });
 
 /** Undo the last board press on this lead: restores the previous pursuit state and retires the event it logged (kept, retyped "Undone: …", so the funnel ignores it). */
 export async function undoLast(id: string, actor: string) {
   const cur = await getOne('decision', id); const prev = cur?.pursuit?.prev;
   if (!cur?.pursuit) throw new Error('Nothing to undo on this lead.');
-  const events = (await listScope('event')).filter(e => String(e.recordId || e.entityId) === id && typeof e.ref === 'string' && e.ref.startsWith('board:')).sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  const events = (await listScope('event')).filter(e => String(e.recordId || e.entityId) === id && ((typeof e.ref === 'string' && e.ref.startsWith('board:')) || String(e.type) === 'Outcome: proposal')).sort((a, b) => String(b.at).localeCompare(String(a.at)));
   const last = events[0];
   if (last && String(last.at) >= String(cur.pursuit.stepAt || cur.pursuit.triagedAt || '')) await updateEntity('event', last.id, e => ({ ...e, type: 'Undone: ' + String(e.type).replace(/^Outcome: /, ''), undoneBy: actor, undoneAt: new Date().toISOString() }));
-  await updateEntity('decision', id, c => { const n: any = { ...c }; if (prev) { n.pursuit = prev.pursuit || undefined; n.status = prev.status; n.archiveReason = prev.archiveReason; n.nextAsk = prev.nextAsk; n.nextDate = prev.nextDate; } else { delete n.pursuit; if (n.archivedBy === actor && /^(Not a lead|Lost)/.test(String(n.archiveReason || ''))) { n.status = 'New'; delete n.archiveReason; } } return n; });
+  await updateEntity('decision', id, c => { const n: any = { ...c }; if (prev) { n.pursuit = prev.pursuit || undefined; n.status = prev.status; n.archiveReason = prev.archiveReason; n.nextAsk = prev.nextAsk; n.nextDate = prev.nextDate; if ('proposal' in prev) { if (prev.proposal) n.proposal = prev.proposal; else delete n.proposal; } if ('oneDay' in prev) { if (prev.oneDay) n.oneDay = prev.oneDay; else delete n.oneDay; } } else { delete n.pursuit; if (n.archivedBy === actor && /^(Not a lead|Lost)/.test(String(n.archiveReason || ''))) { n.status = 'New'; delete n.archiveReason; } } return n; });
   await logEvent({ entityId: id, recordId: id, type: 'Undo', actor, note: `Undid the last board press${last ? ` (${String(last.type).replace(/^Outcome: /, '')})` : ''}` });
   return { ok: true, restored: prev || null };
 }
@@ -66,7 +67,9 @@ export async function undoLast(id: string, actor: string) {
 export async function followUpsDue({ createTasks = true } = {}) {
   const [records, decisions] = await Promise.all([listScope('source'), listScope('decision')]);
   const byId = new Map(records.map(r => [r.id, r])); const t0 = today();
-  const due = decisions.filter(d => d.pursuit && d.pursuit.triage === 'yes' && d.pursuit.step === 'sent' && d.pursuit.followUpAt && d.pursuit.followUpAt <= t0 && d.status !== 'Archive')
+  const events = await listScope('event'); const lastBack = new Map<string, string>();
+  for (const e of events) { const ty = String(e.type || ''); if (/^Outcome: (reply|meeting_booked|meeting_held|proposal|won)$|^Interaction: (email in|meeting|call)$/.test(ty)) { const rid = String(e.recordId || e.entityId); const d = String(e.happenedOn || e.date || e.at || '').slice(0, 10); if ((lastBack.get(rid) || '') < d) lastBack.set(rid, d); } }
+  const due = decisions.filter(d => d.pursuit && d.pursuit.triage === 'yes' && d.pursuit.step === 'sent' && d.pursuit.followUpAt && d.pursuit.followUpAt <= t0 && d.status !== 'Archive' && !((lastBack.get(d.id) || '') >= String(d.pursuit.sentAt || '')))
     .map(d => { const r: any = byId.get(d.id) || {}; return { id: d.id, name: r.name || '', company: r.company || '', sentAt: d.pursuit.sentAt, followUpAt: d.pursuit.followUpAt, chases: d.pursuit.chases || 0, daysSinceSent: Math.round((Date.parse(t0) - Date.parse(d.pursuit.sentAt)) / DAY) }; })
     .sort((a, b) => a.followUpAt.localeCompare(b.followUpAt));
   let created = 0;
@@ -93,7 +96,7 @@ export async function recordProposal(o: ProposalInput) {
     (p as any).prev = snapshot(cur);
     if (p.step !== 'won' && p.step !== 'lost') { p.step = 'proposal'; p.stepAt = now; p.followUpAt = undefined; }
     const oneDay = { ...(cur.oneDay || {}), resolution: cur.oneDay?.resolution || label, decisionDate: o.decisionDate };
-    return { ...cur, pursuit: p, oneDay, proposal: { product: prod?.key || o.product || '', price: o.price, unit: o.unit || prod?.unit || 'fixed', options: o.options || '', decisionDate: o.decisionDate, sentAt: t0, status: 'open' } };
+    return { ...cur, pursuit: p, oneDay, proposal: { ...(cur.proposal || {}), product: prod?.key || o.product || cur.proposal?.product || '', price: o.price, unit: o.unit || prod?.unit || 'fixed', options: o.options || '', decisionDate: o.decisionDate, sentAt: cur.proposal?.sentAt || t0, open: true } };
   }, true);
   const ref = o.ref || `board:proposal:${o.id}:${t0}`;
   const dup = (await listScope('event')).find(e => e.ref === ref);

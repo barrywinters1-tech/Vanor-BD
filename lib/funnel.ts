@@ -13,24 +13,33 @@ const when = (e: Entity) => String(e.happenedOn || e.date || e.at || '').slice(0
 /** Idempotent: the same Outlook message or calendar event is never counted twice. */
 export async function logOutcome(o: Omit<Outcome, 'id'> & { id: string }) {
   if (!await getOne('source', o.id)) throw new Error(`No contact with id ${o.id}.`);
+  const existing = await listScope('event');
   if (o.ref) {
-    const dup = (await listScope('event')).find(e => e.ref === o.ref && stepOf(e) === o.step);
+    const dup = existing.find(e => e.ref === o.ref && stepOf(e) === o.step);
     if (dup) return { logged: false, reason: 'Already recorded', eventId: dup.id };
   }
+  if (o.step === 'sent') { const same = existing.find(e => String(e.recordId || e.entityId) === o.id && stepOf(e) === 'sent' && String(e.happenedOn || e.date || e.at || '').slice(0, 10) === o.date); if (same) { await syncPursuit(o); return { logged: false, reason: 'An email to this contact is already recorded for that day', eventId: same.id }; } }
   await updateEntity('source', o.id, r => (!r.lastContact || String(r.lastContact).slice(0, 10) < o.date) ? { ...r, lastContact: o.date } : r);
   const eventId = await logEvent({ entityId: o.id, recordId: o.id, type: TYPE_PREFIX + o.step, note: o.note, date: o.date,
     ref: o.ref || '', trigger: o.trigger || '', channel: o.channel || 'email', source: o.source || '' });
   // Keep the founders' pursuit step in line with what the mailbox shows: a reply, meeting or proposal moves the lead on and stops the follow-up clock; a sent email starts it.
-  const PURSUIT_STEP: Record<string, string> = { sent: 'sent', reply: 'replied', meeting_booked: 'meeting', proposal: 'proposal', won: 'won' };
-  const ORDER = ['to_write', 'sent', 'replied', 'meeting', 'proposal', 'won'];
+  await syncPursuit(o);
+  return { logged: true, eventId };
+}
+
+const PURSUIT_STEP: Record<string, string> = { sent: 'sent', reply: 'replied', meeting_booked: 'meeting', proposal: 'proposal', won: 'won' };
+const ORDER = ['to_write', 'sent', 'replied', 'meeting', 'proposal', 'won'];
+/** Keep decision.pursuit in line with the mailbox. A sent email to a contact nobody has triaged starts a pursuit (triage yes) so the follow-up clock runs for it too. */
+async function syncPursuit(o: { id: string; step: string; date: string }) {
   const next = PURSUIT_STEP[o.step];
   if (next) await updateEntity('decision', o.id, cur => {
-    const pu = cur.pursuit; if (!pu || pu.triage !== 'yes' || pu.step === 'lost') return cur;
+    let pu = cur.pursuit;
+    if (!pu && next === 'sent' && cur.status !== 'Archive') pu = { triage: 'yes', triagedAt: new Date().toISOString(), triagedBy: 'Engine', reason: 'Email sent from Outlook', step: 'to_write', stepAt: new Date().toISOString() };
+    if (!pu || pu.triage !== 'yes' || pu.step === 'lost') return cur;
     if (next === 'sent') { if (pu.step !== 'to_write' && pu.step !== 'sent') return cur; const chases = pu.sentAt && pu.sentAt !== o.date ? (pu.chases || 0) + 1 : (pu.chases || 0); return { ...cur, pursuit: { ...pu, step: 'sent', stepAt: new Date().toISOString(), sentAt: o.date, chases, followUpAt: followUpAfter(o.date, chases) } }; }
     if (ORDER.indexOf(next) <= ORDER.indexOf(pu.step || 'to_write')) return cur;
     return { ...cur, pursuit: { ...pu, step: next, stepAt: new Date().toISOString(), followUpAt: undefined } };
   });
-  return { logged: true, eventId };
 }
 
 export type Funnel = {
