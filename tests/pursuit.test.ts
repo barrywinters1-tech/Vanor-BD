@@ -210,3 +210,8 @@ test('next: an overdue tier with nothing live lands in Write as keep in touch; i
   const live = Q.next(buyer, { pursuit: { triage: 'yes', step: 'sent', sentAt: '2026-10-27', followUpAt: '2026-11-03' } }, [], { score: 40 }, { lastMet: '2026-07-01', lastSent: '2026-10-27' }, NOW);
   assert.equal(live.section, 'waiting'); assert.notEqual(live.kind, 'touch');
 });
+test('next: a proposed outcome shows on the row with its stands-on date and marks the proposed button', () => {
+  const buyer = { id: 'nd', kind: 'relationship', name: 'Nick', company: 'Coplan', jobTitle: 'Development Director', createdAt: '2026-01-01' };
+  const n = Q.next(buyer, { pursuit: { triage: 'yes', proposedOutcome: { outcome: 'opportunity', scheme: 'Tower Wharf', standsOn: '2026-10-30', at: '2026-10-28T18:00:00Z' } } }, [], { score: 40 }, { lastMet: '2026-10-28' }, NOW);
+  assert.equal(n.section, 'write'); assert.equal(n.step, 'outcome'); assert.equal(n.proposed, 'opportunity'); assert.match(n.sentence, /proposed opportunity on Tower Wharf\. Stands 30 Oct unless changed/);
+});

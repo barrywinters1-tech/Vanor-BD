@@ -15,7 +15,7 @@ import {
 import { lookupPerson } from '../../../../lib/rocketreach';
 import { runIntel } from '../../../../lib/intel-ingest';
 import { priorityList, normRegion, workQueue, today as todayScreen } from '../../../../lib/priority';
-import { triage, setStep, followUpsDue, undoLast, recordProposal, openProposals, decisionsDue, meetingOutcome, logIntro, settleIntro, ledgerFor } from '../../../../lib/pursuit';
+import { triage, setStep, followUpsDue, undoLast, recordProposal, openProposals, decisionsDue, meetingOutcome, logIntro, settleIntro, ledgerFor , proposeOutcome, skipMeeting } from '../../../../lib/pursuit';
 import { PRICE_LIST, RULES, firstStep, options as feeOptions, offerLines, decisionDateFrom } from '../../../../lib/fees';
 import { logOutcome, funnel, STEPS } from '../../../../lib/funnel';
 import { listTasks, addTask, completeTask, deriveTasks, sweepTasks } from '../../../../lib/tasks';
@@ -469,6 +469,18 @@ function createServer() {
     inputSchema: { id: z.string(), outcome: z.enum(['opportunity', 'relationship', 'done']), scheme: z.string().max(160).optional(), reengageDays: z.number().int().min(7).max(365).optional(), reason: z.string().max(200).optional(), actor: z.enum(['Barry', 'Graeme']).optional() },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ id, outcome, scheme, reengageDays, reason, actor }) => out(await meetingOutcome(id, outcome, actor || 'Barry', { scheme, reengageDays, reason }), 'Outcome recorded.'));
+  server.registerTool('propose_outcome', {
+    title: 'Reconcile: propose the outcome of a buyer meeting from the transcript',
+    description: 'v3 (29 Oct 2026). The reconcile job calls this instead of meeting_outcome. The board shows "proposed: opportunity (scheme)" on the row with the proposed button first; Barry or Graeme confirms or changes it; if untouched for two working days the proposal stands and the follow-up flow runs. Pass evidence = the transcript line that decided it (max 300 chars). Never call meeting_outcome from a scheduled run.',
+    inputSchema: { id: z.string(), outcome: z.enum(['opportunity', 'relationship', 'done']), scheme: z.string().max(160).optional(), reengageDays: z.number().int().min(7).max(365).optional(), reason: z.string().max(200).optional(), evidence: z.string().max(300).optional(), ref: z.string().max(300).optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ id, outcome, scheme, reengageDays, reason, evidence, ref }) => out(await proposeOutcome(id, outcome, { scheme, reengageDays, reason, evidence, ref }), 'Outcome proposed.'));
+  server.registerTool('skip_meeting', {
+    title: 'Reconcile: record that a calendar event needed no BD action',
+    description: 'v3. Every external calendar event today ends as processed (log_outcome meeting_held + propose_outcome) or skipped; call this for the skips (internal, personal, cancelled, no-show, supplier) so the day ends with zero unaccounted events. ref = the calendar event id.',
+    inputSchema: { ref: z.string().max(300), subject: z.string().max(200), reason: z.string().max(200), date: date.optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ ref, subject, reason, date: d }) => out(await skipMeeting(ref, subject, reason, d), 'Skipped.'));
   server.registerTool('log_intro', {
     title: 'Introductions ledger: made, promised or lead passed',
     description: 'made = Barry or Graeme introduced this contact to someone (they owe us one; after 10 working days the board asks how it went). promised = this contact said they will introduce us to someone (chased after 10 working days). lead_passed = we handed this contact a project or a name. counterpart = the other party, as named. Idempotent on contact + kind + date + counterpart.',

@@ -220,7 +220,8 @@
     // Buyer met, no outcome pressed yet: decide first. Unconfirmed for 2 working days moves to Chase.
     var metRecent = h && h.lastMet && !pu.outcome && !(pu.outcomeAt && String(pu.outcomeAt).slice(0, 10) >= h.lastMet) && age(h.lastMet, now) <= 30 && !isIntroducer && !(pu.step === 'proposal' || pu.step === 'won' || pu.step === 'lost');
     if (metRecent && !(h.lastProposal && h.lastProposal >= h.lastMet) && !(pu.sentAt && pu.sentAt >= h.lastMet)) {
-      var decideBy = addWorkingDays(h.lastMet, 2);
+      var decideBy = addWorkingDays(h.lastMet, 2); var po = pu.proposedOutcome;
+      if (po && po.outcome) { var o3 = out('write', 'Met ' + who + ' ' + nice(h.lastMet) + ': proposed ' + po.outcome + (po.scheme ? ' on ' + po.scheme : '') + '. Stands ' + nice(po.standsOn || decideBy) + ' unless changed', po.standsOn || decideBy, 960, 'Decide', 'outcome'); o3.proposed = po.outcome; return o3; }
       return out(decideBy <= t0 ? 'chase' : 'write', 'Met ' + who + ' ' + nice(h.lastMet) + ': decide, opportunity, relationship or done', decideBy, decideBy <= t0 ? 1080 : 970, 'Decide', 'outcome');
     }
     if (pu.outcome === 'opportunity' && (pu.step === 'to_write' || !pu.step)) return out('write', 'Send ' + who + ' the free first look' + (pu.scheme ? ' on ' + pu.scheme : '') + ' with the stage 2 price and a decision date', pu.outcomeAt ? addWorkingDays(String(pu.outcomeAt).slice(0, 10), 2) : '', 965, 'Sent', 'sent');

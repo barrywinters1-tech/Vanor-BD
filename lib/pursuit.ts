@@ -133,6 +133,41 @@ export async function decisionsDue({ createTasks = true } = {}) {
 // ---- Meeting outcome: one press after every buyer meeting ----
 export type Outcome = 'opportunity' | 'relationship' | 'done';
 /** Opportunity: a scheme is named; the free first look goes out with the stage-2 price. Relationship: no job now, re-engage on a date. Done: archived. */
+/** v3 (29 Oct 2026). The reconcile job proposes the outcome from the transcript; a founder confirms or changes it on the board; if untouched for two working days the proposal stands (applyProposedOutcomes). */
+export async function proposeOutcome(id: string, outcome: Outcome, opts: { scheme?: string; reengageDays?: number; reason?: string; evidence?: string; ref?: string } = {}) {
+  const r = await getOne('source', id); if (!r) throw new Error(`No contact with id ${id}.`);
+  const now = new Date().toISOString(); const t0 = today();
+  let applied = false;
+  await updateEntity('decision', id, cur => {
+    const p: any = { triage: 'yes', triagedAt: now, triagedBy: 'Engine', ...(cur.pursuit || {}) };
+    if (p.outcome && p.outcomeAt && String(p.outcomeAt).slice(0, 10) >= t0) { applied = true; return cur; }
+    p.proposedOutcome = { outcome, scheme: opts.scheme || '', reengageDays: opts.reengageDays || 60, reason: opts.reason || '', evidence: String(opts.evidence || '').slice(0, 300), at: now, standsOn: addWd(t0, 2), by: 'Engine' };
+    return { ...cur, pursuit: p };
+  }, true);
+  if (!applied) await logEvent({ entityId: id, recordId: id, type: 'Outcome proposed', actor: 'Engine', date: t0, ref: opts.ref || `board:proposed:${id}:${t0}`, note: `${outcome}${opts.scheme ? ': ' + opts.scheme : ''}${opts.reason ? ' (' + opts.reason + ')' : ''}; stands on ${addWd(t0, 2)} unless changed` });
+  return { ok: true, proposed: outcome, standsOn: addWd(t0, 2), alreadyDecided: applied };
+}
+
+/** Cron: apply every proposed outcome whose standsOn date has arrived and that no founder has overridden. */
+export async function applyProposedOutcomes() {
+  const t0 = today(); const decisions = await listScope('decision'); const applied: string[] = [];
+  for (const d of decisions) {
+    const p: any = d.pursuit; const po = p?.proposedOutcome; if (!po || !po.outcome) continue;
+    if (p.outcome && p.outcomeAt && String(p.outcomeAt) >= String(po.at)) { await updateEntity('decision', d.id, cur => ({ ...cur, pursuit: { ...(cur.pursuit || {}), proposedOutcome: undefined } }), true); continue; }
+    if (!po.standsOn || po.standsOn > t0) continue;
+    await meetingOutcome(d.id, po.outcome, 'Engine', { scheme: po.scheme, reengageDays: po.reengageDays, reason: po.reason ? `${po.reason} (proposed by the reconcile, not changed in 2 working days)` : 'Proposed by the reconcile, not changed in 2 working days' });
+    await updateEntity('decision', d.id, cur => ({ ...cur, pursuit: { ...(cur.pursuit || {}), proposedOutcome: undefined } }), true);
+    applied.push(d.id);
+  }
+  return { applied: applied.length, ids: applied };
+}
+
+/** Every external calendar event ends the day as processed (a meeting_held outcome exists) or skipped; this records the skip so the list ends at zero. */
+export async function skipMeeting(ref: string, subject: string, reason: string, date = today()) {
+  await logEvent({ entityId: `calendar:${ref}`, type: 'Meeting skipped', actor: 'Engine', date, ref: `calendar:skip:${ref}`, note: `${subject}: ${reason}`.slice(0, 300) });
+  return { ok: true };
+}
+
 export async function meetingOutcome(id: string, outcome: Outcome, actor: string, opts: { scheme?: string; reengageDays?: number; reason?: string } = {}) {
   const r = await getOne('source', id); if (!r) throw new Error(`No contact with id ${id}.`);
   const now = new Date().toISOString(); const t0 = today(); const days = opts.reengageDays || 60;
@@ -140,7 +175,7 @@ export async function meetingOutcome(id: string, outcome: Outcome, actor: string
   await updateEntity('decision', id, cur => {
     const p: any = { triage: 'yes', triagedAt: now, triagedBy: actor, ...(cur.pursuit || {}) };
     p.prev = snapshot(cur);
-    p.outcome = outcome; p.outcomeAt = now; p.scheme = opts.scheme || p.scheme || '';
+    p.outcome = outcome; p.outcomeAt = now; p.scheme = opts.scheme || p.scheme || (p.proposedOutcome && p.proposedOutcome.scheme) || ''; p.proposedOutcome = undefined;
     if (outcome === 'opportunity') { p.step = 'to_write'; p.stepAt = now; p.followUpAt = undefined; p.reengageAt = undefined; }
     if (outcome === 'relationship') { p.step = 'to_write'; p.stepAt = now; p.followUpAt = undefined; p.reengageAt = reengageAt; }
     if (outcome === 'done') { p.followUpAt = undefined; p.reengageAt = undefined; }
