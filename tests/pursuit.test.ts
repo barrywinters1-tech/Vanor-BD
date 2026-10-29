@@ -125,3 +125,48 @@ test('next: untriaged = new; triaged no = off; parked = off', () => {
   assert.equal(n({ pursuit: { triage: 'no' } }).section, 'off');
   assert.equal(n({ pursuit: { triage: 'later', laterUntil: '2026-11-30' } }).section, 'off');
 });
+
+// ---- The signals bar (29 Oct 2026): three tests, ranked distress > contract let > funding closed ----
+const C: any = (globalThis as any).VanorClassify; const Q: any = (globalThis as any).VanorPriority;
+const NOW = Date.parse('2026-10-29T12:00:00Z');
+const sig = (o: any) => ({ id: o.id || 'intel:x', origin: 'intel', company: o.company || 'Acme Developments', title: o.title || 'A scheme', context: o.context || '', createdAt: '2026-10-27', intel: { stage: o.stage, buyerType: o.buyer || 'developer', parties: o.parties ?? { developer: o.company || 'Acme Developments' }, signalDate: o.date || '2026-10-27', region: o.region || 'London' } });
+
+test('bar: distress with an exposed client passes and ranks first', () => {
+  const b = C.bar(sig({ stage: 'distress', parties: { developer: 'Grand Hotel Owner Ltd', contractor: 'Builder Ltd' } }), NOW);
+  assert.equal(b.pass, true); assert.equal(b.rank, 1); assert.match(b.reason, /^Distress: Grand Hotel Owner Ltd/);
+});
+test('bar: operating-company administration with no scheme or client fails', () => {
+  const b = C.bar(sig({ stage: 'distress', parties: { contractor: 'Cafe Ltd' }, buyer: 'contractor' }), NOW);
+  assert.equal(b.pass, false); assert.match(b.reason, /Contractor named|no exposed client/);
+});
+test('bar: contract let with no PM or EA named ranks second; with one named it is rank four', () => {
+  assert.equal(C.bar(sig({ stage: 'contractor_appointed', title: 'Acme appoints Bob Build for 200 homes' }), NOW).rank, 2);
+  assert.equal(C.bar(sig({ stage: 'contractor_appointed', title: 'Acme appoints Bob Build; Gardiner acts as employer\'s agent' }), NOW).rank, 4);
+});
+test('bar: funding closed ranks third; granted ranks fourth', () => {
+  assert.equal(C.bar(sig({ stage: 'funded' }), NOW).rank, 3);
+  assert.equal(C.bar(sig({ stage: 'granted' }), NOW).rank, 4);
+});
+test('bar: job adverts, planning-only, overseas, unnamed and stale signals fail', () => {
+  assert.equal(C.bar(sig({ stage: 'hiring' }), NOW).pass, false);
+  assert.equal(C.bar(sig({ stage: 'submitted' }), NOW).pass, false);
+  assert.equal(C.bar(sig({ stage: 'funded', region: 'International' }), NOW).pass, false);
+  assert.equal(C.bar(sig({ stage: 'funded', parties: {} }), NOW).pass, false);
+  assert.equal(C.bar(sig({ stage: 'funded', date: '2026-10-01' }), NOW).reason, 'Trigger older than 14 days');
+});
+test('bar: a record without an intel block is not judged', () => { assert.equal(C.bar({ origin: 'manual' }, NOW), null); });
+test('queue/next: a passing signal is New ranked by the bar; a failing one is Off, not parked', () => {
+  const ok = Q.next(sig({ stage: 'distress', parties: { developer: 'Exposed Ltd' } }), undefined, [], { score: 10 }, {}, NOW);
+  assert.equal(ok.section, 'new'); assert.match(ok.sentence, /^Distress: Exposed Ltd/);
+  const funded = Q.next(sig({ stage: 'funded' }), undefined, [], { score: 10 }, {}, NOW);
+  assert.ok(ok.rank > funded.rank, 'distress outranks funding closed');
+  const no = Q.next(sig({ stage: 'hiring' }), undefined, [], { score: 90 }, {}, NOW);
+  assert.equal(no.section, 'off'); assert.match(no.sentence, /^Dropped: Job advert/);
+});
+test('dedupeNew: same company and stage from two sources is one signal', () => {
+  const a = { r: sig({ id: 'a', company: 'Acme Ltd', stage: 'funded' }), n: { section: 'new', rank: 900 } };
+  const b: any = { r: sig({ id: 'b', company: 'ACME LIMITED', stage: 'funded' }), n: { section: 'new', rank: 800 } };
+  const c = { r: sig({ id: 'c', company: 'Acme Ltd', stage: 'distress' }), n: { section: 'new', rank: 1200 } };
+  const keep = Q.dedupeNew([a, b, c]);
+  assert.deepEqual(keep.map((x: any) => x.r.id).sort(), ['a', 'c']); assert.equal(b.n.section, 'off'); assert.equal(b.n.dup, 'a');
+});

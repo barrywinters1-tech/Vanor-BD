@@ -157,6 +157,39 @@
     if (conf === 'low' && tier === 'Watch') return out('watch', when, conf, 'Right stage, but nobody named and buyer unclear');
     return out('approach', when, conf, (i.why || '').split(' · ').slice(0, 2).join(', '));
   }
+  /* The bar (29 Oct 2026): three tests, all required, for a scanner lead to reach New leads.
+       1 a live UK or Ireland construction scheme (not a company result, a job advert, an overseas sale, a round-up, or planning only);
+       2 a named client who could hire Vanor (developer, owner, lender, operator, public body; a contractor points to the client behind it);
+       3 a trigger inside the last 14 days.
+     Value is not a bar; it affects rank. Rank 1 distress, 2 contract let with no PM/EA/monitor named, 3 funding closed, 4 everything else. */
+  var LIVE = { granted: 1, funded: 1, acquired: 1, tender: 1, contractor_appointed: 1, on_site: 1, stalled: 1, distress: 1 };
+  var RANK_LABEL = { 1: 'Distress', 2: 'Contract let, no PM or EA named', 3: 'Funding closed', 4: 'Live scheme' };
+  var PMEA = /\b(project manager|project management|employer'?s agent|development manager|monitoring surveyor|fund monitor|monitor(ing)? (surveyor|agent)|\bpm\b|\bea\b)\b/i;
+  var PROPERTY = /\b(homes?|housing|flats?|apartments?|scheme|site|land|plot|building|tower|campus|centre|center|hotel|store|hq|headquarters|offices?|warehouse|estate|park|mall|shopping|units?|beds?|student|pbsa|acres?|hectares?|sq ?ft|sq ?m|regen\w*|development)\b/i;
+  /** yyyy-mm-dd from an ISO, RFC ("Wed, 28 Oct 2026 ...") or dd/mm/yyyy date; '' if unreadable. */
+  function isoDate(v) {
+    v = String(v || '').trim(); if (!v) return '';
+    if (/^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
+    var m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/); if (m) return m[3] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2);
+    var t = Date.parse(v); return isNaN(t) ? '' : new Date(t).toISOString().slice(0, 10);
+  }
+  function bar(r, now) {
+    var i = r && r.intel; if (!i) return null;
+    now = now || Date.now();
+    var fail = function (reason) { return { pass: false, rank: 9, reason: reason }; };
+    var stage = i.stage || 'news'; var text = [r.title, r.context].filter(Boolean).join(' ');
+    if (!LIVE[stage]) return fail(stage === 'hiring' ? 'Job advert, not a scheme' : /^(submitted|pre_planning|appeal|refused)$/.test(stage) ? 'Planning only, not a live scheme' : 'No live scheme');
+    var region = normRegion(i.region || r.region || '') || regionFromText(text);
+    if (region === 'International') return fail('Outside the UK and Ireland');
+    var p = i.parties || {}; var buyer = i.buyerType || 'unknown'; var client = p.developer || p.funder || '';
+    if (buyer === 'contractor' && !p.funder) return fail('Contractor named, not the client');
+    if (!client) return fail(stage === 'distress' ? 'Distress, but no exposed client named' : 'No client named');
+    if (stage === 'acquired' && !PROPERTY.test(text)) return fail('Company deal, not a scheme');
+    var date = isoDate(i.signalDate || r.createdAt || ''); var ageD = (now - Date.parse(date + 'T00:00:00Z')) / 864e5;
+    if (!(ageD <= 14)) return fail('Trigger older than 14 days');
+    var rank = stage === 'distress' ? 1 : stage === 'contractor_appointed' && !PMEA.test(text) ? 2 : stage === 'funded' ? 3 : 4;
+    return { pass: true, rank: rank, label: RANK_LABEL[rank], client: client, buyer: buyer, stage: stage, region: region, date: date, reason: RANK_LABEL[rank] + ': ' + client + (stage === 'distress' ? ' is the exposed party' : '') };
+  }
   function actionLine(r, ctx) { var x = route(r, ctx); if (!x) return ''; if (x.verdict === 'ignore') return 'Ignore: ' + x.reason; if (x.verdict === 'watch') return 'Watch: ' + x.reason; return 'Email the ' + x.who + ' at ' + (r.company || 'the company') + ': ' + x.offer + ' (' + x.when + ', confidence ' + x.confidence + ')'; }
-  root.VanorClassify = { route: route, actionLine: actionLine, classify: classify, regionOf: regionOf, typeOf: typeOf, sectorOf: sectorOf, stageOf: stageOf, sizeOf: sizeOf, normRegion: normRegion, regionFromText: regionFromText, REGIONS: REGIONS, TYPES: TYPES };
+  root.VanorClassify = { bar: bar, isoDate: isoDate, RANK_LABEL: RANK_LABEL, route: route, actionLine: actionLine, classify: classify, regionOf: regionOf, typeOf: typeOf, sectorOf: sectorOf, stageOf: stageOf, sizeOf: sizeOf, normRegion: normRegion, regionFromText: regionFromText, REGIONS: REGIONS, TYPES: TYPES };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

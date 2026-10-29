@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { CONFIG, scan, companiesHouseDirectors, leadContext, type Scored } from './intel';
 import { sellability } from './lead-classify';
 import { listScope, saveEntity, logEvent, type Entity } from './bd-store';
+import '../public/vanor-classify.js';
 
 const SOURCE_LABEL: Record<string, string> = {
   planit: 'Planning (PlanIt)', planning_data_gov: 'Planning (planning.data.gov.uk)', london_datahub: 'Planning (London Datahub)', construction_news: 'Construction News', place_north_west: 'Place North West', architects_journal: 'Architects\' Journal', insider_media: 'Insider Media', construction_enquirer: 'Construction Enquirer', estates_gazette: 'Estates Gazette', property_week: 'Property Week', building: 'Building',
@@ -13,7 +14,10 @@ export const intelId = (link: string) => 'intel:' + createHash('sha1').update(li
 
 export async function runIntel({ write, limit = CONFIG.maxPerRun, minScore = CONFIG.minScore }: { write: boolean; limit?: number; minScore?: number }) {
   const result = await scan();
-  const candidates = result.scored.filter(s => s.score >= minScore);
+  // The bar (29 Oct 2026): only signals that pass all three tests are written. The rest are dropped here, not parked.
+  const C = (globalThis as any).VanorClassify;
+  const passes = (s: Scored) => { const b = C?.bar?.({ origin: 'intel', title: s.title, context: s.summary, region: s.lead.region, createdAt: s.date, intel: { stage: s.lead.stage, buyerType: s.buyerType, parties: s.lead.parties, signalDate: s.date, region: s.lead.region } }); return !b || b.pass; };
+  const candidates = result.scored.filter(s => s.score >= minScore && passes(s));
   const preview = (s: Scored) => ({ score: s.score, tier: s.sell.tier, why: s.sell.why, title: s.title, organisation: s.organisation, buyer: s.buyerType, talkTo: s.talkTo, link: s.link, stage: s.lead.stage, sector: s.lead.sector, value: s.lead.valueBand, region: s.lead.region, parties: s.lead.parties });
   if (!write) return { ...result, scored: undefined, candidates: candidates.length, top: candidates.slice(0, limit).map(preview) };
 

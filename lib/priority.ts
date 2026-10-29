@@ -78,6 +78,7 @@ export async function today({ section, region, limit = 100 }: { section?: Sectio
     const n = Q.next(r, d, w, p, { lastMet: h.lastMet.get(r.id), lastProposal: h.lastProposal.get(r.id), lastSent: h.lastSent.get(r.id), lastBack: h.lastBack.get(r.id), nextAsk: active?.nextAsk || d?.nextAsk || r.nextAsk, stage: active?.stage, nextMeeting: nextMeeting.get(r.id), ledger: ledger.get(r.id) });
     if (d?.status === 'Archive') n.section = 'off';
     return { r, d, n, cls: classifyRecord(r, d) }; });
+  Q.dedupeNew(rows);
   const want = (x: typeof rows[number]) => (!region || x.cls.region === normRegion(region)) && (section ? x.n.section === section : x.n.section !== 'off' && x.n.section !== 'new');
   const counts: Record<string, number> = { chase: 0, write: 0, waiting: 0, new: 0, off: 0 };
   for (const x of rows) if (!region || x.cls.region === normRegion(region)) counts[x.n.section]++;

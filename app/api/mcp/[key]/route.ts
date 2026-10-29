@@ -216,6 +216,7 @@ function createServer() {
       context: z.string().min(10).max(1500).describe('Why this person matters to Vanor, with the trigger (scheme, distress, funding event, meeting).'),
       source: z.string().min(2).describe('e.g. "Outlook", "Pocket note", "Planning portal", "The Gazette", a news site'),
       sourceUrl: z.string().url().optional(), owner: z.enum(['Barry', 'Graeme']).optional(),
+      signal: z.object({ stage: z.enum(['distress', 'stalled', 'funded', 'contractor_appointed', 'tender', 'on_site', 'granted', 'acquired']), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('The trigger date'), buyerType: z.enum(['developer', 'lender', 'fund', 'hotel_group', 'owner_occupier', 'public_body', 'family_office']).optional(), scheme: z.string().max(160).optional(), region: z.string().max(40).optional() }).optional().describe('Set this when the lead comes from a market signal (Distress Watch, press, a filing): it then lands on New leads ranked by the bar (distress first) and drops off after 14 days if untouched. company = the client who could hire Vanor (the exposed party in a distress), never the insolvent contractor.'),
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
   }, async input => {
@@ -229,6 +230,7 @@ function createServer() {
       source: input.source, sourceUrl: input.sourceUrl || '', sourceOwner: input.owner || '', segment: '', region: '', route: '',
       lastContact: '', nextAsk: '', nextDate: '', sourceStage: 'New lead', classification: 'New lead', createdAt: new Date().toISOString(),
     };
+    if (input.signal) { const g = input.signal; record.origin = 'intel'; record.region = g.region || ''; record.title = g.scheme || ''; record.intel = { stage: g.stage, signalDate: g.date, buyerType: g.buyerType || 'developer', parties: { developer: input.company }, region: g.region || '', score: 0, tier: 'Hot', why: input.source }; }
     const saved = await saveEntity('source', record, 0);
     if (!saved) throw new Error('Could not save the lead. Try again.');
     await logEvent({ entityId: id, recordId: id, type: 'Lead added', note: `${input.source}: ${input.context.slice(0, 200)}` });

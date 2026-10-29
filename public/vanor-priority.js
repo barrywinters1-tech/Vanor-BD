@@ -137,7 +137,10 @@
       return out('todo', (STEP_RANK[st] || 500) + Math.min(ageD, 30) + score / 100, reasons[st] + (ageD >= 3 ? ' (' + Math.floor(ageD) + ' days)' : ''), moves[st]);
     }
     // Scanner leads: the Jev-style route decides. Ignore = off, watch = later, approach = inbox ranked by confidence.
-    var C = root.VanorClassify; var rt = C && C.route && r.origin === 'intel' ? C.route(r) : null;
+    var C = root.VanorClassify;
+    // The bar (29 Oct 2026): a scanner lead reaches New leads only if it passes all three tests; otherwise it is dropped, not parked.
+    if (C && C.bar && r.origin === 'intel') { var b = C.bar(r, now); if (b && !b.pass) return out('off', -1000, 'Dropped: ' + b.reason, 'Nothing to do'); if (b) return out(L.lane === 'Off' ? 'off' : 'inbox', 400 + (5 - b.rank) * 200 + score, b.reason, C.actionLine(r)); }
+    var rt = C && C.route && r.origin === 'intel' ? C.route(r) : null;
     if (rt && rt.verdict === 'ignore') return out('off', -1000, 'Ignore: ' + rt.reason, 'Nothing to do');
     if (rt && rt.verdict === 'watch') return out('later', score, 'Watch: ' + rt.reason, 'Comes back when the signal moves');
     if (rt && rt.verdict === 'approach') return out(L.lane === 'Off' ? 'off' : 'inbox', 400 + (rt.confidence === 'high' ? 200 : rt.confidence === 'medium' ? 100 : 0) + score, rt.reason, C.actionLine(r));
@@ -149,6 +152,17 @@
     if (/^No reply for/.test(L.reason)) return out('followup', 990 + Math.min(sentD, 30) * 5, L.reason, L.move);
     if (/^Sent /.test(L.reason)) return out('waiting', 90 + score, L.reason, L.move);
     return out('inbox', (L.lane === 'Now' ? 300 : 200) + score);
+  }
+  /** Same story from two sources is one signal: same company and stage among New leads, keep the highest rank. rows: [{ r, n }]. */
+  function dedupeNew(rows) {
+    var seen = {}; var keep = [];
+    rows.slice().sort(function (a, b) { return b.n.rank - a.n.rank; }).forEach(function (x) {
+      if (x.n.section !== 'new') { keep.push(x); return; }
+      var k = norm(x.r.company); if (!k) { keep.push(x); return; } k += '|' + ((x.r.intel && x.r.intel.stage) || '');
+      if (seen[k]) { x.n.section = 'off'; x.n.sentence = 'Same story as ' + seen[k]; x.n.dup = seen[k]; return; }
+      seen[k] = x.r.id; keep.push(x);
+    });
+    return keep;
   }
   var BUCKET_ORDER = { followup: 0, todo: 1, inbox: 2, waiting: 3, later: 4, off: 5 };
   var BUCKET_LABEL = { followup: 'Follow-ups due', todo: 'To do', inbox: 'Inbox', waiting: 'Waiting', later: 'Later', off: 'Off' };
@@ -220,5 +234,5 @@
   function owesLine(h) { var lg = h && h.ledger; if (!lg || !lg.owes) return ''; return lg.owes > 0 ? 'owes you ' + lg.owes : 'you owe ' + Math.abs(lg.owes); }
   var SECTION_ORDER = { chase: 0, write: 1, waiting: 2, new: 3, off: 9 };
   var SECTION_LABEL = { chase: 'Chase', write: 'Write', waiting: 'Waiting', new: 'New leads', off: 'Off' };
-  root.VanorPriority = { compute: compute, lane: lane, queue: queue, next: next, owesLine: owesLine, addWorkingDays: addWorkingDays, SECTION_ORDER: SECTION_ORDER, SECTION_LABEL: SECTION_LABEL, LANE_ORDER: LANE_ORDER, BUCKET_ORDER: BUCKET_ORDER, BUCKET_LABEL: BUCKET_LABEL, tierOne: tierOne, norm: norm, PLAYS: PLAYS };
+  root.VanorPriority = { dedupeNew: dedupeNew, compute: compute, lane: lane, queue: queue, next: next, owesLine: owesLine, addWorkingDays: addWorkingDays, SECTION_ORDER: SECTION_ORDER, SECTION_LABEL: SECTION_LABEL, LANE_ORDER: LANE_ORDER, BUCKET_ORDER: BUCKET_ORDER, BUCKET_LABEL: BUCKET_LABEL, tierOne: tierOne, norm: norm, PLAYS: PLAYS };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
