@@ -91,9 +91,26 @@ test('next: clock run out = chase, overdue first', () => {
   const x = n({ pursuit: { triage: 'yes', step: 'sent', sentAt: '2026-10-01', followUpAt: '2026-10-08', chases: 0 } });
   assert.equal(x.section, 'chase'); assert.match(x.sentence, /No reply from A B at Co/); assert.equal(x.step, 'sent');
 });
-test('next: met a buyer, no proposal = write, verb Priced', () => {
-  const x = n({}, { lastMet: '2026-10-13' });
-  assert.equal(x.section, 'write'); assert.match(x.sentence, /priced first step/); assert.equal(x.step, 'proposal');
+test('next: met a buyer with no outcome pressed = decide; after 2 working days it chases', () => {
+  const x = n({}, { lastMet: '2026-10-14' });
+  assert.equal(x.section, 'write'); assert.match(x.sentence, /decide, opportunity, relationship or done/); assert.equal(x.step, 'outcome');
+  const late = n({}, { lastMet: '2026-10-09' });
+  assert.equal(late.section, 'chase');
+});
+test('next: opportunity = send the free look; relationship waits until the re-engage date then writes; done is off', () => {
+  const op = n({ pursuit: { triage: 'yes', step: 'to_write', outcome: 'opportunity', outcomeAt: '2026-10-14T10:00:00Z', scheme: 'Brighton hotel' } }, { lastMet: '2026-10-14' });
+  assert.equal(op.section, 'write'); assert.match(op.sentence, /free first look on Brighton hotel/); assert.equal(op.step, 'sent');
+  const rel = n({ pursuit: { triage: 'yes', step: 'to_write', outcome: 'relationship', outcomeAt: '2026-10-14T10:00:00Z', reengageAt: '2026-12-13' } }, { lastMet: '2026-10-14' });
+  assert.equal(rel.section, 'waiting'); assert.equal(rel.due, '2026-12-13');
+  const back = n({ pursuit: { triage: 'yes', step: 'to_write', outcome: 'relationship', outcomeAt: '2026-08-01T10:00:00Z', reengageAt: '2026-10-01' } }, { lastMet: '2026-08-01' });
+  assert.equal(back.section, 'write'); assert.match(back.sentence, /Re-engage/);
+});
+test('next: ledger clocks: a promised intro overdue chases; an intro made ten working days ago asks how it went', () => {
+  const prom = n({ pursuit: { triage: 'yes', step: 'sent', sentAt: '2026-10-14', followUpAt: '2026-10-21' } }, { ledger: { owes: -1, open: [{ kind: 'promised', counterpart: 'Tom at Ridge', date: '2026-09-25', due: '2026-10-09', status: 'open' }] } });
+  assert.equal(prom.section, 'chase'); assert.match(prom.sentence, /introduction to Tom at Ridge/);
+  const made = n({ pursuit: { triage: 'yes', step: 'sent', sentAt: '2026-10-14', followUpAt: '2026-10-21' } }, { ledger: { owes: 1, open: [{ kind: 'made', counterpart: 'Sean at Hewick', date: '2026-09-25', due: '2026-10-09', status: 'open' }] } });
+  assert.equal(made.section, 'write'); assert.match(made.sentence, /how it went/);
+  assert.equal(P.owesLine({ ledger: { owes: 2 } }), 'owes you 2'); assert.equal(P.owesLine({ ledger: { owes: -1 } }), 'you owe 1');
 });
 test('next: proposal with a future decision date waits; past date chases; no date asks for one', () => {
   const base = { triage: 'yes', step: 'proposal', stepAt: '2026-10-10T10:00:00Z' };

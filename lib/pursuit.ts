@@ -8,7 +8,7 @@ export type Triage = 'yes' | 'no' | 'later';
 export type Step = 'to_write' | 'sent' | 'replied' | 'meeting' | 'proposal' | 'won' | 'lost';
 export type Pursuit = { triage: Triage; triagedAt: string; triagedBy: string; reason?: string; step?: Step; stepAt?: string; sentAt?: string; followUpAt?: string; chases?: number; laterUntil?: string };
 export const STEP_LABEL: Record<Step, string> = { to_write: 'To write', sent: 'Email issued', replied: 'Replied', meeting: 'Meeting', proposal: 'Proposal', won: 'Won', lost: 'Lost' };
-import { followUpAfter } from './pursuit-logic';
+import { followUpAfter, addWorkingDays as addWd } from './pursuit-logic';
 export { addWorkingDays, followUpAfter } from './pursuit-logic';
 const DAY = 864e5;
 const today = () => new Date().toISOString().slice(0, 10);
@@ -123,4 +123,55 @@ export async function decisionsDue({ createTasks = true } = {}) {
     if (res.created) created++;
   }
   return { due, created, open: all.length };
+}
+
+// ---- Meeting outcome: one press after every buyer meeting ----
+export type Outcome = 'opportunity' | 'relationship' | 'done';
+/** Opportunity: a scheme is named; the free first look goes out with the stage-2 price. Relationship: no job now, re-engage on a date. Done: archived. */
+export async function meetingOutcome(id: string, outcome: Outcome, actor: string, opts: { scheme?: string; reengageDays?: number; reason?: string } = {}) {
+  const r = await getOne('source', id); if (!r) throw new Error(`No contact with id ${id}.`);
+  const now = new Date().toISOString(); const t0 = today(); const days = opts.reengageDays || 60;
+  const reengageAt = outcome === 'relationship' ? new Date(Date.now() + days * DAY).toISOString().slice(0, 10) : undefined;
+  await updateEntity('decision', id, cur => {
+    const p: any = { triage: 'yes', triagedAt: now, triagedBy: actor, ...(cur.pursuit || {}) };
+    p.prev = snapshot(cur);
+    p.outcome = outcome; p.outcomeAt = now; p.scheme = opts.scheme || p.scheme || '';
+    if (outcome === 'opportunity') { p.step = 'to_write'; p.stepAt = now; p.followUpAt = undefined; p.reengageAt = undefined; }
+    if (outcome === 'relationship') { p.step = 'to_write'; p.stepAt = now; p.followUpAt = undefined; p.reengageAt = reengageAt; }
+    if (outcome === 'done') { p.followUpAt = undefined; p.reengageAt = undefined; }
+    return { ...cur, pursuit: p, ...(outcome === 'done' ? { status: 'Archive', archiveReason: opts.reason || 'No opportunity; thanked and moved on', archivedBy: actor, archivedAt: now } : {}) };
+  }, true);
+  await logEvent({ entityId: id, recordId: id, type: 'Meeting outcome', actor, date: t0, ref: `board:outcome:${id}:${t0}`, note: outcome === 'opportunity' ? `Opportunity${opts.scheme ? ': ' + opts.scheme : ''}; free first look then stage 2 priced` : outcome === 'relationship' ? `Relationship; re-engage ${reengageAt}` : `Done${opts.reason ? ': ' + opts.reason : ''}` });
+  return { ok: true, outcome, reengageAt: reengageAt || null };
+}
+
+// ---- Introductions ledger: a count of favours, not a score ----
+export type IntroKind = 'made' | 'promised' | 'lead_passed';
+export type IntroInput = { id: string; kind: IntroKind; counterpart: string; about?: string; date?: string; actor?: string; ref?: string };
+/** made = we introduced this contact to someone (they owe us one). promised = this contact said they would introduce us to someone (chased after 10 working days). lead_passed = we handed this contact a project or a name. */
+export async function logIntro(o: IntroInput) {
+  const r = await getOne('source', o.id); if (!r) throw new Error(`No contact with id ${o.id}.`);
+  const date = o.date || today(); const ref = o.ref || `intro:${o.kind}:${o.id}:${date}:${o.counterpart.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`;
+  const dup = (await listScope('event')).find(e => e.ref === ref); if (dup) return { logged: false, reason: 'Already recorded', eventId: dup.id };
+  const label = o.kind === 'made' ? `Intro made: ${r.name || r.company} to ${o.counterpart}` : o.kind === 'promised' ? `Intro promised: ${r.name || r.company} will introduce us to ${o.counterpart}` : `Lead passed to ${r.name || r.company}: ${o.counterpart}`;
+  const eventId = await logEvent({ entityId: o.id, recordId: o.id, type: `Intro: ${o.kind}`, actor: o.actor || 'Barry', date, ref, note: o.about ? `${label}. ${o.about}` : label, counterpart: o.counterpart, about: o.about || '', introStatus: 'open' } as any);
+  return { logged: true, eventId, label };
+}
+/** Mark a promised or made introduction as happened or lapsed. */
+export async function settleIntro(eventId: string, status: 'happened' | 'lapsed', actor = 'Barry') {
+  const e = await getOne('event', eventId); if (!e || !/^Intro: /.test(String(e.type))) throw new Error('Not an introduction event.');
+  await updateEntity('event', eventId, cur => ({ ...cur, introStatus: status, settledAt: new Date().toISOString(), settledBy: actor }));
+  return { ok: true };
+}
+/** The ledger for one contact: lines and the balance (made + lead_passed − promised-that-happened). Positive = they owe us. */
+export function ledgerFor(events: any[], id: string) {
+  const lines = events.filter(e => String(e.recordId || e.entityId) === id && /^Intro: /.test(String(e.type || ''))).map(e => ({ id: e.id, kind: String(e.type).replace('Intro: ', '') as IntroKind, counterpart: e.counterpart || '', about: e.about || '', date: String(e.happenedOn || e.date || e.at || '').slice(0, 10), status: e.introStatus || 'open' }));
+  const given = lines.filter(l => (l.kind === 'made' || l.kind === 'lead_passed') && l.status !== 'lapsed').length;
+  const received = lines.filter(l => l.kind === 'promised' && l.status === 'happened').length;
+  return { lines, given, received, owes: given - received };
+}
+/** Promised intros past 10 working days and made intros past 10 working days: the two ledger clocks. */
+export function introClocks(events: any[], id: string, t0 = today()) {
+  const open = ledgerFor(events, id).lines.filter(l => l.status === 'open' && (l.kind === 'promised' || l.kind === 'made'));
+  return open.map(l => ({ ...l, due: addWd(l.date, 10) })).filter(l => l.due <= t0);
 }

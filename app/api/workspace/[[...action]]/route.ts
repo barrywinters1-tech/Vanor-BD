@@ -11,7 +11,7 @@ import { runIntel } from '../../../../lib/intel-ingest';
 import { lookupPerson, searchPeople } from '../../../../lib/rocketreach';
 import { addTask, completeTask, snoozeTask, deriveTasks, sweepTasks } from '../../../../lib/tasks';
 import { normRegion, workQueue, today } from '../../../../lib/priority';
-import { triage, setStep, STEP_LABEL, followUpsDue, undoLast, recordProposal } from '../../../../lib/pursuit';
+import { triage, setStep, STEP_LABEL, followUpsDue, undoLast, recordProposal, meetingOutcome, logIntro, settleIntro } from '../../../../lib/pursuit';
 import { logEvent, saveEntity as storeSave, updateEntity as storeUpdate } from '../../../../lib/bd-store';
 import { runBackup } from '../../../../lib/backup-job';
 
@@ -228,6 +228,9 @@ export async function POST(request: NextRequest, context: Context) {
       if (body?.op === 'triage') { const t = String(body.decision || ''); if (!['yes', 'no', 'later'].includes(t)) return reply({ error: 'decision must be yes, no or later.' }, 400); return reply(await triage(id, t as any, actor, String(body.reason || ''), Number(body.days || 30))); }
       if (body?.op === 'step' && body.step === 'proposal' && (body.price != null || body.decisionDate)) { return reply(await recordProposal({ id, price: Number(body.price || 0), unit: body.unit === 'month' ? 'month' : 'fixed', product: String(body.product || ''), decisionDate: String(body.decisionDate || ''), actor, note: String(body.note || '') })); }
       if (body?.op === 'step') { const s = String(body.step || ''); if (!Object.keys(STEP_LABEL).includes(s)) return reply({ error: 'Unknown step.' }, 400); return reply(await setStep(id, s as any, actor, String(body.note || ''))); }
+      if (body?.op === 'outcome') { const o = String(body.outcome || ''); if (!['opportunity', 'relationship', 'done'].includes(o)) return reply({ error: 'outcome must be opportunity, relationship or done.' }, 400); return reply(await meetingOutcome(id, o as any, actor, { scheme: String(body.scheme || ''), reengageDays: Number(body.reengageDays || 60), reason: String(body.reason || '') })); }
+      if (body?.op === 'intro') { const k = String(body.kind || ''); if (!['made', 'promised', 'lead_passed'].includes(k)) return reply({ error: 'kind must be made, promised or lead_passed.' }, 400); return reply(await logIntro({ id, kind: k as any, counterpart: String(body.counterpart || '').trim() || 'someone', about: String(body.about || ''), actor })); }
+      if (body?.op === 'introSettle') return reply(await settleIntro(String(body.eventId || ''), body.status === 'lapsed' ? 'lapsed' : 'happened', actor));
       if (body?.op === 'undo') return reply(await undoLast(id, actor));
       return reply({ error: 'Unknown pursue op.' }, 400);
     }

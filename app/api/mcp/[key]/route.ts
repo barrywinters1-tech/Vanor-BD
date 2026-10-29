@@ -15,7 +15,7 @@ import {
 import { lookupPerson } from '../../../../lib/rocketreach';
 import { runIntel } from '../../../../lib/intel-ingest';
 import { priorityList, normRegion, workQueue, today as todayScreen } from '../../../../lib/priority';
-import { triage, setStep, followUpsDue, undoLast, recordProposal, openProposals, decisionsDue } from '../../../../lib/pursuit';
+import { triage, setStep, followUpsDue, undoLast, recordProposal, openProposals, decisionsDue, meetingOutcome, logIntro, settleIntro, ledgerFor } from '../../../../lib/pursuit';
 import { PRICE_LIST, RULES, firstStep, options as feeOptions, offerLines, decisionDateFrom } from '../../../../lib/fees';
 import { logOutcome, funnel, STEPS } from '../../../../lib/funnel';
 import { listTasks, addTask, completeTask, deriveTasks, sweepTasks } from '../../../../lib/tasks';
@@ -455,6 +455,29 @@ function createServer() {
     inputSchema: { section: z.enum(['chase', 'write', 'waiting', 'new']).optional(), region: z.string().max(40).optional(), limit: z.number().int().min(1).max(300).optional() },
     annotations: { readOnlyHint: true },
   }, async ({ section, region, limit }) => out(await todayScreen({ section, region, limit: limit || 100 }), 'Today.'));
+  server.registerTool('meeting_outcome', {
+    title: 'The one press after a buyer meeting: opportunity, relationship or done',
+    description: 'opportunity = a scheme is named; the follow-up offers a bounded free first look (2 hours, one page, inside a week) and states the stage-2 price and a decision date. relationship = no job now; re-engage on a date (default 60 days), nothing chased until then. done = thanks and move on; archived. Only call when a founder confirmed it in chat, or propose it in the report for one-click confirmation; when a transcript makes it obvious (a scheme named and a next step agreed), call it with the scheme and say so in the report.',
+    inputSchema: { id: z.string(), outcome: z.enum(['opportunity', 'relationship', 'done']), scheme: z.string().max(160).optional(), reengageDays: z.number().int().min(7).max(365).optional(), reason: z.string().max(200).optional(), actor: z.enum(['Barry', 'Graeme']).optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ id, outcome, scheme, reengageDays, reason, actor }) => out(await meetingOutcome(id, outcome, actor || 'Barry', { scheme, reengageDays, reason }), 'Outcome recorded.'));
+  server.registerTool('log_intro', {
+    title: 'Introductions ledger: made, promised or lead passed',
+    description: 'made = Barry or Graeme introduced this contact to someone (they owe us one; after 10 working days the board asks how it went). promised = this contact said they will introduce us to someone (chased after 10 working days). lead_passed = we handed this contact a project or a name. counterpart = the other party, as named. Idempotent on contact + kind + date + counterpart.',
+    inputSchema: { id: z.string(), kind: z.enum(['made', 'promised', 'lead_passed']), counterpart: z.string().min(2).max(120), about: z.string().max(300).optional(), date: z.string().optional().describe('yyyy-mm-dd, default today'), actor: z.enum(['Barry', 'Graeme']).optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async (input) => out(await logIntro(input), 'Intro logged.'));
+  server.registerTool('settle_intro', {
+    title: 'Mark an introduction as happened or lapsed',
+    inputSchema: { eventId: z.string(), status: z.enum(['happened', 'lapsed']), actor: z.enum(['Barry', 'Graeme']).optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ eventId, status, actor }) => out(await settleIntro(eventId, status, actor || 'Barry'), 'Settled.'));
+  server.registerTool('ledger', {
+    title: 'Who owes whom: the introductions ledger for a contact',
+    inputSchema: { id: z.string() },
+    annotations: { readOnlyHint: true },
+  }, async ({ id }) => out(ledgerFor(await listScope('event'), id), 'Ledger.'));
+
   server.registerTool('price_list', {
     title: 'Vanor price list and the first step to offer a lead',
     description: 'The fixed price list (from the pricing workbook, 16 Oct 2026) and, for a given contact id, the first-step product to offer, options A/B/C, a decision date ten working days out and the two sentences to put in the follow-up email in Barry\'s voice. Read-only. Use it when drafting any follow-up to a buyer meeting: every buyer follow-up carries a priced first step and a decision date.',
