@@ -181,3 +181,8 @@ test('old contacts stay out of New leads unless a Companies House signal inside 
   const hand = { id: 'claude:1', kind: 'lead', origin: 'manual', name: 'B', company: 'New Co', jobTitle: 'MD', createdAt: '2026-10-20' };
   assert.equal(Q.next(hand, undefined, [], { score: 10 }, {}, NOW).section, 'new');
 });
+test('a hand-added lead that was emailed keeps its clock instead of asking for triage again', () => {
+  const hand = { id: 'claude:2', kind: 'lead', origin: 'manual', name: 'C', company: 'Co2', jobTitle: 'MD', email: 'c@co2.com', createdAt: '2026-10-20' };
+  const x = Q.queue(hand, {}, [], { score: 10 }, { lastSent: '2026-10-15' }, NOW);
+  assert.notEqual(x.bucket, 'inbox');
+});

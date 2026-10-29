@@ -144,14 +144,14 @@
     if (rt && rt.verdict === 'ignore') return out('off', -1000, 'Ignore: ' + rt.reason, 'Nothing to do');
     if (rt && rt.verdict === 'watch') return out('later', score, 'Watch: ' + rt.reason, 'Comes back when the signal moves');
     if (rt && rt.verdict === 'approach') return out(L.lane === 'Off' ? 'off' : 'inbox', 400 + (rt.confidence === 'high' ? 200 : rt.confidence === 'medium' ? 100 : 0) + score, rt.reason, C.actionLine(r));
-    // A lead added by hand in the last 30 days waits for Yes, No or Park whatever its lane.
+    var inFlight = /^Live (opportunity|commercial)|^Meeting in|^They replied|^No reply for|^Sent /.test(L.reason || '');
+    // A lead added by hand in the last 30 days waits for Yes, No or Park whatever its lane, unless an email or meeting is already in flight.
     var addedD = r.createdAt ? age(String(r.createdAt).slice(0, 10), now) : 9999;
-    if (!pu && r.kind === 'lead' && r.origin === 'manual' && addedD <= 30) return out('inbox', 300 + score, 'Added ' + (addedD < 1 ? 'today' : Math.floor(addedD) + ' days ago') + (r.source ? ' from ' + r.source : ''), 'Yes, no or park');
+    if (!pu && !inFlight && r.kind === 'lead' && r.origin === 'manual' && addedD <= 30) return out('inbox', 300 + score, 'Added ' + (addedD < 1 ? 'today' : Math.floor(addedD) + ' days ago') + (r.source ? ' from ' + r.source : ''), 'Yes, no or park');
     // Old contacts (29 Oct 2026): nothing is shown unprompted. A contact reaches New leads only on a Companies House signal inside 14 days that passes the bar (funding closed or distress, on a buyer), or if it was added by hand in the last 30 days. Everything else waits in Find anyone.
     var sigs = (r.companyIntel && r.companyIntel.signals) || []; var fresh = null;
     sigs.forEach(function (sg) { if (!sg || sg.type === 'inactive') return; var dd = C && C.isoDate ? C.isoDate(sg.date) : String(sg.date || '').slice(0, 10); if (!dd) return; var ageD = (now - Date.parse(dd + 'T00:00:00Z')) / 864e5; if (ageD >= 0 && ageD <= 14 && (sg.type === 'lending' || sg.type === 'property' || sg.type === 'distress') && (!fresh || dd > fresh.d)) fresh = { d: dd, sg: sg }; });
     var ty = C && C.typeOf ? C.typeOf(r, d) : ''; var buyer = /Developer|Funder|Operator|Public/.test(ty);
-    var inFlight = /^Live (opportunity|commercial)|^Meeting in|^They replied|^No reply for|^Sent /.test(L.reason || '');
     if (fresh && buyer && !inFlight) { var lab = fresh.sg.type === 'distress' ? 'Distress' : 'Funding closed'; return out('inbox', 400 + (fresh.sg.type === 'distress' ? 800 : 400) + score, lab + ': ' + String(fresh.sg.text || r.company).slice(0, 110), L.move); }
     if (L.lane === 'Off') return out('off', -1000);
     if (L.lane === 'Later') return out('later', score);
