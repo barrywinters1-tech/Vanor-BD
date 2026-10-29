@@ -14,7 +14,7 @@ import {
 } from '../../../../lib/bd-store';
 import { lookupPerson } from '../../../../lib/rocketreach';
 import { runIntel } from '../../../../lib/intel-ingest';
-import { priorityList, normRegion, workQueue } from '../../../../lib/priority';
+import { priorityList, normRegion, workQueue, today as todayScreen } from '../../../../lib/priority';
 import { triage, setStep, followUpsDue, undoLast, recordProposal, openProposals, decisionsDue } from '../../../../lib/pursuit';
 import { PRICE_LIST, RULES, firstStep, options as feeOptions, offerLines, decisionDateFrom } from '../../../../lib/fees';
 import { logOutcome, funnel, STEPS } from '../../../../lib/funnel';
@@ -449,6 +449,12 @@ function createServer() {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ tasks }) => out(await followUpsDue({ createTasks: !!tasks }), 'Follow-ups.'));
 
+  server.registerTool('today', {
+    title: 'The Today screen: chase, write, waiting',
+    description: 'What Barry sees. One row per live contact: section (chase = a clock has run out: no reply, or a proposal past its decision date; write = someone replied or was met and nothing has gone back; waiting = sent, clock running; new = untriaged), one sentence of what to do, the due date and the one button. Use this first in every report; it replaces work_queue + follow_ups_due + proposals_open for reading. Those remain for writing tasks.',
+    inputSchema: { section: z.enum(['chase', 'write', 'waiting', 'new']).optional(), region: z.string().max(40).optional(), limit: z.number().int().min(1).max(300).optional() },
+    annotations: { readOnlyHint: true },
+  }, async ({ section, region, limit }) => out(await todayScreen({ section, region, limit: limit || 100 }), 'Today.'));
   server.registerTool('price_list', {
     title: 'Vanor price list and the first step to offer a lead',
     description: 'The fixed price list (from the pricing workbook, 16 Oct 2026) and, for a given contact id, the first-step product to offer, options A/B/C, a decision date ten working days out and the two sentences to put in the follow-up email in Barry\'s voice. Read-only. Use it when drafting any follow-up to a buyer meeting: every buyer follow-up carries a priced first step and a decision date.',

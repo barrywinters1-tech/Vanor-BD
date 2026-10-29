@@ -162,5 +162,43 @@
     return function (r) { return !!set[norm(r.company)]; };
   }
 
-  root.VanorPriority = { compute: compute, lane: lane, queue: queue, LANE_ORDER: LANE_ORDER, BUCKET_ORDER: BUCKET_ORDER, BUCKET_LABEL: BUCKET_LABEL, tierOne: tierOne, norm: norm, PLAYS: PLAYS };
+  // ---- next(): the one object the Today screen needs per contact. Derived; nothing is stored.
+  // section: chase | decide | write | waiting | new | off. sentence: what to do, in plain words. due: yyyy-mm-dd or ''. verb/step: the one primary button.
+  function addWorkingDays(from, n) { var d = new Date(from + 'T00:00:00Z'); var left = n; while (left > 0) { d = new Date(d.getTime() + 864e5); var wd = d.getUTCDay(); if (wd !== 0 && wd !== 6) left--; } return d.toISOString().slice(0, 10); }
+  var nice = function (d) { if (!d) return ''; var x = new Date(d + 'T00:00:00Z'); return isNaN(x) ? d : x.getUTCDate() + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][x.getUTCMonth()]; };
+  var VERB = { chase: ['Chased', 'sent'], decide: ['Won', 'won'], write: ['Sent', 'sent'], waiting: ['Replied', 'replied'], new: ['Yes', 'triage:yes'] };
+  function next(r, d, works, p, h, now) {
+    now = now || Date.now(); var t0 = new Date(now).toISOString().slice(0, 10);
+    var q = queue(r, d, works, p, h, now); var pu = (d && d.pursuit) || {}; var pr = (d && d.proposal) || {}; var od = (d && d.oneDay) || {};
+    var who = (r.name || r.company || '') + (r.name && r.company ? ' at ' + r.company : '');
+    var out = function (section, sentence, due, rank, verb, step) { return { section: section, sentence: sentence, due: due || '', rank: rank, verb: verb || (VERB[section] ? VERB[section][0] : ''), step: step || (VERB[section] ? VERB[section][1] : ''), bucket: q.bucket, reason: q.reason, move: q.move }; };
+    var dd = pr.decisionDate || od.decisionDate || '';
+    var meetDate = h && h.nextMeeting && h.nextMeeting >= t0 ? h.nextMeeting : '';
+    if (q.bucket === 'off') return out('off', q.reason, '', -1000, '', '');
+    if (q.bucket === 'later') return out('off', q.reason, pu.laterUntil || '', -500, '', '');
+    if (pu.step === 'proposal' || /^Proposal/.test(q.reason)) {
+      var price = pr.price != null ? ' (£' + Number(pr.price).toLocaleString('en-GB') + (pr.unit === 'month' ? ' a month' : '') + ')' : '';
+      if (!dd) return out('write', 'Agree a decision date with ' + who + ' on the proposal' + price, '', 950, 'Priced', 'proposal');
+      var left = Math.round((Date.parse(dd) - Date.parse(t0)) / 864e5);
+      if (left <= 0) return out('chase', 'Decision was due ' + (left === 0 ? 'today' : Math.abs(left) + ' days ago') + ': call ' + who + price + ', then mark won or lost', dd, 1100 - left, 'Won', 'won');
+      return out('waiting', 'Proposal with ' + who + price + ', decision due in ' + left + (left === 1 ? ' day' : ' days'), dd, 200 + left, 'Won', 'won');
+    }
+    if (q.bucket === 'followup') { var ch = pu.chases ? ' (chase ' + (pu.chases + 1) + ')' : ''; var sinceD = pu.sentAt ? Math.floor(age(pu.sentAt, now)) : (q.reason.match(/(\d+) days/) || [0, 0])[1]; return out('chase', 'No reply from ' + who + ' for ' + sinceD + ' days' + ch + '. ' + q.move, pu.followUpAt || '', q.rank, 'Chased', 'sent'); }
+    if (q.bucket === 'waiting') return out('waiting', 'Emailed ' + who + (pu.sentAt ? ' on ' + nice(pu.sentAt) : '') + ', comes back to chase on ' + nice(pu.followUpAt), pu.followUpAt || '', q.rank, 'Replied', 'replied');
+    if (q.bucket === 'inbox') return out('new', q.reason, '', q.rank, 'Yes', 'triage:yes');
+    if (q.bucket === 'todo') {
+      if (/^Meeting in/.test(q.reason)) return out('waiting', q.reason.replace(/^Meeting in/, 'Meeting with ' + who + ' in'), meetDate, q.rank, 'Met', 'meeting');
+      if (/^Met .*no proposal/.test(q.reason)) return out('write', 'Met ' + who + ' ' + q.reason.replace(/^Met /, '').replace(/, no proposal yet$/, '') + ': send the priced first step with a decision date', (h && h.lastMet) || '', q.rank, 'Priced', 'proposal');
+      if (/^Met .*introducer/.test(q.reason)) return out('write', 'Met ' + who + ': ask for one named introduction', (h && h.lastMet) || '', q.rank, 'Sent', 'sent');
+      if (/^Met .*buyer or introducer/.test(q.reason)) return out('write', 'Met ' + who + ': buyer (send a price) or introducer (ask for an introduction)?', (h && h.lastMet) || '', q.rank, 'Priced', 'proposal');
+      if (/replied/i.test(q.reason)) return out('write', who + ' replied: answer today and propose a date', (h && h.lastBack) || '', q.rank, 'Sent', 'sent');
+      if (pu.step === 'meeting') return out('write', 'Met ' + who + ': send the priced first step with a decision date', pu.stepAt ? String(pu.stepAt).slice(0, 10) : '', q.rank, 'Priced', 'proposal');
+      if (pu.step === 'to_write' || !pu.step) return out('write', (d && d.nextAsk) ? String(d.nextAsk) : 'Write to ' + who + ' and send it', (d && d.nextDate) || '', q.rank, 'Sent', 'sent');
+      return out('write', q.reason + '. ' + q.move, (d && d.nextDate) || '', q.rank, 'Sent', 'sent');
+    }
+    return out('off', q.reason, '', -1000, '', '');
+  }
+  var SECTION_ORDER = { chase: 0, write: 1, waiting: 2, new: 3, off: 9 };
+  var SECTION_LABEL = { chase: 'Chase', write: 'Write', waiting: 'Waiting', new: 'New leads', off: 'Off' };
+  root.VanorPriority = { compute: compute, lane: lane, queue: queue, next: next, addWorkingDays: addWorkingDays, SECTION_ORDER: SECTION_ORDER, SECTION_LABEL: SECTION_LABEL, LANE_ORDER: LANE_ORDER, BUCKET_ORDER: BUCKET_ORDER, BUCKET_LABEL: BUCKET_LABEL, tierOne: tierOne, norm: norm, PLAYS: PLAYS };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

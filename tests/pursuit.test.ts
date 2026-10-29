@@ -80,3 +80,31 @@ test('fees: offer lines carry a price and the decision date, and the date is a w
   assert.match(lines[0], /£9,500/); assert.match(lines[1], /Thursday 5 November/);
   assert.ok(PRICE_LIST.every(p => p.fee % 100 === 0));
 });
+
+// ---- next(): the one object per contact behind the Today screen
+const n = (d: any, h: any = {}) => P.next(r, d, [], p, h, now);
+test('next: sent and clock running = waiting, with the date it comes back', () => {
+  const x = n({ pursuit: { triage: 'yes', step: 'sent', sentAt: '2026-10-14', followUpAt: '2026-10-21', chases: 0 } });
+  assert.equal(x.section, 'waiting'); assert.equal(x.due, '2026-10-21'); assert.equal(x.verb, 'Replied');
+});
+test('next: clock run out = chase, overdue first', () => {
+  const x = n({ pursuit: { triage: 'yes', step: 'sent', sentAt: '2026-10-01', followUpAt: '2026-10-08', chases: 0 } });
+  assert.equal(x.section, 'chase'); assert.match(x.sentence, /No reply from A B at Co/); assert.equal(x.step, 'sent');
+});
+test('next: met a buyer, no proposal = write, verb Priced', () => {
+  const x = n({}, { lastMet: '2026-10-13' });
+  assert.equal(x.section, 'write'); assert.match(x.sentence, /priced first step/); assert.equal(x.step, 'proposal');
+});
+test('next: proposal with a future decision date waits; past date chases; no date asks for one', () => {
+  const base = { triage: 'yes', step: 'proposal', stepAt: '2026-10-10T10:00:00Z' };
+  assert.equal(n({ pursuit: base, proposal: { price: 9500, decisionDate: '2026-10-20' } }).section, 'waiting');
+  const late = n({ pursuit: base, proposal: { price: 9500, decisionDate: '2026-10-12' } });
+  assert.equal(late.section, 'chase'); assert.match(late.sentence, /3 days ago/); assert.equal(late.verb, 'Won');
+  const none = n({ pursuit: base });
+  assert.equal(none.section, 'write'); assert.match(none.sentence, /decision date/);
+});
+test('next: untriaged = new; triaged no = off; parked = off', () => {
+  assert.equal(n({}).section, 'new');
+  assert.equal(n({ pursuit: { triage: 'no' } }).section, 'off');
+  assert.equal(n({ pursuit: { triage: 'later', laterUntil: '2026-11-30' } }).section, 'off');
+});

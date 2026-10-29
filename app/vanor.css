@@ -2296,3 +2296,19 @@ html, body {
 .focus-group.leak{color:#b4472f}
 .warn-text{color:#b4472f;font-weight:600}
 .oneday{padding:4px 0 12px;border-bottom:1px dashed var(--line,#e3e8e6);margin-bottom:12px}
+
+/* Today, lean: three sections, one sentence and one button per row */
+.vanor .focus-head.lean h1{font-size:22px;font-weight:600;margin:0 0 4px;letter-spacing:0}
+.vanor .focus-head.lean .focus-sub{font-size:14px;color:var(--secondary);margin:0}
+.vanor .focus-sec{padding:14px 16px 8px}
+.vanor .focus-sec h2{font-size:16px;font-weight:600;margin:0}
+.vanor .focus-sec h2 span{font-weight:400;color:var(--muted);margin-left:6px}
+.vanor .focus-sec p{margin:2px 0 0;font-size:13px}
+.vanor .focus-row.lean{grid-template-columns:minmax(0,1fr) auto;gap:14px}
+.vanor .focus-row.lean .names b{font-size:15px}
+.vanor .focus-row.lean .names small{font-size:13px}
+.vanor .focus-row.lean .focus-reason{color:var(--ink);margin-top:2px}
+.vanor .due{display:inline-block;margin-left:6px;font-size:12px;color:var(--secondary)}
+.vanor .due.late{color:var(--danger);font-weight:600}
+.vanor .focus-empty{padding:8px 16px 16px;font-size:13px}
+.vanor .focus-lean+.focus-lean{margin-top:14px}

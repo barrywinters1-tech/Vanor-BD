@@ -61,3 +61,26 @@ export async function workQueue({ bucket, region, limit = 50 }: { bucket?: Bucke
       pursuit: d?.pursuit || null, why: p.top ? `${p.top.date} ${p.top.text}` : p.warm ? 'Warm relationship' : 'No trigger' }));
   return { buckets, rows: pick };
 }
+
+export type Section = 'chase' | 'write' | 'waiting' | 'new' | 'off';
+/** The Today screen, server side: one object per contact {section, sentence, due, verb, step}. Same derivation the board uses (VanorPriority.next), so jobs and the screen never disagree. */
+export async function today({ section, region, limit = 100 }: { section?: Section; region?: string; limit?: number } = {}) {
+  const [records, decisions, work, events, h] = await Promise.all([listScope('source'), listScope('decision'), listScope('work'), listScope('event'), history()]);
+  const dById = new Map(decisions.map(d => [d.id, d])); const t0 = new Date().toISOString().slice(0, 10);
+  const nextMeeting = new Map<string, string>();
+  for (const e of events) { if (/^Outcome: meeting_booked$/.test(String(e.type || ''))) { const rid = String(e.recordId || e.entityId); const d = String(e.happenedOn || e.date || e.at || '').slice(0, 10); if (d > t0 && (!nextMeeting.get(rid) || nextMeeting.get(rid)! > d)) nextMeeting.set(rid, d); } }
+  const wByRecord = new Map<string, Entity[]>();
+  for (const w of work) { const list = wByRecord.get(w.recordId) || []; list.push(w); wByRecord.set(w.recordId, list); }
+  const Q = (globalThis as any).VanorPriority;
+  const rows = records.filter(r => r.kind !== 'opportunity').map(r => { const d = dById.get(r.id); const w = wByRecord.get(r.id) || []; const p = P().compute(r, d, w); const active = w.find(x => !x.archived);
+    const n = Q.next(r, d, w, p, { lastMet: h.lastMet.get(r.id), lastProposal: h.lastProposal.get(r.id), lastSent: h.lastSent.get(r.id), lastBack: h.lastBack.get(r.id), nextAsk: active?.nextAsk || d?.nextAsk || r.nextAsk, stage: active?.stage, nextMeeting: nextMeeting.get(r.id) });
+    if (d?.status === 'Archive') n.section = 'off';
+    return { r, d, n, cls: classifyRecord(r, d) }; });
+  const want = (x: typeof rows[number]) => (!region || x.cls.region === normRegion(region)) && (section ? x.n.section === section : x.n.section !== 'off' && x.n.section !== 'new');
+  const counts: Record<string, number> = { chase: 0, write: 0, waiting: 0, new: 0, off: 0 };
+  for (const x of rows) if (!region || x.cls.region === normRegion(region)) counts[x.n.section]++;
+  const pick = rows.filter(want)
+    .sort((a, b) => (Q.SECTION_ORDER[a.n.section] - Q.SECTION_ORDER[b.n.section]) || ((a.n.section === 'chase' || a.n.section === 'waiting') ? (a.n.due || '9999').localeCompare(b.n.due || '9999') : 0) || b.n.rank - a.n.rank).slice(0, limit)
+    .map(({ r, d, n, cls }) => ({ id: r.id, name: r.name, company: r.company, email: r.email || '', section: n.section, sentence: n.sentence, due: n.due, verb: n.verb, step: n.step, type: cls.type, region: cls.region, proposal: d?.proposal || null }));
+  return { counts, rows: pick };
+}

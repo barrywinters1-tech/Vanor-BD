@@ -10,8 +10,8 @@ import { autoClassify, generateDrafts, batchApprove, listTemplates, saveTemplate
 import { runIntel } from '../../../../lib/intel-ingest';
 import { lookupPerson, searchPeople } from '../../../../lib/rocketreach';
 import { addTask, completeTask, snoozeTask, deriveTasks, sweepTasks } from '../../../../lib/tasks';
-import { normRegion, workQueue } from '../../../../lib/priority';
-import { triage, setStep, STEP_LABEL, followUpsDue, undoLast } from '../../../../lib/pursuit';
+import { normRegion, workQueue, today } from '../../../../lib/priority';
+import { triage, setStep, STEP_LABEL, followUpsDue, undoLast, recordProposal } from '../../../../lib/pursuit';
 import { logEvent, saveEntity as storeSave, updateEntity as storeUpdate } from '../../../../lib/bd-store';
 import { runBackup } from '../../../../lib/backup-job';
 
@@ -180,6 +180,7 @@ export async function GET(request: NextRequest, context: Context) {
     }
     if (action === 'templates') return reply({ templates: await listTemplates(), settings: await getSettings() });
     if (action === 'queue') { const q = request.nextUrl.searchParams; return reply(await workQueue({ bucket: (q.get('bucket') || undefined) as any, region: q.get('region') || undefined, limit: Number(q.get('limit') || 50) })); }
+    if (action === 'today') return reply(await today({ section: (request.nextUrl.searchParams.get('section') || undefined) as any, region: request.nextUrl.searchParams.get('region') || undefined }));
     if (action === 'follow-ups') return reply(await followUpsDue({ createTasks: request.nextUrl.searchParams.get('tasks') === '1' }));
     if (action === 'entity') {
       const scope = request.nextUrl.searchParams.get('scope') || '';
@@ -225,6 +226,7 @@ export async function POST(request: NextRequest, context: Context) {
       const { data } = await access.db.auth.getUser(); const actor = /graeme/i.test(data.user?.email || '') ? 'Graeme' : 'Barry';
       const id = String(body?.id || ''); if (!id) return reply({ error: 'No id.' }, 400);
       if (body?.op === 'triage') { const t = String(body.decision || ''); if (!['yes', 'no', 'later'].includes(t)) return reply({ error: 'decision must be yes, no or later.' }, 400); return reply(await triage(id, t as any, actor, String(body.reason || ''), Number(body.days || 30))); }
+      if (body?.op === 'step' && body.step === 'proposal' && (body.price != null || body.decisionDate)) { return reply(await recordProposal({ id, price: Number(body.price || 0), unit: body.unit === 'month' ? 'month' : 'fixed', product: String(body.product || ''), decisionDate: String(body.decisionDate || ''), actor, note: String(body.note || '') })); }
       if (body?.op === 'step') { const s = String(body.step || ''); if (!Object.keys(STEP_LABEL).includes(s)) return reply({ error: 'Unknown step.' }, 400); return reply(await setStep(id, s as any, actor, String(body.note || ''))); }
       if (body?.op === 'undo') return reply(await undoLast(id, actor));
       return reply({ error: 'Unknown pursue op.' }, 400);
