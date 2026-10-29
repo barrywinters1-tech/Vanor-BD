@@ -2315,3 +2315,16 @@ html, body {
 .vanor .focus-tasks{list-style:none;margin:0 0 10px;padding:0}
 .vanor .focus-tasks li{padding:4px 0;font-size:13px}
 .vanor .focus-tasks .task-check{display:flex;gap:8px;align-items:flex-start;cursor:pointer}
+
+/* Record page (29 Oct 2026): one page per contact */
+.record-page{display:flex;flex-direction:column;gap:14px;max-width:960px}
+.record-page .panel{padding:16px 18px}
+.rec-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.rec-head h1{margin:0;font-size:22px;font-weight:600}
+.rec-head p{margin:4px 0 0}
+.rec-facts{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px 18px;margin-top:12px}
+.rec-fact{display:flex;flex-direction:column;font-size:13px}
+.rec-fact .muted{font-size:11px}
+.rec-context{margin:12px 0 0;font-size:13px;line-height:1.5;color:var(--ink-2,#444);white-space:pre-line}
+.rec-thread li{margin:0 0 8px}
+@media (max-width:640px){.rec-facts{grid-template-columns:1fr 1fr}}

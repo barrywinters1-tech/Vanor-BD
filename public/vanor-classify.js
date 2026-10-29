@@ -188,7 +188,7 @@
     var date = isoDate(i.signalDate || r.createdAt || ''); var ageD = (now - Date.parse(date + 'T00:00:00Z')) / 864e5;
     if (!(ageD <= 14)) return fail('Trigger older than 14 days');
     var rank = stage === 'distress' ? 1 : stage === 'contractor_appointed' && !PMEA.test(text) ? 2 : stage === 'funded' ? 3 : 4;
-    return { pass: true, rank: rank, label: RANK_LABEL[rank], client: client, buyer: buyer, stage: stage, region: region, date: date, reason: RANK_LABEL[rank] + ': ' + client + (stage === 'distress' ? ' is the exposed party' : '') };
+    return { pass: true, rank: rank, label: RANK_LABEL[rank], client: client, buyer: buyer, stage: stage, region: region, date: date, reason: RANK_LABEL[rank] + ': ' + (r.title ? String(r.title).slice(0, 110) : client + (stage === 'distress' ? ' is the exposed party' : '')) };
   }
   function actionLine(r, ctx) { var x = route(r, ctx); if (!x) return ''; if (x.verdict === 'ignore') return 'Ignore: ' + x.reason; if (x.verdict === 'watch') return 'Watch: ' + x.reason; return 'Email the ' + x.who + ' at ' + (r.company || 'the company') + ': ' + x.offer + ' (' + x.when + ', confidence ' + x.confidence + ')'; }
   root.VanorClassify = { bar: bar, isoDate: isoDate, RANK_LABEL: RANK_LABEL, route: route, actionLine: actionLine, classify: classify, regionOf: regionOf, typeOf: typeOf, sectorOf: sectorOf, stageOf: stageOf, sizeOf: sizeOf, normRegion: normRegion, regionFromText: regionFromText, REGIONS: REGIONS, TYPES: TYPES };

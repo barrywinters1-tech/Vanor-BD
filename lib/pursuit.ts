@@ -44,7 +44,12 @@ export async function setStep(id: string, step: Step, actor: string, note = '') 
   else if (step === 'replied') await logEvent({ entityId: id, recordId: id, type: 'Outcome: reply', note: note || 'Reply received (marked in the board)', date: t0, ref: `board:reply:${id}:${t0}`, actor });
   else if (step === 'meeting') await logEvent({ entityId: id, recordId: id, type: 'Outcome: meeting_booked', note: note || 'Meeting (marked in the board)', date: t0, ref: `board:meeting:${id}:${t0}`, actor });
   else if (step === 'proposal') await logEvent({ entityId: id, recordId: id, type: 'Outcome: proposal', note: note || 'Proposal (marked in the board)', date: t0, ref: `board:proposal:${id}:${t0}`, actor });
-  else if (step === 'won') await logEvent({ entityId: id, recordId: id, type: 'Outcome: won', note: note || 'Won', date: t0, ref: `board:won:${id}:${t0}`, actor });
+  else if (step === 'won') {
+    // Won (29 Oct 2026): the note carries the PO or instruction reference; an invoice task is raised so "paying client" becomes a board fact.
+    await logEvent({ entityId: id, recordId: id, type: 'Outcome: won', note: note ? `Won. Reference: ${note}` : 'Won (no PO or instruction reference yet)', date: t0, ref: `board:won:${id}:${t0}`, actor });
+    const pr = ((await getOne('decision', id))?.proposal || {}) as any; const who = `${r.name || ''}${r.company ? ' · ' + r.company : ''}`;
+    await addTask({ id: `task:invoice:${id}:${t0}`, title: `Raise the invoice to ${r.company || r.name}${pr.price != null ? ': ' + money(Number(pr.price)) + (pr.unit === 'month' ? ' a month' : ', 50% on instruction') : ''}${note ? ' (ref ' + note + ')' : ' (get the PO or instruction reference first)'}`, owner: (actor === 'Graeme' ? 'Graeme' : 'Barry'), due: t0, priority: 'High', source: { kind: 'record', id, label: who }, notes: 'Raised by the Won press. Issue it from QuickBooks; the Monday message checks it is raised and paid.', createdBy: 'Engine' } as any);
+  }
   else await logEvent({ entityId: id, recordId: id, type: step === 'lost' ? 'Lead lost' : 'Pursuit step', actor, note: note || STEP_LABEL[step] });
   return { ok: true, pursuit: out };
 }

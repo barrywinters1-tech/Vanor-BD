@@ -2,6 +2,8 @@
 import { listScope, updateEntity, type Entity } from './bd-store';
 import { priorityList } from './priority';
 import { STAGE_PLAY, type Stage } from './lead-classify';
+import '../public/vanor-classify.js';
+const iso = (v: any) => ((globalThis as any).VanorClassify?.isoDate?.(v) as string) || String(v || '').slice(0, 10);
 
 const DAY = 864e5;
 const norm = (s = '') => String(s).toLowerCase().replace(/\b(ltd|limited|plc|llp|group|holdings|uk|the)\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -33,7 +35,7 @@ export async function signalFeed({ days = 30, buyersOnly = true, limit = 60 }: {
   const dismissed = (id: string) => new Set<string>((dById.get(id)?.dismissedSignals as string[]) || []);
   for (const r of records) {
     if (r.origin === 'intel') {
-      const date = String(r.intel?.signalDate || r.createdAt || '').slice(0, 10); if (date < since) continue;
+      const date = iso(r.intel?.signalDate || r.createdAt); if (date < since) continue;
       if (dismissed(r.id).has('lead')) continue;
       const h = r.headlines?.lead || {};
       const src = /gazette/i.test(r.source || '') ? 'The Gazette' : /planning/i.test(r.source || '') ? 'Planning' : /hiring/i.test(r.source || '') ? 'Hiring' : 'Press';
