@@ -118,3 +118,8 @@ export async function workspaceRevision() {
   if (error) fail(error);
   return data?.[0]?.updated_at || '';
 }
+
+/** The older engine's work items, without the Pursuits board's items (kind 'pursuit'). */
+export async function listWork(): Promise<Entity[]> {
+  return (await listScope('work')).filter(w => w.kind !== 'pursuit');
+}

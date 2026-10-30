@@ -10,7 +10,7 @@ import {
   CONDITIONS, CONDITION_QUESTIONS, chaseList, contactSummary, findDuplicate, reviewStatus, today, validDate,
 } from '../../../../lib/bd-logic';
 import {
-  findByEmail, getOne, listScope, logEvent, saveEntity, searchSources, updateEntity, type Entity,
+  findByEmail, getOne, listScope, listWork, logEvent, saveEntity, searchSources, updateEntity, type Entity,
 } from '../../../../lib/bd-store';
 import { lookupPerson } from '../../../../lib/rocketreach';
 import { runIntel } from '../../../../lib/intel-ingest';
@@ -24,6 +24,7 @@ import { generateDrafts, approvedDrafts, markDraftPushed, saveDraft, autoClassif
 import { signalFeed, setHeadline } from '../../../../lib/signals-feed';
 import { researchCompany, normCompany } from '../../../../lib/company-intel';
 import { researchBatch, saveIntel, signalContacts } from '../../../../lib/company-intel-store';
+import { listPursuits, savePursuits, proposeNext, recordMeetings, setPerson, peopleDue } from '../../../../lib/pursuits';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -35,7 +36,7 @@ const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('YYYY-MM-DD');
 const score = z.number().int().min(0).max(2);
 
 async function workFor(recordId: string) {
-  return (await listScope('work')).filter(w => w.recordId === recordId);
+  return (await listWork()).filter(w => w.recordId === recordId);
 }
 
 async function eventsFor(ids: string[]) {
@@ -69,7 +70,7 @@ function createServer() {
     inputSchema: { limit: z.number().int().min(1).max(50).optional() },
     annotations: { readOnlyHint: true },
   }, async ({ limit }) => {
-    const [records, decisionList, work] = await Promise.all([listScope('source'), listScope('decision'), listScope('work')]);
+    const [records, decisionList, work] = await Promise.all([listScope('source'), listScope('decision'), listWork()]);
     const decisions = Object.fromEntries(decisionList.map(d => [d.id, d]));
     const at = today();
     const stages: Record<string, number> = {};
@@ -487,6 +488,51 @@ function createServer() {
     inputSchema: { ref: z.string().max(300), subject: z.string().max(200), reason: z.string().max(200), date: date.optional() },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ ref, subject, reason, date: d }) => out(await skipMeeting(ref, subject, reason, d), 'Skipped.'));
+  const pursuitItem = z.object({
+    id: z.string().optional(), name: z.string().min(2).max(120).optional(),
+    lane: z.enum(['funder', 'claims', 'dc', 'hotel', 'other']).optional(),
+    state: z.enum(['table', 'act', 'waiting', 'watch', 'won', 'lost', 'parked']).optional(),
+    atStake: z.string().max(120).optional(), latest: z.string().max(300).optional(), nextAction: z.string().max(200).optional(),
+    owner: z.enum(['Barry', 'Graeme', 'Both']).optional(), dueBy: date.optional(), org: z.string().max(120).optional(),
+    person: z.string().max(160).optional(), email: z.string().max(160).optional(), recordId: z.string().optional(),
+    source: z.string().max(200).optional(), notes: z.string().max(600).optional(),
+    gate: z.object({ asset: z.boolean().optional(), problem: z.boolean().optional(), capital: z.boolean().optional(), route: z.boolean().optional() }).optional(),
+  });
+  server.registerTool('pursuits_list', {
+    title: 'Pursuits: the front page of the board, by lane and state',
+    description: 'v4 (30 Oct 2026). A pursuit is a named piece of payable work. Lanes: funder (lender recovery, independent monitoring, technical due diligence), claims (sub-consulting to claims/delay/planning firms), dc (data centres), hotel, other. States: table (price with them), act (all four conditions met: named asset, real problem, exposed funder/owner, route to decider), waiting (their move), watch (credible but a condition missing); won/lost/parked are closed. Each open pursuit has one next action, an owner and a due date. Use this, not today/lead_matrix, to say what matters.',
+    inputSchema: { lane: z.enum(['all', 'funder', 'claims', 'dc', 'hotel', 'other']).optional(), includeClosed: z.boolean().optional() },
+    annotations: { readOnlyHint: true },
+  }, async ({ lane, includeClosed }) => out(await listPursuits({ lane: lane || 'all', includeClosed }), 'Pursuits.'));
+  server.registerTool('pursuits_save', {
+    title: 'Create or update pursuits (batch)',
+    description: 'Matches by id, else exact name. Anything outside Watch must have all four gate conditions true and a next action, or it is rejected with the reason. Claude may create pursuits and refresh latest/notes/contact fields; on an EXISTING pursuit Claude cannot change state, nextAction, dueBy or owner (use pursuit_propose) unless confirmedBy names the founder who said so in chat.',
+    inputSchema: { items: z.array(pursuitItem).min(1).max(50), confirmedBy: z.enum(['Barry', 'Graeme']).optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ items, confirmedBy }) => out(await savePursuits(items, confirmedBy || 'Claude'), 'Pursuits saved.'));
+  server.registerTool('pursuit_propose', {
+    title: 'Propose the next move on a pursuit from new evidence (mail, calendar, transcript)',
+    description: 'The board shows it as "Proposed" with an Accept button; the founder\'s current next action stays until accepted. why = the evidence, e.g. "Matthew replied 30 Oct: board meets 5 Nov". latest = one line on what just happened.',
+    inputSchema: { id: z.string(), nextAction: z.string().min(3).max(200), dueBy: date.optional(), state: z.enum(['table', 'act', 'waiting', 'watch', 'won', 'lost', 'parked']).optional(), latest: z.string().max(300).optional(), why: z.string().min(3).max(300) },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ id, ...p }) => out(await proposeNext(id, p), 'Proposed.'));
+  server.registerTool('people_met', {
+    title: 'People: record meetings from the calendar (batch)',
+    description: 'One item per external person per meeting that actually happened. Matches by email, else exact name. Sets last met, counts meetings, and optionally the one-line note from the meeting, the rung (target/contact/referrer/active/partner), lane and the McMakin buying stage reached (Aware, Understands, Interested, Respects, Trusts, Able, Ready). Returns the unmatched so they can be added.',
+    inputSchema: { meetings: z.array(z.object({ email: z.string().optional(), name: z.string().optional(), date, note: z.string().max(300).optional(), rung: z.enum(['target', 'contact', 'referrer', 'active', 'partner']).optional(), lane: z.enum(['funder', 'claims', 'dc', 'hotel', 'other']).optional(), buyingStage: z.enum(['Aware', 'Understands', 'Interested', 'Respects', 'Trusts', 'Able', 'Ready']).optional() })).min(1).max(100) },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ meetings }) => out(await recordMeetings(meetings), 'Meetings recorded.'));
+  server.registerTool('person_set', {
+    title: 'People: set a person\'s rung, lane, buying stage or note',
+    description: 'Rungs set the meeting rhythm: partner and active every 6 weeks, referrer every 13 weeks, contact twice a year, target = not met yet. Promote to active the first time someone puts a named job in front of us.',
+    inputSchema: { id: z.string(), rung: z.enum(['target', 'contact', 'referrer', 'active', 'partner']).optional(), lane: z.enum(['funder', 'claims', 'dc', 'hotel', 'other']).optional(), buyingStage: z.enum(['Aware', 'Understands', 'Interested', 'Respects', 'Trusts', 'Able', 'Ready']).optional(), lastNote: z.string().max(300).optional(), lastMet: date.optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ id, ...p }) => out(await setPerson(id, p), 'Person updated.'));
+  server.registerTool('people_due', {
+    title: 'People due a meeting (by rung cadence), overdue first',
+    inputSchema: { limit: z.number().int().min(1).max(200).optional(), all: z.boolean().optional() },
+    annotations: { readOnlyHint: true },
+  }, async ({ limit, all }) => out(await peopleDue({ limit: limit || 20, onlyDue: !all }), 'People due.'));
   server.registerTool('log_intro', {
     title: 'Introductions ledger: made, promised or lead passed',
     description: 'made = Barry or Graeme introduced this contact to someone (they owe us one; after 10 working days the board asks how it went). promised = this contact said they will introduce us to someone (chased after 10 working days). lead_passed = we handed this contact a project or a name. counterpart = the other party, as named. Idempotent on contact + kind + date + counterpart.',

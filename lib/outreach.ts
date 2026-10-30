@@ -1,6 +1,6 @@
 // Outreach engine against the board: batch generation, approvals, Outlook hand-off, auto-classification.
 // Drafts live on the decision record as d.draft and go to Outlook only after a founder approves.
-import { listScope, getOne, updateEntity, logEvent, type Entity } from './bd-store';
+import { listScope, listWork, getOne, updateEntity, logEvent, type Entity } from './bd-store';
 import { priorityList } from './priority';
 import { composeDraft, templateMap, DEFAULT_TEMPLATES, type Draft, type Template } from './outreach-logic';
 export { composeDraft, weekCommencing, templateMap, DEFAULT_TEMPLATES, renderTemplate, type Draft, type DraftInput, type Template } from './outreach-logic';
@@ -22,7 +22,7 @@ function warmScore(r: Entity, d: Entity | undefined, works: Entity[]) {
 
 // Cells include B2 because the funnel (60 days to 13 Oct 2026) shows keep-warm conversations replying at 68% and cold signal-led at 0 of 3.
 export async function generateDrafts({ limit = 40, cells = ['A1', 'A2', 'B1', 'B2'], staleDays = 14, ids }: { limit?: number; cells?: string[]; staleDays?: number; ids?: string[] } = {}) {
-  const [records, decisions, work, events, prio] = await Promise.all([listScope('source'), listScope('decision'), listScope('work'), listScope('event'), priorityList({ cell: 'All', limit: 5000 })]);
+  const [records, decisions, work, events, prio] = await Promise.all([listScope('source'), listScope('decision'), listWork(), listScope('event'), priorityList({ cell: 'All', limit: 5000 })]);
   const dById = new Map(decisions.map(d => [d.id, d]));
   const templates = templateMap(decisions.filter(d => String(d.id).startsWith('template:')).map(d => ({ key: String(d.id).slice(9), subject: d.subject, body: d.body })));
   const wByRecord = new Map<string, Entity[]>(); for (const w of work) { const l = wByRecord.get(w.recordId) || []; l.push(w); wByRecord.set(w.recordId, l); }

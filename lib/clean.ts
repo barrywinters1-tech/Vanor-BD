@@ -1,10 +1,10 @@
 // Board clean-up: archive duplicates and dead records with a reason. Never deletes; a founder can un-archive in Relationships.
-import { listScope, updateEntity, logEvent } from './bd-store';
+import { listScope, listWork, updateEntity, logEvent } from './bd-store';
 import { planClean } from './clean-logic';
 
 /** "Touched" = a founder or the engine has done something with it: board card, assessment, draft, note, event. Those are never archived automatically. */
 export async function cleanBoard({ apply = false, limit = 400 }: { apply?: boolean; limit?: number } = {}) {
-  const [records, decisions, work, events] = await Promise.all([listScope('source'), listScope('decision'), listScope('work'), listScope('event')]);
+  const [records, decisions, work, events] = await Promise.all([listScope('source'), listScope('decision'), listWork(), listScope('event')]);
   const dById = new Map(decisions.map(d => [d.id, d]));
   const archived = new Set(decisions.filter(d => d.status === 'Archive').map(d => String(d.id)));
   const touched = new Set<string>();

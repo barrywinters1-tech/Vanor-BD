@@ -4,7 +4,7 @@ import '../public/vanor-priority.js';
 import '../public/vanor-classify.js';
 export const classifyRecord = (r: Entity, d?: Entity) => ((globalThis as any).VanorClassify?.classify(r, d) || { type: '', sector: '', stage: '', region: 'Unknown', size: '' }) as { type: string; sector: string; stage: string; region: string; size: string };
 export const normRegion = (v?: string) => ((globalThis as any).VanorClassify?.normRegion(v || '') || '') as string;
-import { listScope, type Entity } from './bd-store';
+import { listScope, listWork, type Entity } from './bd-store';
 
 type Prio = { grade: string; heat: number; cell: string; score: number; need: number; relationship: number; live: boolean; warm: boolean; top: any; play: string };
 export type Lane = { lane: 'Now' | 'Next' | 'Later' | 'Off'; reason: string; move: string };
@@ -23,7 +23,7 @@ export async function history() {
 }
 
 export async function priorityList({ cell = 'All', limit = 30, lane, region }: { cell?: string; limit?: number; lane?: Lane['lane']; region?: string } = {}) {
-  const [records, decisions, work, h] = await Promise.all([listScope('source'), listScope('decision'), listScope('work'), history()]);
+  const [records, decisions, work, h] = await Promise.all([listScope('source'), listScope('decision'), listWork(), history()]);
   const dById = new Map(decisions.map(d => [d.id, d]));
   const wByRecord = new Map<string, Entity[]>();
   for (const w of work) { const list = wByRecord.get(w.recordId) || []; list.push(w); wByRecord.set(w.recordId, list); }
@@ -45,7 +45,7 @@ export async function priorityList({ cell = 'All', limit = 30, lane, region }: {
 export type Bucket = 'followup' | 'todo' | 'inbox' | 'waiting' | 'later' | 'off';
 /** The one ranked list: every live contact with a bucket (follow-up due / to do / inbox / waiting / later / off) and a rank comparable across buckets. */
 export async function workQueue({ bucket, region, limit = 50 }: { bucket?: Bucket; region?: string; limit?: number } = {}) {
-  const [records, decisions, work, h] = await Promise.all([listScope('source'), listScope('decision'), listScope('work'), history()]);
+  const [records, decisions, work, h] = await Promise.all([listScope('source'), listScope('decision'), listWork(), history()]);
   const dById = new Map(decisions.map(d => [d.id, d]));
   const wByRecord = new Map<string, Entity[]>();
   for (const w of work) { const list = wByRecord.get(w.recordId) || []; list.push(w); wByRecord.set(w.recordId, list); }
@@ -68,7 +68,7 @@ export async function workQueue({ bucket, region, limit = 50 }: { bucket?: Bucke
 export type Section = 'chase' | 'write' | 'waiting' | 'new' | 'off' | 'touch';
 /** The Today screen, server side: one object per contact {section, sentence, due, verb, step}. Same derivation the board uses (VanorPriority.next), so jobs and the screen never disagree. */
 export async function today({ section, region, limit = 100 }: { section?: Section; region?: string; limit?: number } = {}) {
-  const [records, decisions, work, events, h] = await Promise.all([listScope('source'), listScope('decision'), listScope('work'), listScope('event'), history()]);
+  const [records, decisions, work, events, h] = await Promise.all([listScope('source'), listScope('decision'), listWork(), listScope('event'), history()]);
   const dById = new Map(decisions.map(d => [d.id, d])); const t0 = new Date().toISOString().slice(0, 10);
   const nextMeeting = new Map<string, string>(); const ledger = new Map<string, any>();
   for (const e of events) {

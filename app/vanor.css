@@ -2333,3 +2333,28 @@ html, body {
 
 /* People (v3.1) */
 table.people{width:100%;border-collapse:collapse;font-size:13px}table.people th{text-align:left;font-weight:600;font-size:12px;color:var(--ink-2,#555);padding:10px 16px;border-bottom:1px solid var(--line,#e3e8e6)}table.people td{padding:10px 16px;border-bottom:1px solid var(--line,#e3e8e6);vertical-align:top}table.people tr[data-action]{cursor:pointer}table.people tr[data-action]:hover td{background:rgba(0,0,0,.02)}@media (max-width:700px){table.people th:nth-child(2),table.people td:nth-child(2),table.people th:nth-child(6),table.people td:nth-child(6){display:none}table.people td,table.people th{padding:8px}}
+
+/* Pursuits */
+.focus-row.lean.pursuit-row { grid-template-columns: minmax(0,1fr) auto; align-items: start; }
+.pursuit-row .names { min-width: 0; }
+.pursuit-row .names small { margin-top: 3px; }
+.next-label { font-weight: 600; }
+.pursuit-stake { font-weight: 600; white-space: nowrap; text-align: right; min-width: 110px; max-width: 220px; white-space: normal; font-size: 13px; }
+.pursuit-next { color: inherit; }
+.pursuit-proposed { background: rgba(196, 160, 72, .12); border-left: 3px solid #c4a048; padding: 4px 8px; border-radius: 4px; margin-top: 2px; }
+.pursuit-proposed .btn { margin-left: 6px; }
+.focus-row.lean .names .lane-tag, .lane-tag { display: inline-block; width: auto; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 10px; margin-left: 6px; vertical-align: 1px; }
+.lane-tag { background: #eef0f3; color: #3b4452; }
+.lane-tag.lane-funder { background: #e3ecf8; color: #1f4b85; }
+.lane-tag.lane-claims { background: #f4e6e6; color: #7a2b2b; }
+.lane-tag.lane-dc { background: #e5f3ee; color: #1f6a4c; }
+.lane-tag.lane-hotel { background: #f6eedf; color: #7a5a1c; }
+.lane-tag.lane-other { background: #eef0f3; color: #3b4452; }
+.lane-long { margin: -4px 0 10px; }
+fieldset.gate { border: 1px solid #dfe2e7; border-radius: 6px; padding: 8px 12px; margin: 12px 0; }
+fieldset.gate legend { font-size: 12px; font-weight: 600; padding: 0 4px; }
+label.check { display: flex; gap: 8px; align-items: center; font-size: 14px; padding: 3px 0; }
+@media (max-width: 700px) {
+  .focus-row.lean.pursuit-row { grid-template-columns: minmax(0,1fr); }
+  .pursuit-stake { text-align: left; min-width: 0; grid-row: 2; }
+}
