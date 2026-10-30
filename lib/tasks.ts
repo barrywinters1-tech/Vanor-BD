@@ -19,6 +19,15 @@ export function taskKind(t: { id?: string; title?: string; source?: { kind?: str
   if (k === 'manual' || t.source == null) return 'Own';
   return 'Next ask';
 }
+/** First 'd Mon' or 'Mon d' date in a task title, as yyyy-mm-dd in the year that keeps it within ~4 months of today. */
+function dateIn(title: string, t0: string) {
+  const M = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  const m = String(title).toLowerCase().match(/\b(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b/) || null;
+  if (!m) return '';
+  const y = Number(t0.slice(0, 4)); let d = `${y}-${String(M.indexOf(m[2]) + 1).padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  if (Date.parse(d) - Date.parse(t0) > 120 * DAY) d = `${y - 1}${d.slice(4)}`;
+  return d;
+}
 export const taskKey = (kind: string, id: string, title: string) => 'task:' + createHash('sha1').update(`${kind}|${id}|${title.toLowerCase().trim()}`).digest('hex').slice(0, 20);
 
 export async function listTasks({ owner, status, dueBefore, limit = 200 }: { owner?: string; status?: Task['status'] | 'All'; dueBefore?: string; limit?: number } = {}) {
@@ -80,6 +89,13 @@ export async function deriveTasks() {
 export async function sweepTasks() {
   const t0 = today();
   const [open, records, decisions, events, log] = await Promise.all([listTasks({ status: 'Open', limit: 1000 }), listScope('source'), listScope('decision'), listScope('planned_event'), listScope('event')]);
+  // Repair (30 Oct 2026): an earlier rule closed promises because an email had gone since; that is not evidence the promise was kept. Reopen them.
+  for (const d of decisions) if (String(d.id).startsWith('task:') && d.status === 'Done' && /you have written to them since the promise/.test(String(d.notes || ''))) {
+    await updateEntity('decision', d.id, cur => ({ ...cur, status: 'Open', doneAt: undefined, doneBy: undefined, notes: String(cur.notes || '').replace(/\n?Closed by sweep: you have written to them since the promise; reopen if it is still owed\./, '').trim() }));
+    open.push({ ...(d as any), status: 'Open' });
+  }
+  open.sort((a, b) => String((b as any).createdAt || '').localeCompare(String((a as any).createdAt || '')));
+  const seen = new Map<string, string>();
   // v3.1: the newest sent and reply per contact, so a task closes itself once the thing it waited for has happened.
   const lastOut = new Map<string, string>(), lastIn = new Map<string, string>();
   for (const e of log) { const rid = String(e.recordId || e.entityId || ''); const ty = String(e.type || ''); const at = String(e.happenedOn || e.date || e.at || '').slice(0, 10); if (!rid || !at) continue;
@@ -101,7 +117,9 @@ export async function sweepTasks() {
     if (!reason && kind === 'Chase' && rid && made && ((lastIn.get(rid) || '') >= made || (lastOut.get(rid) || '') > made)) reason = 'chased or they replied';
     if (!reason && kind === 'Decision' && rid) { const pr = dec.get(rid)?.proposal; const pu = dec.get(rid)?.pursuit; if (!pr || pr.open === false || pu?.step === 'won' || pu?.step === 'lost') reason = 'proposal decided or withdrawn'; }
     if (!reason && kind === 'Next ask' && t.createdBy === 'Engine') reason = 'next asks now live on Today, not as tasks';
-    if (!reason && kind === 'Promise' && rid && made && (lastOut.get(rid) || '') > made) reason = 'you have written to them since the promise; reopen if it is still owed';
+    if (!reason && kind === 'Decision' && rid) { const pr = dec.get(rid)?.proposal; const tdate = String(t.id).split(':').pop(); if (pr?.decisionDate && String(t.id).startsWith('task:decision:') && tdate !== pr.decisionDate) reason = 'decision date set or moved; a new task follows the new date'; }
+    if (!reason && kind === 'Diary') { const dd = dateIn(t.title, t0); if (dd && dd < t0) reason = 'the date in the task has passed'; }
+    if (!reason) { const key = `${kind}|${rid}|${String(t.title || '').toLowerCase().replace(/[^a-z ]/g, '').split(' ').slice(0, 5).join(' ')}`; const prev = seen.get(key); if (prev) reason = 'duplicate of a newer task'; else seen.set(key, t.id); }
     if (!reason && t.due && t.due < addDays(t0, -21)) reason = 'more than 3 weeks overdue; closed by sweep, reopen if it still matters';
     if (reason) { await updateEntity('decision', t.id, cur => ({ ...cur, status: 'Done', doneAt: new Date().toISOString(), doneBy: 'Engine', notes: `${cur.notes || ''}\nClosed by sweep: ${reason}.`.trim() })); closed.push(`${t.title} (${reason})`); }
   }
