@@ -490,7 +490,7 @@ function createServer() {
   }, async ({ ref, subject, reason, date: d }) => out(await skipMeeting(ref, subject, reason, d), 'Skipped.'));
   const pursuitItem = z.object({
     id: z.string().optional(), name: z.string().min(2).max(120).optional(),
-    lane: z.enum(['funder', 'claims', 'dc', 'hotel', 'other']).optional(),
+    lane: z.enum(['funder', 'claims', 'dc', 'hotel', 'offices', 'other']).optional(),
     state: z.enum(['table', 'act', 'waiting', 'watch', 'won', 'lost', 'parked']).optional(),
     atStake: z.string().max(120).optional(), latest: z.string().max(300).optional(), nextAction: z.string().max(200).optional(),
     owner: z.enum(['Barry', 'Graeme', 'Both']).optional(), dueBy: date.optional(), org: z.string().max(120).optional(),
@@ -500,8 +500,8 @@ function createServer() {
   });
   server.registerTool('pursuits_list', {
     title: 'Pursuits: the front page of the board, by lane and state',
-    description: 'v4 (30 Oct 2026). A pursuit is a named piece of payable work. Lanes: funder (lender recovery, independent monitoring, technical due diligence), claims (sub-consulting to claims/delay/planning firms), dc (data centres), hotel, other. States: table (price with them), act (all four conditions met: named asset, real problem, exposed funder/owner, route to decider), waiting (their move), watch (credible but a condition missing); won/lost/parked are closed. Each open pursuit has one next action, an owner and a due date. Use this, not today/lead_matrix, to say what matters.',
-    inputSchema: { lane: z.enum(['all', 'funder', 'claims', 'dc', 'hotel', 'other']).optional(), includeClosed: z.boolean().optional() },
+    description: 'v4 (30 Oct 2026). A pursuit is a named piece of payable work. Lanes: funder (lender recovery, independent monitoring, technical due diligence), claims (sub-consulting to claims/delay/planning firms), dc (data centres), hotel, offices (commercial office lease events: find, relocate or refit at lease end, £2-25m), other. States: table (price with them), act (all four conditions met: named asset, real problem, exposed funder/owner, route to decider), waiting (their move), watch (credible but a condition missing); won/lost/parked are closed. Each open pursuit has one next action, an owner and a due date. Use this, not today/lead_matrix, to say what matters.',
+    inputSchema: { lane: z.enum(['all', 'funder', 'claims', 'dc', 'hotel', 'offices', 'other']).optional(), includeClosed: z.boolean().optional() },
     annotations: { readOnlyHint: true },
   }, async ({ lane, includeClosed }) => out(await listPursuits({ lane: lane || 'all', includeClosed }), 'Pursuits.'));
   server.registerTool('pursuits_save', {
@@ -519,13 +519,13 @@ function createServer() {
   server.registerTool('people_met', {
     title: 'People: record meetings from the calendar (batch)',
     description: 'One item per external person per meeting that actually happened. Matches by email, else exact name. Sets last met, counts meetings, and optionally the one-line note from the meeting, the rung (target/contact/referrer/active/partner), lane and the McMakin buying stage reached (Aware, Understands, Interested, Respects, Trusts, Able, Ready). Returns the unmatched so they can be added.',
-    inputSchema: { meetings: z.array(z.object({ email: z.string().optional(), name: z.string().optional(), date, note: z.string().max(300).optional(), rung: z.enum(['target', 'contact', 'referrer', 'active', 'partner']).optional(), lane: z.enum(['funder', 'claims', 'dc', 'hotel', 'other']).optional(), buyingStage: z.enum(['Aware', 'Understands', 'Interested', 'Respects', 'Trusts', 'Able', 'Ready']).optional() })).min(1).max(100) },
+    inputSchema: { meetings: z.array(z.object({ email: z.string().optional(), name: z.string().optional(), date, note: z.string().max(300).optional(), rung: z.enum(['target', 'contact', 'referrer', 'active', 'partner']).optional(), lane: z.enum(['funder', 'claims', 'dc', 'hotel', 'offices', 'other']).optional(), buyingStage: z.enum(['Aware', 'Understands', 'Interested', 'Respects', 'Trusts', 'Able', 'Ready']).optional() })).min(1).max(100) },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ meetings }) => out(await recordMeetings(meetings), 'Meetings recorded.'));
   server.registerTool('person_set', {
     title: 'People: set a person\'s rung, lane, buying stage or note',
     description: 'Rungs set the meeting rhythm: partner and active every 6 weeks, referrer every 13 weeks, contact twice a year, target = not met yet. Promote to active the first time someone puts a named job in front of us.',
-    inputSchema: { id: z.string(), rung: z.enum(['target', 'contact', 'referrer', 'active', 'partner']).optional(), lane: z.enum(['funder', 'claims', 'dc', 'hotel', 'other']).optional(), buyingStage: z.enum(['Aware', 'Understands', 'Interested', 'Respects', 'Trusts', 'Able', 'Ready']).optional(), lastNote: z.string().max(300).optional(), lastMet: date.optional() },
+    inputSchema: { id: z.string(), rung: z.enum(['target', 'contact', 'referrer', 'active', 'partner']).optional(), lane: z.enum(['funder', 'claims', 'dc', 'hotel', 'offices', 'other']).optional(), buyingStage: z.enum(['Aware', 'Understands', 'Interested', 'Respects', 'Trusts', 'Able', 'Ready']).optional(), lastNote: z.string().max(300).optional(), lastMet: date.optional() },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ id, ...p }) => out(await setPerson(id, p), 'Person updated.'));
   server.registerTool('people_due', {

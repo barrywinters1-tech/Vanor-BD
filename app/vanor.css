@@ -2349,6 +2349,7 @@ table.people{width:100%;border-collapse:collapse;font-size:13px}table.people th{
 .lane-tag.lane-claims { background: #f4e6e6; color: #7a2b2b; }
 .lane-tag.lane-dc { background: #e5f3ee; color: #1f6a4c; }
 .lane-tag.lane-hotel { background: #f6eedf; color: #7a5a1c; }
+.lane-tag.lane-offices { background: #ece6f5; color: #4b3277; }
 .lane-tag.lane-other { background: #eef0f3; color: #3b4452; }
 .lane-long { margin: -4px 0 10px; }
 fieldset.gate { border: 1px solid #dfe2e7; border-radius: 6px; padding: 8px 12px; margin: 12px 0; }

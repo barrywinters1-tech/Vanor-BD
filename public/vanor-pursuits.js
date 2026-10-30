@@ -7,6 +7,7 @@
     { key: 'claims', label: 'Claims & disputes', long: 'Claims & disputes: sub-consulting to claims, delay and planning firms' },
     { key: 'dc', label: 'Data centres', long: 'Data centres: programme, controls and recovery on mission-critical builds' },
     { key: 'hotel', label: 'Hotels', long: 'Hotels: owner-side PM and cost on hospitality schemes' },
+    { key: 'offices', label: 'Commercial offices', long: 'Commercial offices: lease events (find, relocate or refit at lease end), £2-25m; owner-side PM/EA, or CM where no funder conflict' },
     { key: 'other', label: 'Other project work', long: 'Other project work: owner-side PM/EA, peer review and recovery' },
   ];
   const LANE = Object.fromEntries(LANES.map(l => [l.key, l]));
