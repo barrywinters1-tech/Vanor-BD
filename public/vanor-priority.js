@@ -301,7 +301,8 @@
     var trigDate = i.signalDate ? (C && C.isoDate ? C.isoDate(i.signalDate) : String(i.signalDate).slice(0, 10)) : sig ? (C && C.isoDate ? C.isoDate(sig.date) : String(sig.date).slice(0, 10)) : '';
     var trigAge = trigDate ? age(trigDate, now) : 9999;
     var liveStage = i.stage ? !!NEED_STAGE[i.stage] : sig ? /lending|property|distress/.test(sig.type) : false;
-    var need = pu.scheme || pu.outcome === 'opportunity' || pr.price ? 'live' : (liveStage && trigAge <= 90) ? 'live' : (trigDate && trigAge <= 365) ? 'latent' : 'none';
+    // A buyer you have met or heard back from has at least a latent need: the conversation is the evidence, not a filing.
+    var need = pu.scheme || pu.outcome === 'opportunity' || pr.price ? 'live' : (liveStage && trigAge <= 90) ? 'live' : (trigDate && trigAge <= 365) || h.lastMet || pu.outcome === 'relationship' ? 'latent' : 'none';
     // Q3 Access: how warm is the line in?
     var lg = h.ledger || {}; var access = h.lastMet || lg.given || lg.received ? 'warm' : h.lastBack ? 'replied' : r.email ? 'email' : 'none';
     // Q4 Stage: how far along the funnel.
@@ -311,9 +312,12 @@
     var dd = pr.decisionDate || (d.oneDay && d.oneDay.decisionDate) || '';
     var timing = (dd && dd >= t0 && age(t0, Date.parse(dd + 'T00:00:00Z')) <= 14) || trigAge <= 14 ? 'now' : (dd && dd >= t0) || trigAge <= 90 ? 'soon' : 'later';
     var R = RATES; var toWon = { none: R.reply * R.meeting * R.priced * R.won, sent: R.reply * R.meeting * R.priced * R.won, replied: R.meeting * R.priced * R.won, met: R.priced * R.won, opportunity: Math.min(1, R.priced * 1.5) * R.won, priced: R.won, won: 1, closed: 0 }[stage];
-    var mult = (who === 'buyer' ? 1 : who === 'introducer' ? 0.15 : 0.05) * (need === 'live' ? 1.5 : need === 'latent' ? 1 : 0.5) * (timing === 'now' ? 1.2 : timing === 'soon' ? 1 : 0.8) * (stage === 'none' && access === 'none' ? 0.3 : 1);
-    var p = stage === 'won' ? 1 : Math.min(0.9, toWon * mult);
+    var mult = (who === 'buyer' ? 1 : 0.05) * (need === 'live' ? 1.5 : need === 'latent' ? 1 : 0.7) * (timing === 'now' ? 1.2 : timing === 'soon' ? 1 : 0.8) * (stage === 'none' && access === 'none' ? 0.3 : 1);
+    var p = stage === 'won' ? 1 : Math.min(0.9, toWon * mult), via = '';
     var fee = pr.price ? Number(pr.price) * (pr.unit === 'month' ? 3 : 1) : who === 'buyer' ? (/Funder/.test(ty) ? FEE.lender : FEE.buyer) : 0;
+    // Introducers do not pay; their value is the buyer they introduce. P = P(a named introduction in 90 days | how warm) x P(an introduced buyer reaches a fee).
+    // INTRO priors are assumptions (no Vanor data yet): warm 30%, replied 10%, email only 3%; an introduced buyer is treated like a met buyer.
+    if (who === 'introducer' && stage !== 'closed' && stage !== 'won' && !pr.price) { var pi = access === 'warm' ? 0.3 : access === 'replied' ? 0.1 : access === 'email' ? 0.03 : 0.01; p = Math.min(0.9, pi * R.priced * R.won); fee = FEE.buyer; via = 'via an introduction'; }
     var ev = Math.round(p * fee);
     // One action per cell.
     var action = stage === 'closed' ? 'Nothing: closed' : stage === 'won' ? 'Deliver; raise the invoice' : stage === 'priced' ? (dd ? 'Hold the decision date; call on ' + nice(dd) : 'Agree a decision date') : stage === 'opportunity' ? 'Send the free first look with the stage-2 price and a date' :
@@ -322,7 +326,7 @@
       stage === 'met' ? 'Decide the outcome; price the next step' : stage === 'replied' ? (need === 'live' ? 'Book the meeting this week' : 'Book a call when a trigger appears') : stage === 'sent' ? 'Wait for the clock, then one chase' :
       need === 'none' ? 'Watch: no trigger' : access === 'none' ? 'Find the decision-maker' : 'First approach on the trigger';
     var cell = (who === 'buyer' ? 'Buyer' : who === 'introducer' ? 'Introducer' : 'Other') + ' · ' + need + ' need · ' + stage;
-    return { who: who, need: need, access: access, stage: stage, timing: timing, p: p, ev: ev, fee: fee, cell: cell, action: action,
+    return { via: via, who: who, need: need, access: access, stage: stage, timing: timing, p: p, ev: ev, fee: fee, cell: cell, action: action,
       why: ['Who: ' + who + (ty ? ' (' + ty + ')' : ''), 'Need: ' + need + (trigDate ? ' (trigger ' + nice(trigDate) + ')' : pu.scheme ? ' (' + pu.scheme + ')' : ''), 'Access: ' + access, 'Stage: ' + stage, 'Timing: ' + timing + (dd ? ' (decision ' + nice(dd) + ')' : '')] };
   }
   function rates() { if (!RATES) calibrate({}); return { rates: RATES, funnel: FUNNEL || {}, prior: PRIOR }; }

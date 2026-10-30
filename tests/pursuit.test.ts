@@ -238,8 +238,14 @@ test('matrix: five typed answers, one cell, one action, probability ordered by s
 });
 test('matrix: introducers ask for an introduction; no trigger means watch; closed is zero', () => {
   const arch = { id: 'm2', kind: 'relationship', name: 'Al', company: 'Studio PDP', jobTitle: 'Architect', email: 'a@pdp.co' };
-  const m = Q.matrix(arch, {}, { lastMet: '2026-10-01' }, NOW); assert.equal(m.who, 'introducer'); assert.equal(m.action, 'Ask for one named introduction'); assert.equal(m.ev, 0);
+  const m = Q.matrix(arch, {}, { lastMet: '2026-10-01' }, NOW); assert.equal(m.who, 'introducer'); assert.equal(m.action, 'Ask for one named introduction'); assert.equal(m.via, 'via an introduction'); assert.ok(m.p > 0.01 && m.ev > 0);
   const quiet = { id: 'm3', kind: 'relationship', name: 'Q', company: 'Quiet Homes', jobTitle: 'Managing Director', email: 'q@q.co' };
   assert.equal(Q.matrix(quiet, {}, {}, NOW).action, 'Watch: no trigger');
   assert.equal(Q.matrix(quiet, { pursuit: { triage: 'no' } }, {}, NOW).p, 0);
+});
+test('matrix: a met buyer with no filing has a latent need, not none; a recorded proposal is priced', () => {
+  const b = { id: 'm4', kind: 'relationship', name: 'Irene', company: 'Starwood Capital', jobTitle: 'Investment Director', email: 'i@s.co' };
+  assert.equal(Q.matrix(b, {}, { lastMet: '2026-10-20' }, NOW).need, 'latent');
+  const z = Q.matrix(b, { proposal: { price: 42500, decisionDate: '2026-10-30' } }, { lastMet: '2026-10-07' }, NOW);
+  assert.equal(z.stage, 'priced'); assert.equal(z.need, 'live'); assert.ok(z.p > 0.2, 'a priced proposal due now is well above 20%');
 });
