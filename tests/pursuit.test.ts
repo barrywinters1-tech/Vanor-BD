@@ -215,3 +215,31 @@ test('next: a proposed outcome shows on the row with its stands-on date and mark
   const n = Q.next(buyer, { pursuit: { triage: 'yes', proposedOutcome: { outcome: 'opportunity', scheme: 'Tower Wharf', standsOn: '2026-10-30', at: '2026-10-28T18:00:00Z' } } }, [], { score: 40 }, { lastMet: '2026-10-28' }, NOW);
   assert.equal(n.section, 'write'); assert.equal(n.step, 'outcome'); assert.equal(n.proposed, 'opportunity'); assert.match(n.sentence, /proposed opportunity on Tower Wharf\. Stands 30 Oct unless changed/);
 });
+
+// ---- Lead matrix (v3.1, 30 Oct 2026) ----
+test('calibrate: blends the board funnel with the priors (Beta smoothing)', () => {
+  const r = Q.calibrate({ sent: 182, reply: 147, meeting: 48, proposal: 5, won: 1 });
+  assert.ok(Math.abs(r.reply - (147 + 3) / (182 + 10)) < 1e-9);
+  assert.ok(Math.abs(r.priced - (5 + 4) / (48 + 10)) < 1e-9);
+  assert.ok(Math.abs(r.won - (1 + 2.1) / (5 + 6)) < 1e-9);
+});
+test('matrix: five typed answers, one cell, one action, probability ordered by stage', () => {
+  Q.calibrate({ sent: 182, reply: 147, meeting: 48, proposal: 5, won: 1 });
+  const dev = { id: 'm1', kind: 'relationship', name: 'Dee', company: 'Dev Co', jobTitle: 'Development Director', email: 'd@dev.co', companyIntel: { signals: [{ type: 'property', date: '2026-10-20', text: 'charge' }] } };
+  const cold = Q.matrix(dev, {}, {}, NOW);
+  assert.equal(cold.who, 'buyer'); assert.equal(cold.need, 'live'); assert.equal(cold.access, 'email'); assert.equal(cold.stage, 'none'); assert.equal(cold.timing, 'now');
+  assert.equal(cold.action, 'First approach on the trigger');
+  const met = Q.matrix(dev, {}, { lastMet: '2026-10-25' }, NOW);
+  assert.equal(met.stage, 'met'); assert.equal(met.action, 'Decide the outcome; price the next step');
+  const priced = Q.matrix(dev, { proposal: { price: 9500, decisionDate: '2026-11-06' } }, { lastMet: '2026-10-25', lastProposal: '2026-10-27' }, NOW);
+  assert.equal(priced.stage, 'priced'); assert.match(priced.action, /^Hold the decision date; call on 6 Nov/);
+  assert.ok(cold.p < met.p && met.p < priced.p, 'probability rises with stage');
+  assert.equal(priced.ev, Math.round(priced.p * 9500));
+});
+test('matrix: introducers ask for an introduction; no trigger means watch; closed is zero', () => {
+  const arch = { id: 'm2', kind: 'relationship', name: 'Al', company: 'Studio PDP', jobTitle: 'Architect', email: 'a@pdp.co' };
+  const m = Q.matrix(arch, {}, { lastMet: '2026-10-01' }, NOW); assert.equal(m.who, 'introducer'); assert.equal(m.action, 'Ask for one named introduction'); assert.equal(m.ev, 0);
+  const quiet = { id: 'm3', kind: 'relationship', name: 'Q', company: 'Quiet Homes', jobTitle: 'Managing Director', email: 'q@q.co' };
+  assert.equal(Q.matrix(quiet, {}, {}, NOW).action, 'Watch: no trigger');
+  assert.equal(Q.matrix(quiet, { pursuit: { triage: 'no' } }, {}, NOW).p, 0);
+});

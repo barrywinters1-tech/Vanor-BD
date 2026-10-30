@@ -14,7 +14,7 @@ import {
 } from '../../../../lib/bd-store';
 import { lookupPerson } from '../../../../lib/rocketreach';
 import { runIntel } from '../../../../lib/intel-ingest';
-import { priorityList, normRegion, workQueue, today as todayScreen } from '../../../../lib/priority';
+import { priorityList, normRegion, workQueue, today as todayScreen, leadMatrix } from '../../../../lib/priority';
 import { triage, setStep, followUpsDue, undoLast, recordProposal, openProposals, decisionsDue, meetingOutcome, logIntro, settleIntro, ledgerFor , proposeOutcome, skipMeeting } from '../../../../lib/pursuit';
 import { PRICE_LIST, RULES, firstStep, options as feeOptions, offerLines, decisionDateFrom } from '../../../../lib/fees';
 import { logOutcome, funnel, STEPS } from '../../../../lib/funnel';
@@ -457,6 +457,12 @@ function createServer() {
     inputSchema: { section: z.enum(['chase', 'write', 'waiting', 'new', 'touch']).optional(), region: z.string().max(40).optional(), limit: z.number().int().min(1).max(300).optional() },
     annotations: { readOnlyHint: true },
   }, async ({ section, region, limit }) => out(await todayScreen({ section, region, limit: limit || 100 }), 'Today.'));
+  server.registerTool('lead_matrix', {
+    title: 'Lead matrix: every contact classified by five fixed questions, with P(fee) and expected value',
+    description: 'v3.1 (30 Oct 2026). Jev-style, no model judgement: Who (buyer / introducer / other), Need (live / latent / none), Access (warm / replied / email / none), Stage (none / sent / replied / met / opportunity / priced / won), Timing (now / soon / later), each read from the record and the event log. Returns the cells with counts and expected value, the calibrated step rates (Vanor funnel Beta-blended with research priors), pipeline expected value and the top rows by expected value with their one action. MODELLED, not a forecast; say so whenever you quote a number from it. Use it in the Monday review.',
+    inputSchema: { limit: z.number().int().min(1).max(50).optional() },
+    annotations: { readOnlyHint: true },
+  }, async ({ limit }) => out(await leadMatrix({ limit: limit || 15 }), 'Lead matrix.'));
   server.registerTool('touches_due', {
     title: 'Keep in touch: contacts whose tier cadence has run out',
     description: 'v3 (29 Oct 2026). Every contact has a tier (A monthly, B quarterly, C yearly, Parked = no cadence), worked out from the record unless a founder set it, and a last touch (newest sent, reply, meeting or intro). This lists the ones overdue with nothing live, best first (A before B before C, then most overdue). Draft at most three a day: a short note in Barry\'s voice with one specific item (their scheme, a piece of news, an introduction) and no ask; "no ask" is the rule.',

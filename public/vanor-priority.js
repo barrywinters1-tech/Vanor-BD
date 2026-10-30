@@ -273,8 +273,61 @@
     var next = tier !== 'Parked' && last && cad ? new Date(Date.parse(last + 'T00:00:00Z') + cad * 864e5).toISOString().slice(0, 10) : '';
     return { tier: tier, cadence: cad, last: last, next: next, overdue: !!(next && next <= t0) };
   }
+
+  // ---- Lead matrix (v3.1, 30 Oct 2026). Jev-style: five fixed questions, each answered from the record and the event log
+  //      (no judgement by a model), one cell, one action, and P(paid fee within 90 days). MODELLED, not a forecast.
+  //      Step rates = Beta-smoothed: (k + a) / (n + a + b), Vanor's own funnel (k of n contacts) blended with a research prior
+  //      (mean m, weight w pseudo-contacts: a = m·w, b = (1-m)·w). Priors: Gong/RAIN cold reply ~0.3; reply→meeting 0.3;
+  //      meeting→priced first step 0.4 (Enns/Weiss: a value conversation should end priced); priced→won 0.35 (Enns: 25–40% typical).
+  var PRIOR = { reply: [0.3, 10], meeting: [0.3, 10], priced: [0.4, 10], won: [0.35, 6] };
+  var RATES = null, FUNNEL = null;
+  function beta(k, n, prior) { var a = prior[0] * prior[1], b = (1 - prior[0]) * prior[1]; return (k + a) / (n + a + b); }
+  /** counts = distinct contacts reaching each step: { sent, reply, meeting, proposal, won }. */
+  function calibrate(c) {
+    c = c || {}; FUNNEL = c;
+    RATES = { reply: beta(c.reply || 0, c.sent || 0, PRIOR.reply), meeting: beta(c.meeting || 0, c.reply || 0, PRIOR.meeting), priced: beta(c.proposal || 0, c.meeting || 0, PRIOR.priced), won: beta(c.won || 0, c.proposal || 0, PRIOR.won) };
+    return RATES;
+  }
+  var NEED_STAGE = { distress: 1, stalled: 1, contractor_appointed: 1, funded: 1, granted: 1, tender: 1, on_site: 1, acquired: 1 };
+  var FEE = { buyer: 9500, lender: 9000 };
+  function matrix(r, d, h, now) {
+    now = now || Date.now(); var t0 = new Date(now).toISOString().slice(0, 10); if (!RATES) calibrate({});
+    d = d || {}; h = h || {}; var pu = d.pursuit || {}, pr = d.proposal || {}, C = root.VanorClassify;
+    var ty = C && C.typeOf ? C.typeOf(r, d) : '';
+    // Q1 Who: can they sign a fee?
+    var who = /Developer|Funder|Operator|Public/.test(ty) ? 'buyer' : /Consultancy|Contractor|Introducer/.test(ty) ? 'introducer' : 'other';
+    // Q2 Need: a live trigger (inside 90 days) or a named scheme; latent = an older trigger or planning only.
+    var i = r.intel || {}, sig = null; ((r.companyIntel && r.companyIntel.signals) || []).forEach(function (g) { if (g && g.type !== 'inactive' && (!sig || String(g.date) > String(sig.date))) sig = g; });
+    var trigDate = i.signalDate ? (C && C.isoDate ? C.isoDate(i.signalDate) : String(i.signalDate).slice(0, 10)) : sig ? (C && C.isoDate ? C.isoDate(sig.date) : String(sig.date).slice(0, 10)) : '';
+    var trigAge = trigDate ? age(trigDate, now) : 9999;
+    var liveStage = i.stage ? !!NEED_STAGE[i.stage] : sig ? /lending|property|distress/.test(sig.type) : false;
+    var need = pu.scheme || pu.outcome === 'opportunity' || pr.price ? 'live' : (liveStage && trigAge <= 90) ? 'live' : (trigDate && trigAge <= 365) ? 'latent' : 'none';
+    // Q3 Access: how warm is the line in?
+    var lg = h.ledger || {}; var access = h.lastMet || lg.given || lg.received ? 'warm' : h.lastBack ? 'replied' : r.email ? 'email' : 'none';
+    // Q4 Stage: how far along the funnel.
+    var stage = pu.step === 'won' ? 'won' : (pu.step === 'proposal' || pr.price || (h.lastProposal && (!h.lastMet || h.lastProposal >= h.lastMet))) ? 'priced' : pu.outcome === 'opportunity' ? 'opportunity' : h.lastMet ? 'met' : h.lastBack ? 'replied' : (h.lastSent || pu.sentAt) ? 'sent' : 'none';
+    if (pu.triage === 'no' || pu.outcome === 'done' || pu.step === 'lost' || d.status === 'Archive') stage = 'closed';
+    // Q5 Timing: a decision date or a fresh trigger.
+    var dd = pr.decisionDate || (d.oneDay && d.oneDay.decisionDate) || '';
+    var timing = (dd && dd >= t0 && age(t0, Date.parse(dd + 'T00:00:00Z')) <= 14) || trigAge <= 14 ? 'now' : (dd && dd >= t0) || trigAge <= 90 ? 'soon' : 'later';
+    var R = RATES; var toWon = { none: R.reply * R.meeting * R.priced * R.won, sent: R.reply * R.meeting * R.priced * R.won, replied: R.meeting * R.priced * R.won, met: R.priced * R.won, opportunity: Math.min(1, R.priced * 1.5) * R.won, priced: R.won, won: 1, closed: 0 }[stage];
+    var mult = (who === 'buyer' ? 1 : who === 'introducer' ? 0.15 : 0.05) * (need === 'live' ? 1.5 : need === 'latent' ? 1 : 0.5) * (timing === 'now' ? 1.2 : timing === 'soon' ? 1 : 0.8) * (stage === 'none' && access === 'none' ? 0.3 : 1);
+    var p = stage === 'won' ? 1 : Math.min(0.9, toWon * mult);
+    var fee = pr.price ? Number(pr.price) * (pr.unit === 'month' ? 3 : 1) : who === 'buyer' ? (/Funder/.test(ty) ? FEE.lender : FEE.buyer) : 0;
+    var ev = Math.round(p * fee);
+    // One action per cell.
+    var action = stage === 'closed' ? 'Nothing: closed' : stage === 'won' ? 'Deliver; raise the invoice' : stage === 'priced' ? (dd ? 'Hold the decision date; call on ' + nice(dd) : 'Agree a decision date') : stage === 'opportunity' ? 'Send the free first look with the stage-2 price and a date' :
+      who === 'introducer' ? (access === 'warm' ? 'Ask for one named introduction' : access === 'replied' ? 'Book a coffee; ask who they work with' : 'Keep in touch; no pitch') :
+      who === 'other' ? 'Ignore unless they introduce a buyer' :
+      stage === 'met' ? 'Decide the outcome; price the next step' : stage === 'replied' ? (need === 'live' ? 'Book the meeting this week' : 'Book a call when a trigger appears') : stage === 'sent' ? 'Wait for the clock, then one chase' :
+      need === 'none' ? 'Watch: no trigger' : access === 'none' ? 'Find the decision-maker' : 'First approach on the trigger';
+    var cell = (who === 'buyer' ? 'Buyer' : who === 'introducer' ? 'Introducer' : 'Other') + ' · ' + need + ' need · ' + stage;
+    return { who: who, need: need, access: access, stage: stage, timing: timing, p: p, ev: ev, fee: fee, cell: cell, action: action,
+      why: ['Who: ' + who + (ty ? ' (' + ty + ')' : ''), 'Need: ' + need + (trigDate ? ' (trigger ' + nice(trigDate) + ')' : pu.scheme ? ' (' + pu.scheme + ')' : ''), 'Access: ' + access, 'Stage: ' + stage, 'Timing: ' + timing + (dd ? ' (decision ' + nice(dd) + ')' : '')] };
+  }
+  function rates() { if (!RATES) calibrate({}); return { rates: RATES, funnel: FUNNEL || {}, prior: PRIOR }; }
   function owesLine(h) { var lg = h && h.ledger; if (!lg || !lg.owes) return ''; return lg.owes > 0 ? 'owes you ' + lg.owes : 'you owe ' + Math.abs(lg.owes); }
   var SECTION_ORDER = { chase: 0, write: 1, waiting: 2, new: 3, off: 9 };
   var SECTION_LABEL = { chase: 'Chase', write: 'Write', waiting: 'Waiting', new: 'New leads', off: 'Off' };
-  root.VanorPriority = { tierOf: tierOf, touch: touch, CADENCE: CADENCE, dedupeNew: dedupeNew, compute: compute, lane: lane, queue: queue, next: next, owesLine: owesLine, addWorkingDays: addWorkingDays, SECTION_ORDER: SECTION_ORDER, SECTION_LABEL: SECTION_LABEL, LANE_ORDER: LANE_ORDER, BUCKET_ORDER: BUCKET_ORDER, BUCKET_LABEL: BUCKET_LABEL, tierOne: tierOne, norm: norm, PLAYS: PLAYS };
+  root.VanorPriority = { matrix: matrix, calibrate: calibrate, rates: rates, tierOf: tierOf, touch: touch, CADENCE: CADENCE, dedupeNew: dedupeNew, compute: compute, lane: lane, queue: queue, next: next, owesLine: owesLine, addWorkingDays: addWorkingDays, SECTION_ORDER: SECTION_ORDER, SECTION_LABEL: SECTION_LABEL, LANE_ORDER: LANE_ORDER, BUCKET_ORDER: BUCKET_ORDER, BUCKET_LABEL: BUCKET_LABEL, tierOne: tierOne, norm: norm, PLAYS: PLAYS };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

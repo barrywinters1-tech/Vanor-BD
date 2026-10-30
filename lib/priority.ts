@@ -12,13 +12,14 @@ const P = () => (globalThis as any).VanorPriority as { compute: (r: Entity, d: E
 const stepOf = (t: string) => /^Outcome: sent$|^Interaction: email out$/.test(t) ? 'sent' : /^Outcome: (reply|meeting|proposal|won)|^Interaction: (email in|meeting)/.test(t) ? 'back' : '';
 /** Last sent / last answered per contact, from the event log. */
 export async function history() {
-  const events = await listScope('event'); const lastSent = new Map<string, string>(), lastBack = new Map<string, string>(), lastMet = new Map<string, string>(), lastProposal = new Map<string, string>();
+  const events = await listScope('event'); const lastSent = new Map<string, string>(), lastBack = new Map<string, string>(), lastMet = new Map<string, string>(), lastProposal = new Map<string, string>(), won = new Set<string>();
   const today = new Date().toISOString().slice(0, 10);
   for (const e of events) { const rid = String(e.recordId || e.entityId); const d = String(e.date || e.at || '').slice(0, 10); const t = String(e.type || ''); const st = stepOf(t);
     if (st === 'sent' && (lastSent.get(rid) || '') < d) lastSent.set(rid, d); if (st === 'back' && (lastBack.get(rid) || '') < d) lastBack.set(rid, d);
     if (/^Outcome: meeting_(held|booked)$|^Meeting held$|^Interaction: meeting$/.test(t) && d <= today && (lastMet.get(rid) || '') < d) lastMet.set(rid, d);
-    if (/^Outcome: (proposal|won)$|^Commercial discussion$/.test(t) && (lastProposal.get(rid) || '') < d) lastProposal.set(rid, d); }
-  return { lastSent, lastBack, lastMet, lastProposal };
+    if (/^Outcome: (proposal|won)$|^Commercial discussion$/.test(t) && (lastProposal.get(rid) || '') < d) lastProposal.set(rid, d);
+    if (t === 'Outcome: won') won.add(rid); }
+  return { lastSent, lastBack, lastMet, lastProposal, won };
 }
 
 export async function priorityList({ cell = 'All', limit = 30, lane, region }: { cell?: string; limit?: number; lane?: Lane['lane']; region?: string } = {}) {
@@ -49,6 +50,7 @@ export async function workQueue({ bucket, region, limit = 50 }: { bucket?: Bucke
   const wByRecord = new Map<string, Entity[]>();
   for (const w of work) { const list = wByRecord.get(w.recordId) || []; list.push(w); wByRecord.set(w.recordId, list); }
   const Q = (globalThis as any).VanorPriority;
+  Q.calibrate({ sent: h.lastSent.size, reply: h.lastBack.size, meeting: h.lastMet.size, proposal: h.lastProposal.size, won: h.won.size });
   const rows = records.filter(r => r.kind !== 'opportunity').map(r => { const d = dById.get(r.id); const w = wByRecord.get(r.id) || []; const p = P().compute(r, d, w); const active = w.find(x => !x.archived);
     const q = Q.queue(r, d, w, p, { lastMet: h.lastMet.get(r.id), lastProposal: h.lastProposal.get(r.id), lastSent: h.lastSent.get(r.id), lastBack: h.lastBack.get(r.id), nextAsk: active?.nextAsk || d?.nextAsk || r.nextAsk, stage: active?.stage });
     if (d?.status === 'Archive' && q.bucket !== 'off') q.bucket = 'off';
@@ -77,13 +79,32 @@ export async function today({ section, region, limit = 100 }: { section?: Sectio
   const rows = records.filter(r => r.kind !== 'opportunity').map(r => { const d = dById.get(r.id); const w = wByRecord.get(r.id) || []; const p = P().compute(r, d, w); const active = w.find(x => !x.archived);
     const n = Q.next(r, d, w, p, { lastMet: h.lastMet.get(r.id), lastProposal: h.lastProposal.get(r.id), lastSent: h.lastSent.get(r.id), lastBack: h.lastBack.get(r.id), nextAsk: active?.nextAsk || d?.nextAsk || r.nextAsk, stage: active?.stage, nextMeeting: nextMeeting.get(r.id), ledger: ledger.get(r.id) });
     if (d?.status === 'Archive') n.section = 'off';
-    return { r, d, n, cls: classifyRecord(r, d) }; });
+    const hh = { lastMet: h.lastMet.get(r.id), lastProposal: h.lastProposal.get(r.id), lastSent: h.lastSent.get(r.id), lastBack: h.lastBack.get(r.id), ledger: ledger.get(r.id) };
+    return { r, d, n, cls: classifyRecord(r, d), m: Q.matrix(r, d, hh) }; });
   Q.dedupeNew(rows);
   const want = (x: typeof rows[number]) => (!region || x.cls.region === normRegion(region)) && (section === 'touch' ? x.n.kind === 'touch' : section ? x.n.section === section && x.n.kind !== 'touch' : x.n.section !== 'off' && x.n.section !== 'new');
   const counts: Record<string, number> = { chase: 0, write: 0, waiting: 0, new: 0, off: 0, touch: 0 };
   for (const x of rows) if (!region || x.cls.region === normRegion(region)) { if (x.n.kind === 'touch') counts.touch++; else counts[x.n.section]++; }
   const pick = rows.filter(want)
     .sort((a, b) => (Q.SECTION_ORDER[a.n.section] - Q.SECTION_ORDER[b.n.section]) || ((a.n.section === 'chase' || a.n.section === 'waiting') ? (a.n.due || '9999').localeCompare(b.n.due || '9999') : 0) || b.n.rank - a.n.rank).slice(0, limit)
-    .map(({ r, d, n, cls }) => ({ id: r.id, name: r.name, company: r.company, email: r.email || '', section: n.section, sentence: n.sentence, due: n.due, verb: n.verb, step: n.step, type: cls.type, region: cls.region, proposal: d?.proposal || null, outcome: d?.pursuit?.outcome || null, owes: ledger.get(r.id)?.owes || 0, kind: n.kind || 'live', tier: n.tier || '', lastTouch: n.lastTouch || '', nextTouch: n.nextTouch || '' }));
+    .map(({ r, d, n, cls, m }) => ({ p: m ? Math.round(m.p * 100) : 0, ev: m?.ev || 0, cell: m?.cell || '', action: m?.action || '', id: r.id, name: r.name, company: r.company, email: r.email || '', section: n.section, sentence: n.sentence, due: n.due, verb: n.verb, step: n.step, type: cls.type, region: cls.region, proposal: d?.proposal || null, outcome: d?.pursuit?.outcome || null, owes: ledger.get(r.id)?.owes || 0, kind: n.kind || 'live', tier: n.tier || '', lastTouch: n.lastTouch || '', nextTouch: n.nextTouch || '' }));
   return { counts, rows: pick };
+}
+
+/** v3.1 (30 Oct 2026): the lead matrix over every contact. Cells with counts, P and expected value; the calibrated step rates; the top rows by expected value. */
+export async function leadMatrix({ limit = 15 }: { limit?: number } = {}) {
+  const [records, decisions, events, h] = await Promise.all([listScope('source'), listScope('decision'), listScope('event'), history()]);
+  const dById = new Map(decisions.map(d => [d.id, d])); const Q = (globalThis as any).VanorPriority;
+  const ledger = new Map<string, any>();
+  for (const e of events) if (/^Intro: /.test(String(e.type || ''))) { const rid = String(e.recordId || e.entityId); const L = ledger.get(rid) || { given: 0, received: 0 }; const k = String(e.type).replace('Intro: ', ''); const st = e.introStatus || 'open'; if ((k === 'made' || k === 'lead_passed') && st !== 'lapsed') L.given++; if (k === 'promised' && st === 'happened') L.received++; ledger.set(rid, L); }
+  const rates = Q.calibrate({ sent: h.lastSent.size, reply: h.lastBack.size, meeting: h.lastMet.size, proposal: h.lastProposal.size, won: h.won.size });
+  const cells = new Map<string, { cell: string; action: string; n: number; ev: number }>(); const rows: any[] = [];
+  for (const r of records) { if (r.kind === 'opportunity') continue; const d = dById.get(r.id);
+    const m = Q.matrix(r, d, { lastMet: h.lastMet.get(r.id), lastProposal: h.lastProposal.get(r.id), lastSent: h.lastSent.get(r.id), lastBack: h.lastBack.get(r.id), ledger: ledger.get(r.id) });
+    if (m.stage === 'closed') continue;
+    const c = cells.get(m.cell) || { cell: m.cell, action: m.action, n: 0, ev: 0 }; c.n++; c.ev += m.ev; cells.set(m.cell, c);
+    if (m.ev > 0) rows.push({ id: r.id, name: r.name, company: r.company, p: Math.round(m.p * 100), ev: m.ev, cell: m.cell, action: m.action }); }
+  rows.sort((a, b) => b.ev - a.ev);
+  const all = [...cells.values()].sort((a, b) => b.ev - a.ev);
+  return { rates: Object.fromEntries(Object.entries(rates).map(([k, v]) => [k, Math.round((v as number) * 1000) / 10])), funnel: { sent: h.lastSent.size, reply: h.lastBack.size, meeting: h.lastMet.size, proposal: h.lastProposal.size, won: h.won.size }, pipelineEV: rows.reduce((t, x) => t + x.ev, 0), cells: all, top: rows.slice(0, limit), note: 'Modelled, not a forecast: P(paid fee within 90 days) from five fixed questions; step rates are your funnel Beta-blended with research priors.' };
 }
