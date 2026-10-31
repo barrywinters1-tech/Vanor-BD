@@ -59,3 +59,9 @@ test('Claude proposals show on priced pursuits too; a set outcome closes; chase 
   const c = S.build({ pursuits: [{ id: 'r', name: 'R', state: 'table', chaseOn: '2026-11-01', decisionDate: '2026-11-20' }], today: T, PV });
   assert.match(c[0].items[0].why, /Chase due/);
 });
+test('outbound sequence: touch 2 four days after the first email, then 10 and 21; stops after 4', () => {
+  assert.deepEqual(S.seqNext({ seqStep: 1, seqStarted: '2026-10-29' }), { step: 2, date: '2026-11-02', label: 'LinkedIn view or note' });
+  assert.equal(S.seqNext({ seqStep: 4, seqStarted: '2026-10-01' }), null);
+  const g = S.build({ people: [{ r: { id: 'x', name: 'Jo Bloggs', company: 'OakNorth' }, d: { seqStep: 1, seqStarted: '2026-10-29', rung: 'target' }, rung: 'target', s: { overdue: false, dueSoon: false } }], today: T, PV });
+  assert.match(g[0].items[0].why, /Touch 2 of 4/);
+});

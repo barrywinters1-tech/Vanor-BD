@@ -46,6 +46,10 @@
   };
   const triggerFor = stage => { const t = TRIGGER[stage]; return t ? { who: t[0], angle: t[1] } : { who: 'Whoever loses money if the date moves', angle: 'A short, specific observation and a 20-minute call.' }; };
   const valueFloor = band => { const m = String(band || '').replace(/,/g, '').match(/£\s?(\d+(?:\.\d+)?)\s?(m|bn|k)?/i); if (!m) return 0; const n = parseFloat(m[1]); const u = (m[2] || 'm').toLowerCase(); return u === 'bn' ? n * 1000 : u === 'k' ? n / 1000 : n; };
+  // Outbound: 4 touches over 3 weeks (email, LinkedIn, second email with a different angle, closing note).
+  const SEQ = [0, 4, 10, 21];
+  const SEQ_LABEL = ['First email', 'LinkedIn view or note', 'Second email, different angle', 'Closing note'];
+  function seqNext(d) { const st = Number(d.seqStep || 0); if (!d.seqStarted || st < 1 || st >= SEQ.length) return null; return { step: st + 1, date: addDays(d.seqStarted, SEQ[st]), label: SEQ_LABEL[st] }; }
   function item(group, o) { return { group, ...o }; }
 
   function build({ pursuits = [], todos = [], people = [], events = [], jobs = [], state = {}, today, owner = 'Both', overdueOnly = false, PV }) {
@@ -80,6 +84,9 @@
       out.push(item(g, { key: 'todo:' + t.id, ref: t.id, kind: 'todo', title: t.title, why: t.why || '', due: t.due || today, overdue: Math.max(0, days(t.due || today, today)), value: Number(t.value || 0), owner: t.owner, link: t.link || '', person: t.recordId || '' }));
     }
     for (const x of people) {
+      const nx = seqNext(x.d || {});
+      if (nx) { if (nx.date <= today) out.push(item('followup', { key: 'seq:' + x.r.id + ':' + nx.step, ref: x.r.id, kind: 'person', title: `${x.r.name || x.r.company}${x.r.company && x.r.name ? ' · ' + x.r.company : ''}`, why: `Touch ${nx.step} of 4 due: ${nx.label}${x.d.seqTrigger ? ' (' + x.d.seqTrigger + ')' : ''}`, due: nx.date, overdue: Math.max(0, days(nx.date, today)), value: 0, owner: x.owner || '' })); continue; }
+      if (x.rung === 'target' && !x.d.targetSince && !x.d.lastMet) continue;
       if (!x.s || !(x.s.overdue || x.s.dueSoon)) continue;
       const lastNote = x.d.lastNote ? ` Last: ${String(x.d.lastNote).slice(0, 80)}` : '';
       out.push(item('followup', { key: 'person:' + x.r.id + ':' + x.s.next, ref: x.r.id, kind: 'person', title: `${x.r.name || x.r.company}${x.r.company && x.r.name ? ' · ' + x.r.company : ''}`, why: `${x.s.overdue ? 'Overdue since' : 'Due'} ${x.s.next} (${x.rung}).${lastNote}`, due: x.s.next, overdue: Math.max(0, -x.s.days), value: 0, owner: x.owner || '' }));
@@ -104,6 +111,6 @@
     return GROUPS.map(g => ({ ...g, items: shown.filter(i => i.group === g.key) })).filter(g => g.items.length);
   }
 
-  root.VanorStrip = { TRIGGER, triggerFor, valueFloor, GROUPS, CONTRACT, contractOpen, decisionOf, lapsed, build, addDays };
+  root.VanorStrip = { SEQ, SEQ_LABEL, seqNext, TRIGGER, triggerFor, valueFloor, GROUPS, CONTRACT, contractOpen, decisionOf, lapsed, build, addDays };
   if (typeof module !== 'undefined') module.exports = root.VanorStrip;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -72,7 +72,7 @@
     if (p.amount != null && p.amount !== '' && !(Number(p.amount) >= 0 && Number.isFinite(Number(p.amount)))) return 'Amount must be a number in pounds.';
     if (p.type && !TYPES.includes(p.type)) return 'Type must be one-off or monthly.';
     if (p.invoicedOn && (!/^\d{4}-\d{2}-\d{2}$/.test(p.invoicedOn) || Number.isNaN(Date.parse(p.invoicedOn)))) return 'Invoice date must be a real date.';
-    for (const [k, l] of [['issuedOn', 'Proposal issued'], ['validUntil', 'Valid until'], ['decisionDate', 'Client decision date'], ['chaseOn', 'Chase on']]) if (p[k] && (!/^\d{4}-\d{2}-\d{2}$/.test(p[k]) || Number.isNaN(Date.parse(p[k])))) return l + ' must be a real date.';
+    for (const [k, l] of [['issuedOn', 'Proposal issued'], ['validUntil', 'Valid until'], ['decisionDate', 'Client decision date'], ['chaseOn', 'Chase on'], ['energisedBy', 'Grid energisation date']]) if (p[k] && (!/^\d{4}-\d{2}-\d{2}$/.test(p[k]) || Number.isNaN(Date.parse(p[k])))) return l + ' must be a real date.';
     if (s === 'lost' && !String(p.lostReason || '').trim()) return 'Say why it was lost, so we learn which lanes to drop.';
     return '';
   }

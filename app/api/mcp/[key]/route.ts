@@ -21,6 +21,7 @@ import { researchCompany, normCompany } from '../../../../lib/company-intel';
 import { bolsterPeople } from '../../../../lib/people-bolster';
 import { addTodos, listTodos, jobRan } from '../../../../lib/todos';
 import { proposePeople } from '../../../../lib/people-tray';
+import { openCaptures, captureDone } from '../../../../lib/captures';
 import { researchBatch, saveIntel, signalContacts } from '../../../../lib/company-intel-store';
 import { listPursuits, savePursuits, proposeNext, recordMeetings, setPerson, peopleDue } from '../../../../lib/pursuits';
 
@@ -205,6 +206,7 @@ function createServer() {
     person: z.string().max(160).optional(), email: z.string().max(160).optional(), recordId: z.string().optional(),
     source: z.string().max(200).optional(), notes: z.string().max(600).optional(),
     issuedOn: date.optional().describe('Date the proposal was sent'), validUntil: date.optional(), decisionDate: date.optional().describe('Only a date the client stated; quote it in latest'), chaseOn: date.optional(),
+    energisedBy: date.optional().describe('Data centres: grid energisation date'), capital: z.string().max(200).optional().describe('Data centres: sponsor, equity and lenders'), keyContractors: z.string().max(200).optional().describe('Data centres: main, M&E and commissioning contractors'),
     gate: z.object({ asset: z.boolean().optional(), problem: z.boolean().optional(), capital: z.boolean().optional(), route: z.boolean().optional() }).optional(),
   });
   server.registerTool('pursuits_list', {
@@ -234,7 +236,7 @@ function createServer() {
   server.registerTool('person_set', {
     title: 'People: set a person\'s rung, lane, buying stage or note',
     description: 'Rungs set the meeting rhythm: partner and active every 2 weeks, referrer every 6 weeks, contact every 8 weeks, target = not met yet. Promote to active the first time someone puts a named job in front of us.',
-    inputSchema: { id: z.string(), rung: z.enum(['target', 'contact', 'referrer', 'active', 'partner']).optional(), lane: z.enum(['funder', 'claims', 'dc', 'hotel', 'offices', 'other']).optional(), buyingStage: z.enum(['Aware', 'Understands', 'Interested', 'Respects', 'Trusts', 'Able', 'Ready']).optional(), lastNote: z.string().max(300).optional(), lastMet: date.optional(), lastEmailed: date.optional().describe('Date of the last two-way email'), nextStep: z.string().max(160).optional().describe('The agreed next step with this person'), inHousePM: z.enum(['yes', 'no', 'unknown']).optional().describe('Offices lane: does this agent or adviser run its own PM or design team? yes = competitor, no = a possible referrer') },
+    inputSchema: { id: z.string(), rung: z.enum(['target', 'contact', 'referrer', 'active', 'partner']).optional(), lane: z.enum(['funder', 'claims', 'dc', 'hotel', 'offices', 'other']).optional(), buyingStage: z.enum(['Aware', 'Understands', 'Interested', 'Respects', 'Trusts', 'Able', 'Ready']).optional(), lastNote: z.string().max(300).optional(), lastMet: date.optional(), lastEmailed: date.optional().describe('Date of the last two-way email'), nextStep: z.string().max(160).optional().describe('The agreed next step with this person'), seqStep: z.number().int().min(0).max(4).optional().describe('Outbound sequence: touches sent so far (1 after the first email; 0 stops it)'), seqStarted: date.optional().describe('Date the first outbound email was sent'), seqTrigger: z.string().max(120).optional().describe('The signal or reason the sequence started'), inHousePM: z.enum(['yes', 'no', 'unknown']).optional().describe('Offices lane: does this agent or adviser run its own PM or design team? yes = competitor, no = a possible referrer') },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ id, ...p }) => { if (!(await getOne('source', id))) throw new Error('No contact with id ' + id); return out(await setPerson(id, p), 'Person updated.'); });
   server.registerTool('people_bolster', {
@@ -266,6 +268,22 @@ function createServer() {
     inputSchema: { items: z.array(z.object({ name: z.string().min(3).max(120), company: z.string().max(120).optional(), email: z.string().max(160).optional(), jobTitle: z.string().max(120).optional(), source: z.string().min(3).max(120), quote: z.string().max(300).optional(), rung: z.enum(['target', 'contact', 'referrer', 'active', 'partner']).optional(), lane: z.enum(['funder', 'claims', 'dc', 'hotel', 'offices', 'other']).optional(), metOn: date.optional(), matchId: z.string().optional() })).min(1).max(100) },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ items }) => out(await proposePeople(items), 'People proposed for review.'));
+  server.registerTool('captures_list', {
+    title: 'Post-event captures waiting (typed notes, spoken notes, photos of business cards)',
+    description: 'Returns open captures oldest first, with any card photos as images. For each: propose the people with people_propose (source "Event: <title>"), draft same-day follow-ups in Barry\'s voice into Outlook Drafts and add them with todo_add (type followup, link = draft webLink), then call capture_done.',
+    inputSchema: { limit: z.number().int().min(1).max(10).optional() },
+    annotations: { readOnlyHint: true },
+  }, async ({ limit }) => {
+    const caps = await openCaptures(limit || 5);
+    const content: any[] = [{ type: 'text', text: JSON.stringify(caps.map(c => ({ id: c.id, eventId: c.eventId, eventTitle: c.eventTitle, by: c.by, createdAt: c.createdAt, text: c.text, photos: (c.images || []).length }))) }];
+    for (const c of caps) for (const img of (c.images || []).slice(0, 5)) { const m = String(img).match(/^data:(image\/[a-z]+);base64,(.+)$/); if (m) { content.push({ type: 'text', text: `Photo for ${c.id}:` }); content.push({ type: 'image', data: m[2], mimeType: m[1] }); } }
+    return { content };
+  });
+  server.registerTool('capture_done', {
+    title: 'Mark a post-event capture as processed',
+    inputSchema: { id: z.string(), note: z.string().max(300) },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ id, note }) => out(await captureDone(id, note), 'Capture processed.'));
   server.registerTool('people_due', {
     title: 'People due a meeting (by rung cadence), overdue first',
     inputSchema: { limit: z.number().int().min(1).max(200).optional(), all: z.boolean().optional() },

@@ -9,7 +9,7 @@ const V = (globalThis as any).VanorPursuits;
 export const PURSUIT_RULES = { lanes: V.LANES, states: V.STATES, closed: V.CLOSED, gate: V.GATE, rungs: V.RUNGS, buying: V.BUYING };
 
 const slug = (s: string) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
-const FIELDS = ['name', 'lane', 'state', 'atStake', 'amount', 'type', 'invoicedOn', 'lostReason', 'issuedOn', 'validUntil', 'decisionDate', 'chaseOn', 'outcome', 'contract', 'latest', 'nextAction', 'owner', 'dueBy', 'org', 'person', 'email', 'recordId', 'source', 'notes'] as const;
+const FIELDS = ['name', 'lane', 'state', 'atStake', 'amount', 'type', 'invoicedOn', 'lostReason', 'issuedOn', 'validUntil', 'decisionDate', 'chaseOn', 'outcome', 'contract', 'energisedBy', 'capital', 'keyContractors', 'latest', 'nextAction', 'owner', 'dueBy', 'org', 'person', 'email', 'recordId', 'source', 'notes'] as const;
 // Money and outcome decisions belong to the founders: Claude never sets them, new or existing (31 Oct 2026).
 const FOUNDER_ONLY = ['invoicedOn', 'lostReason', 'outcome', 'contract'] as const;
 const CLAUDE_NEW_PER_DAY = 5;
@@ -19,6 +19,7 @@ export type PursuitInput = {
   owner?: string; dueBy?: string; org?: string; person?: string; email?: string; recordId?: string; source?: string; notes?: string;
   amount?: number; type?: string; invoicedOn?: string; lostReason?: string;
   issuedOn?: string; validUntil?: string; decisionDate?: string; chaseOn?: string; outcome?: string; contract?: Record<string, boolean>;
+  energisedBy?: string; capital?: string; keyContractors?: string;
   gate?: { asset?: boolean; problem?: boolean; capital?: boolean; route?: boolean };
 };
 
@@ -132,7 +133,8 @@ export async function recordMeetings(meetings: Met[]) {
   return { matched: matched.length, alreadyRecorded: skipped.length, unmatched, toConfirm };
 }
 
-export async function setPerson(id: string, p: { rung?: string; lane?: string; lastNote?: string; buyingStage?: string; lastMet?: string; inHousePM?: string; lastEmailed?: string; nextStep?: string }) {
+export async function setPerson(id: string, p: { rung?: string; lane?: string; lastNote?: string; buyingStage?: string; lastMet?: string; inHousePM?: string; lastEmailed?: string; nextStep?: string; seqStep?: number; seqStarted?: string; seqTrigger?: string }) {
+  if (p.seqStarted && (!/^\d{4}-\d{2}-\d{2}$/.test(p.seqStarted) || p.seqStarted > today())) throw new Error('seqStarted must be a past or today YYYY-MM-DD');
   if (p.lastEmailed && (!/^\d{4}-\d{2}-\d{2}$/.test(p.lastEmailed) || p.lastEmailed > today())) throw new Error('lastEmailed cannot be in the future');
   if (p.lastMet && (!/^\d{4}-\d{2}-\d{2}$/.test(p.lastMet) || p.lastMet > today())) throw new Error('lastMet cannot be in the future');
   if (p.inHousePM && !V.IN_HOUSE.includes(p.inHousePM)) throw new Error('inHousePM must be yes, no or unknown');
@@ -146,6 +148,9 @@ export async function setPerson(id: string, p: { rung?: string; lane?: string; l
     if (p.lastNote) { next.lastNote = p.lastNote; next.lastNoteDate = today(); }
     if (p.lastEmailed && p.lastEmailed > String(d.lastEmailed || '')) next.lastEmailed = p.lastEmailed;
     if (p.nextStep) next.nextStep = p.nextStep;
+    if (p.seqStep != null) next.seqStep = Math.max(0, Math.min(4, Math.round(p.seqStep)));
+    if (p.seqStarted) next.seqStarted = p.seqStarted;
+    if (p.seqTrigger) next.seqTrigger = p.seqTrigger.slice(0, 120);
     if (p.lastMet) { const dates = [...new Set([...(d.metDates as string[] || []), p.lastMet])].sort().slice(-12); next.metDates = dates; next.lastMet = dates[dates.length - 1]; next.metCount = dates.length; }
     return next;
   }, true);
