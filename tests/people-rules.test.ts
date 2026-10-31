@@ -33,3 +33,12 @@ test('anyone on an open pursuit is Active', () => {
   const s: any = suggest(r({ email: 'Jo@Acme.com' }), {}, { ids: new Set(), emails: new Set(['jo@acme.com']) }, T);
   assert.equal(s.rung, 'active');
 });
+test('introducer firms get Referrer, buyers stay Contact, own firm is skipped', () => {
+  const a: any = suggest(r({ company: 'Fletcher Priest Architects', lastContact: '2026-09-01' }), {}, none, T);
+  assert.equal(a.rung, 'referrer');
+  const b: any = suggest(r({ company: 'Apex Structures', lastContact: '2026-09-01' }), {}, none, T);
+  assert.equal(b.rung, 'referrer');
+  const c: any = suggest(r({ company: 'Zenzic Capital', lastContact: '2026-09-01' }), {}, none, T);
+  assert.equal(c.rung, 'contact');
+  assert.ok('skip' in suggest(r({ email: 'x@vanoradvisory.co.uk', lastContact: '2026-09-01' }), {}, none, T));
+});

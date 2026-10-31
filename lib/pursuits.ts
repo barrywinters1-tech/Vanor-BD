@@ -153,7 +153,7 @@ export async function peopleDue({ limit = 20, onlyDue = true }: { limit?: number
   const [records, decisions] = await Promise.all([listScope('source'), listScope('decision')]);
   const dm = new Map(decisions.map(d => [d.id, d]));
   const t = today();
-  const rows = records.map(r => ({ r, d: dm.get(r.id) || {} as Entity })).filter(x => x.d.rung || x.d.lastMet).map(({ r, d }) => {
+  const rows = records.map(r => ({ r, d: dm.get(r.id) || {} as Entity })).filter(x => (x.d.rung || x.d.lastMet) && x.d.status !== 'Archive' && !/@vanoradvisory\.co\.uk$/i.test(String(x.r.email || ''))).map(({ r, d }) => {
     const s = V.meetingStatus(d, t);
     return { id: r.id, name: r.name, company: r.company, email: r.email || '', rung: d.rung || 'contact', lane: d.lane || '', lastMet: d.lastMet || '', metCount: d.metCount || 0, lastNote: d.lastNote || '', buyingStage: d.buyingStage || '', nextMeeting: s.next, overdueDays: s.overdue ? -s.days : 0, due: s.overdue || s.dueSoon };
   });

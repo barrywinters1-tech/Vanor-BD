@@ -9,6 +9,10 @@ const LANE_WORDS: [string, RegExp][] = [
   ['claims', /\b(claims?|dispute|delay|disputes|quantum|expert witness|adjudicat\w*|arbitrat\w*)\b/i],
   ['offices', /\b(workplace|occupier|lease|tenant rep|office agent|corporate real estate|occupational)\b/i],
 ];
+// Introducers: firms that could send us work but would not buy it themselves (audit 31 Oct: rungs defaulted to contact).
+export const INTRODUCER = /\b(architects?|architecture|design studio|studio|engineer(s|ing)?|structures|structural|m ?& ?e|mep|building services|quantity survey\w*|qs|cost (consultan\w*|management)|surveyors?|agents?|agency|estate agents|property consultants|lawyers?|solicitors?|llp law|legal|recruit\w*|planning consultan\w*|project managers|project management)\b/i;
+export const isIntroducer = (text = ''): boolean => INTRODUCER.test(text);
+
 export const inferLane = (text = ''): string => { for (const [lane, re] of LANE_WORDS) if (re.test(text)) return lane; return 'other'; };
 
 const ROLE_PLACEHOLDER = /^(head of|director|group property|hotels? &|development director|the |team|whoever|investment team|recoveries)/i;
@@ -19,7 +23,7 @@ const daysAgo = (d: string, today: string) => Math.round((Date.parse(today) - Da
 
 export type Rec = { id: string; name?: string; company?: string; jobTitle?: string; email?: string; context?: string; notes?: string; lastContact?: string };
 export type Existing = { rung?: string; lastMet?: string };
-export type Suggestion = { id: string; rung: 'active' | 'contact'; lane: string; lastMet?: string; basis: string } | { id: string; skip: string };
+export type Suggestion = { id: string; rung: 'active' | 'contact' | 'referrer'; lane: string; lastMet?: string; basis: string } | { id: string; skip: string };
 
 /** What to set for one contact who has no rung yet. Never overrides a founder-set rung (callers pass Existing). */
 export function suggest(r: Rec, existing: Existing, openPursuits: { ids: Set<string>; emails: Set<string> }, today: string): Suggestion {
@@ -30,6 +34,8 @@ export function suggest(r: Rec, existing: Existing, openPursuits: { ids: Set<str
   const lastContact = validPast(r.lastContact, today);
   if (openPursuits.ids.has(r.id) || (email && openPursuits.emails.has(email))) return { id: r.id, rung: 'active', lane, lastMet: lastContact || undefined, basis: 'on an open pursuit' };
   if (r.lastContact && !lastContact) return { id: r.id, skip: 'last-contact date is in the future or unreadable' };
-  if (lastContact && daysAgo(lastContact, today) <= LOOKBACK_DAYS) return { id: r.id, rung: 'contact', lane, lastMet: lastContact, basis: `last contact ${lastContact}` };
+  const who = `${r.company || ''} ${r.jobTitle || ''}`;
+  if (/@vanoradvisory\.co\.uk$/i.test(email)) return { id: r.id, skip: 'our own firm' };
+  if (lastContact && daysAgo(lastContact, today) <= LOOKBACK_DAYS) return { id: r.id, rung: isIntroducer(who) ? 'referrer' as any : 'contact', lane, lastMet: lastContact, basis: `last contact ${lastContact}` };
   return { id: r.id, skip: lastContact ? 'last contact over a year ago' : 'no contact on record' };
 }
