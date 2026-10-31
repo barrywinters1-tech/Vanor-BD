@@ -31,12 +31,12 @@
   ];
 
   // Rungs, and how often we meet people on each. Target = not met yet, we want to.
-  // These day counts are working guesses (31 Oct 2026), to be reviewed against real use after 30 days.
+  // OWNER SETTING (Barry, 31 Oct 2026): active 2 weeks, referrer 6 weeks, everyone else 8 weeks.
   const RUNGS = [
-    { key: 'partner', label: 'Partner', days: 42, hint: 'Has sent us work; owner and plan' },
-    { key: 'active', label: 'Active', days: 42, hint: 'Has put a named job in front of us' },
-    { key: 'referrer', label: 'Referrer', days: 90, hint: 'Understands what we do and who to send' },
-    { key: 'contact', label: 'Contact', days: 182, hint: 'Met; no referral or job yet' },
+    { key: 'partner', label: 'Partner', days: 14, hint: 'Has sent us work; owner and plan' },
+    { key: 'active', label: 'Active', days: 14, hint: 'Has put a named job in front of us' },
+    { key: 'referrer', label: 'Referrer', days: 42, hint: 'Understands what we do and who to send' },
+    { key: 'contact', label: 'Contact', days: 56, hint: 'Met; no referral or job yet' },
     { key: 'target', label: 'Target', days: 0, hint: 'Not met yet; we want to' },
   ];
   const RUNG = Object.fromEntries(RUNGS.map(r => [r.key, r]));

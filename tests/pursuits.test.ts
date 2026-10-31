@@ -55,9 +55,9 @@ test('owner filter keeps unassigned and shared', () => {
 });
 
 test('meeting cadence by rung', () => {
-  assert.equal(V.nextMeeting({ rung: 'referrer', lastMet: '2026-08-01' }, T), '2026-10-30');
+  assert.equal(V.nextMeeting({ rung: 'referrer', lastMet: '2026-08-01' }, T), '2026-09-12');
   assert.equal(V.meetingStatus({ rung: 'active', lastMet: '2026-09-01' }, T).overdue, true);
-  assert.equal(V.meetingStatus({ rung: 'contact', lastMet: '2026-09-01' }, T).overdue, false);
+  assert.equal(V.meetingStatus({ rung: 'contact', lastMet: '2026-09-20' }, T).overdue, false);
   assert.equal(V.nextMeeting({ rung: 'target' }, T), T);
   assert.equal(V.nextMeeting({ rung: 'partner' }, T), T);
 });
@@ -108,6 +108,6 @@ test('stale counts from the founder\'s last touch, not Claude\'s refresh', () =>
 test('target first-contact deadline is 14 days from when it was added; due means within 7 days', () => {
   const V = (globalThis as any).VanorPursuits;
   assert.equal(V.nextMeeting({ rung: 'target', targetSince: '2026-10-31' }, '2026-10-31'), '2026-11-14');
-  assert.equal(V.meetingStatus({ rung: 'contact', lastMet: '2026-05-10' }, '2026-11-04').dueSoon, true);
-  assert.equal(V.meetingStatus({ rung: 'contact', lastMet: '2026-05-20' }, '2026-11-04').dueSoon, false);
+  assert.equal(V.meetingStatus({ rung: 'contact', lastMet: '2026-09-10' }, '2026-11-04').dueSoon, true);
+  assert.equal(V.meetingStatus({ rung: 'contact', lastMet: '2026-09-20' }, '2026-11-04').dueSoon, false);
 });

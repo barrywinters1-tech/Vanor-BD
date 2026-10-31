@@ -230,7 +230,7 @@ function createServer() {
   }, async ({ meetings }) => out(await recordMeetings(meetings), 'Meetings recorded.'));
   server.registerTool('person_set', {
     title: 'People: set a person\'s rung, lane, buying stage or note',
-    description: 'Rungs set the meeting rhythm: partner and active every 6 weeks, referrer every 13 weeks, contact twice a year, target = not met yet. Promote to active the first time someone puts a named job in front of us.',
+    description: 'Rungs set the meeting rhythm: partner and active every 2 weeks, referrer every 6 weeks, contact every 8 weeks, target = not met yet. Promote to active the first time someone puts a named job in front of us.',
     inputSchema: { id: z.string(), rung: z.enum(['target', 'contact', 'referrer', 'active', 'partner']).optional(), lane: z.enum(['funder', 'claims', 'dc', 'hotel', 'offices', 'other']).optional(), buyingStage: z.enum(['Aware', 'Understands', 'Interested', 'Respects', 'Trusts', 'Able', 'Ready']).optional(), lastNote: z.string().max(300).optional(), lastMet: date.optional(), inHousePM: z.enum(['yes', 'no', 'unknown']).optional().describe('Offices lane: does this agent or adviser run its own PM or design team? yes = competitor, no = a possible referrer') },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ id, ...p }) => { if (!(await getOne('source', id))) throw new Error('No contact with id ' + id); return out(await setPerson(id, p), 'Person updated.'); });
