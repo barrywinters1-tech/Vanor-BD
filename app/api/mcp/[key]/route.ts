@@ -18,6 +18,7 @@ import { runIntel } from '../../../../lib/intel-ingest';
 import { PRICE_LIST, RULES, firstStep, options as feeOptions, offerLines, decisionDateFrom } from '../../../../lib/fees';
 import { signalFeed, setHeadline } from '../../../../lib/signals-feed';
 import { researchCompany, normCompany } from '../../../../lib/company-intel';
+import { bolsterPeople } from '../../../../lib/people-bolster';
 import { researchBatch, saveIntel, signalContacts } from '../../../../lib/company-intel-store';
 import { listPursuits, savePursuits, proposeNext, recordMeetings, setPerson, peopleDue } from '../../../../lib/pursuits';
 
@@ -233,6 +234,12 @@ function createServer() {
     inputSchema: { id: z.string(), rung: z.enum(['target', 'contact', 'referrer', 'active', 'partner']).optional(), lane: z.enum(['funder', 'claims', 'dc', 'hotel', 'offices', 'other']).optional(), buyingStage: z.enum(['Aware', 'Understands', 'Interested', 'Respects', 'Trusts', 'Able', 'Ready']).optional(), lastNote: z.string().max(300).optional(), lastMet: date.optional(), inHousePM: z.enum(['yes', 'no', 'unknown']).optional().describe('Offices lane: does this agent or adviser run its own PM or design team? yes = competitor, no = a possible referrer') },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ id, ...p }) => { if (!(await getOne('source', id))) throw new Error('No contact with id ' + id); return out(await setPerson(id, p), 'Person updated.'); });
+  server.registerTool('people_bolster', {
+    title: 'People: put everyone we already know onto the follow-up rhythm',
+    description: 'Reads the whole contact list, and for anyone with no rung yet: sets Active if they are on an open pursuit, Contact if the board shows a contact in the last 12 months, and a lane read from their company, title and notes. Never overrides a rung a founder set, never touches people with no contact on record, skips role placeholders and first-name-only records. Default is a dry run that returns counts only; apply=true writes up to `limit` people per call (repeat until remaining is 0).',
+    inputSchema: { apply: z.boolean().optional(), limit: z.number().int().min(1).max(400).optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ apply, limit }) => out(await bolsterPeople({ apply: !!apply, limit: limit || 150 }), apply ? 'People bolstered.' : 'Dry run.'));
   server.registerTool('people_due', {
     title: 'People due a meeting (by rung cadence), overdue first',
     inputSchema: { limit: z.number().int().min(1).max(200).optional(), all: z.boolean().optional() },
