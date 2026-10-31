@@ -1,0 +1,35 @@
+// Pure cleaning rules for the Signals feed. No imports, so they can be tested on their own.
+const norm = (s = '') => String(s).toLowerCase().replace(/\b(ltd|limited|plc|llp|group|holdings|uk|the)\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+
+// Cleaning rules (31 Oct 2026). Working settings, not evidence: reviewed at day 30 against the outcome log.
+export const PLANNING_FLOOR_M = 5; // Barry: ignore planning records under £5m
+/** Lower bound of a value band such as "£5m–£20m", "£100m+", "Value unknown", in £m; 0 when unknown. */
+export const valueFloor = (band = ''): number => { const m = String(band).replace(/,/g, '').match(/£\s?(\d+(?:\.\d+)?)\s?(m|bn|k)?/i); if (!m) return 0; const n = parseFloat(m[1]); const u = (m[2] || 'm').toLowerCase(); return u === 'bn' ? n * 1000 : u === 'k' ? n / 1000 : n; };
+const GENERIC_COMPANY = new Set(['plans', 'plan', 'work', 'works', 'new', 'latest', 'council', 'scheme', 'project', 'site', 'group']);
+/** A company name that is really a headline fragment, or the headline itself, is blanked so the row reads "needs company". */
+export const cleanCompany = (company = '', headline = ''): string => {
+  const c = String(company).trim(); if (!c) return '';
+  const n = norm(c); const h = norm(headline);
+  if (GENERIC_COMPANY.has(n) || (n.length > 3 && n === h) || c.split(/\s+/).length > 12) return '';
+  return c;
+};
+const LOW_VALUE_NOTE = /\b(context only|no outreach|low fit|watch only|not a vanor buyer)\b/i;
+/** Caps and labels: no Hot without a named party; the Claude note "context only / low fit" caps the row at Watch. */
+export function tidyItem<T extends { tier: string; score: number; why: string; whyScore: string; parties: Record<string, string>; company: string; headline: string }>(it: T): T & { needsContact: boolean } {
+  const needsContact = /nobody named/i.test(it.whyScore || '') || !Object.values(it.parties || {}).some(Boolean);
+  let { tier, score } = it;
+  if (LOW_VALUE_NOTE.test(it.why || '')) { tier = 'Watch'; score = Math.min(score, 30); }
+  else if (tier === 'Hot' && needsContact) tier = 'Warm';
+  return { ...it, tier, score, needsContact, company: cleanCompany(it.company, it.headline) };
+}
+/** One row per record id and signal key, then one per company and stage (newest wins). */
+export function dedupeItems<T extends { id: string; key: string; date: string; company: string; stage: string; headline: string }>(items: T[]): T[] {
+  const sorted = [...items].sort((a, b) => b.date.localeCompare(a.date));
+  const seen = new Set<string>(); const out: T[] = [];
+  for (const it of sorted) {
+    const k1 = `${it.id}|${it.key}`; const co = norm(it.company);
+    const k2 = co && co.length > 3 ? `${co}|${it.stage}` : `${norm(it.headline)}|${it.stage}`;
+    if (seen.has(k1) || seen.has(k2)) continue; seen.add(k1); seen.add(k2); out.push(it);
+  }
+  return out;
+}

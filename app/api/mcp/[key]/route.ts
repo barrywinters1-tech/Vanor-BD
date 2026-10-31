@@ -191,7 +191,7 @@ function createServer() {
     description: 'Contacts at companies with recent signals (new lending or property charge, planning, insolvency, new director), best fit first, with the company need read and directors. Use to pick who to contact and to draft outreach that references the signal.',
     inputSchema: { minFit: z.number().int().min(0).max(2).optional(), maxAgeDays: z.number().int().min(7).max(730).optional(), limit: z.number().int().min(1).max(100).optional() },
     annotations: { readOnlyHint: true },
-  }, async ({ minFit, maxAgeDays, limit }) => out(await signalContacts({ minFit: minFit ?? 2, maxAgeDays: maxAgeDays ?? 120, limit: limit ?? 40 }), 'Signals listed.'));
+  }, async ({ minFit, maxAgeDays, limit }) => out({ items: await signalContacts({ minFit: minFit ?? 2, maxAgeDays: maxAgeDays ?? 120, limit: limit ?? 40 }) }, 'Signals listed.'));
 
   const pursuitItem = z.object({
     id: z.string().optional(), name: z.string().min(2).max(120).optional(),

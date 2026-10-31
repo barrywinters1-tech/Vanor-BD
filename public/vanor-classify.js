@@ -173,7 +173,7 @@
     var m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/); if (m) return m[3] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2);
     var t = Date.parse(v); return isNaN(t) ? '' : new Date(t).toISOString().slice(0, 10);
   }
-  function bar(r, now) {
+  function bar(r, now, opts) {
     var i = r && r.intel; if (!i) return null;
     now = now || Date.now();
     var fail = function (reason) { return { pass: false, rank: 9, reason: reason }; };
@@ -186,7 +186,7 @@
     if (!client) return fail(stage === 'distress' ? 'Distress, but no exposed client named' : 'No client named');
     if (stage === 'acquired' && !PROPERTY.test(text)) return fail('Company deal, not a scheme');
     var date = isoDate(i.signalDate || r.createdAt || ''); var ageD = (now - Date.parse(date + 'T00:00:00Z')) / 864e5;
-    if (!(ageD <= 14)) return fail('Trigger older than 14 days');
+    if (!(opts && opts.skipAge) && !(ageD <= 14)) return fail('Trigger older than 14 days');
     var rank = stage === 'distress' ? 1 : stage === 'contractor_appointed' && !PMEA.test(text) ? 2 : stage === 'funded' ? 3 : 4;
     return { pass: true, rank: rank, label: RANK_LABEL[rank], client: client, buyer: buyer, stage: stage, region: region, date: date, reason: RANK_LABEL[rank] + ': ' + (r.title ? String(r.title).slice(0, 110) : client + (stage === 'distress' ? ' is the exposed party' : '')) };
   }
