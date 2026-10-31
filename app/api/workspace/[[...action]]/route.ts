@@ -1,3 +1,4 @@
+import { bolsterPeople } from '../../../../lib/people-bolster';
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'node:crypto';
 import '../../../../public/vanor-classify.js';
@@ -202,6 +203,7 @@ export async function POST(request: NextRequest, context: Context) {
     if (action === 'run-research') return reply(await researchBatch({ limit: 25, budgetMs: 45000 }));
     if (action === 'run-backup') return reply(await runBackup());
     const body: any = await request.json();
+    if (action === 'people-bolster') return reply(await bolsterPeople({ apply: body?.apply === true, limit: 200 }));
     if (action === 'find-contacts') {
       // On demand only: founders press the button once a lead is worth pursuing. Adds up to 3 decision-makers at the company as leads with whatever RocketReach returns.
       const id = String(body?.id || ''); const rec = id ? await one(access, 'source', id) : null;
