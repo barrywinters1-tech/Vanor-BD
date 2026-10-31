@@ -47,3 +47,15 @@ test('placeholder text is caught before it can become a draft', async () => {
   assert.equal(hasPlaceholder('Hi [FIRST NAME], quick one'), true);
   assert.equal(hasPlaceholder('Hi Rowan, would you introduce me to your development director?'), false);
 });
+test('placeholders in brackets and braces are caught', async () => {
+  const { hasPlaceholder } = await import('../lib/todos-rules.ts');
+  for (const s of ['Hi <name>', 'Hi [NAME]', 'Dear {first_name}', 'Head of Development (target role)']) assert.equal(hasPlaceholder(s), true, s);
+});
+test('Claude proposals show on priced pursuits too; a set outcome closes; chase date surfaces', () => {
+  const now = '2026-11-02T08:00:00Z';
+  const g = S.build({ pursuits: [{ id: 'p', name: 'P', state: 'table', proposed: { at: now, nextAction: 'Ring Matt' } }], today: T, PV });
+  assert.ok(g.some((x: any) => x.key === 'proposed'));
+  assert.equal(S.build({ pursuits: [{ id: 'q', name: 'Q', state: 'act', dueBy: '2026-10-01', outcome: 'Lost' }], today: T, PV }).length, 0);
+  const c = S.build({ pursuits: [{ id: 'r', name: 'R', state: 'table', chaseOn: '2026-11-01', decisionDate: '2026-11-20' }], today: T, PV });
+  assert.match(c[0].items[0].why, /Chase due/);
+});

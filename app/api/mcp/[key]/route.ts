@@ -20,6 +20,7 @@ import { signalFeed, setHeadline } from '../../../../lib/signals-feed';
 import { researchCompany, normCompany } from '../../../../lib/company-intel';
 import { bolsterPeople } from '../../../../lib/people-bolster';
 import { addTodos, listTodos, jobRan } from '../../../../lib/todos';
+import { proposePeople } from '../../../../lib/people-tray';
 import { researchBatch, saveIntel, signalContacts } from '../../../../lib/company-intel-store';
 import { listPursuits, savePursuits, proposeNext, recordMeetings, setPerson, peopleDue } from '../../../../lib/pursuits';
 
@@ -233,7 +234,7 @@ function createServer() {
   server.registerTool('person_set', {
     title: 'People: set a person\'s rung, lane, buying stage or note',
     description: 'Rungs set the meeting rhythm: partner and active every 2 weeks, referrer every 6 weeks, contact every 8 weeks, target = not met yet. Promote to active the first time someone puts a named job in front of us.',
-    inputSchema: { id: z.string(), rung: z.enum(['target', 'contact', 'referrer', 'active', 'partner']).optional(), lane: z.enum(['funder', 'claims', 'dc', 'hotel', 'offices', 'other']).optional(), buyingStage: z.enum(['Aware', 'Understands', 'Interested', 'Respects', 'Trusts', 'Able', 'Ready']).optional(), lastNote: z.string().max(300).optional(), lastMet: date.optional(), inHousePM: z.enum(['yes', 'no', 'unknown']).optional().describe('Offices lane: does this agent or adviser run its own PM or design team? yes = competitor, no = a possible referrer') },
+    inputSchema: { id: z.string(), rung: z.enum(['target', 'contact', 'referrer', 'active', 'partner']).optional(), lane: z.enum(['funder', 'claims', 'dc', 'hotel', 'offices', 'other']).optional(), buyingStage: z.enum(['Aware', 'Understands', 'Interested', 'Respects', 'Trusts', 'Able', 'Ready']).optional(), lastNote: z.string().max(300).optional(), lastMet: date.optional(), lastEmailed: date.optional().describe('Date of the last two-way email'), nextStep: z.string().max(160).optional().describe('The agreed next step with this person'), inHousePM: z.enum(['yes', 'no', 'unknown']).optional().describe('Offices lane: does this agent or adviser run its own PM or design team? yes = competitor, no = a possible referrer') },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ id, ...p }) => { if (!(await getOne('source', id))) throw new Error('No contact with id ' + id); return out(await setPerson(id, p), 'Person updated.'); });
   server.registerTool('people_bolster', {
@@ -259,6 +260,12 @@ function createServer() {
     inputSchema: { job: z.string().min(2).max(60), name: z.string().max(80).optional(), ok: z.boolean(), note: z.string().max(300).optional(), expectHours: z.number().int().min(1).max(400).optional() },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   }, async (p) => out(await jobRan(p), 'Run logged.'));
+  server.registerTool('people_propose', {
+    title: 'Propose new people for the founders to review (calendar, email threads, events, imports)',
+    description: 'Batch. Use for anyone Barry or Graeme has met or corresponded with who is not yet on the board. Each lands as a card in the People review tray; nothing is added until a founder taps Add or Merge. source = where found (e.g. "Calendar 14 Oct: AHC breakfast", "Email thread Oct 2026", "Event: Bisnow UK Office 3 Nov"); quote = one line of evidence; full names only (no placeholders); metOn = past date if they met.',
+    inputSchema: { items: z.array(z.object({ name: z.string().min(3).max(120), company: z.string().max(120).optional(), email: z.string().max(160).optional(), jobTitle: z.string().max(120).optional(), source: z.string().min(3).max(120), quote: z.string().max(300).optional(), rung: z.enum(['target', 'contact', 'referrer', 'active', 'partner']).optional(), lane: z.enum(['funder', 'claims', 'dc', 'hotel', 'offices', 'other']).optional(), metOn: date.optional(), matchId: z.string().optional() })).min(1).max(100) },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ items }) => out(await proposePeople(items), 'People proposed for review.'));
   server.registerTool('people_due', {
     title: 'People due a meeting (by rung cadence), overdue first',
     inputSchema: { limit: z.number().int().min(1).max(200).optional(), all: z.boolean().optional() },

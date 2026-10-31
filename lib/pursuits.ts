@@ -132,7 +132,8 @@ export async function recordMeetings(meetings: Met[]) {
   return { matched: matched.length, alreadyRecorded: skipped.length, unmatched, toConfirm };
 }
 
-export async function setPerson(id: string, p: { rung?: string; lane?: string; lastNote?: string; buyingStage?: string; lastMet?: string; inHousePM?: string }) {
+export async function setPerson(id: string, p: { rung?: string; lane?: string; lastNote?: string; buyingStage?: string; lastMet?: string; inHousePM?: string; lastEmailed?: string; nextStep?: string }) {
+  if (p.lastEmailed && (!/^\d{4}-\d{2}-\d{2}$/.test(p.lastEmailed) || p.lastEmailed > today())) throw new Error('lastEmailed cannot be in the future');
   if (p.lastMet && (!/^\d{4}-\d{2}-\d{2}$/.test(p.lastMet) || p.lastMet > today())) throw new Error('lastMet cannot be in the future');
   if (p.inHousePM && !V.IN_HOUSE.includes(p.inHousePM)) throw new Error('inHousePM must be yes, no or unknown');
   if (p.rung && !V.RUNG[p.rung]) throw new Error('Unknown rung ' + p.rung);
@@ -143,6 +144,8 @@ export async function setPerson(id: string, p: { rung?: string; lane?: string; l
     for (const k of ['rung', 'lane', 'buyingStage', 'inHousePM'] as const) if (p[k]) next[k] = p[k];
     if (p.rung === 'target' && !d.targetSince) next.targetSince = today();
     if (p.lastNote) { next.lastNote = p.lastNote; next.lastNoteDate = today(); }
+    if (p.lastEmailed && p.lastEmailed > String(d.lastEmailed || '')) next.lastEmailed = p.lastEmailed;
+    if (p.nextStep) next.nextStep = p.nextStep;
     if (p.lastMet) { const dates = [...new Set([...(d.metDates as string[] || []), p.lastMet])].sort().slice(-12); next.metDates = dates; next.lastMet = dates[dates.length - 1]; next.metCount = dates.length; }
     return next;
   }, true);

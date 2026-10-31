@@ -43,20 +43,22 @@
     const open = pursuits.filter(p => !p.archived && !['won', 'lost', 'parked'].includes(p.state) || (p.state === 'won' && contractOpen(p).length));
     for (const p of open) {
       if (!mine(p.owner)) continue;
-      const val = PV ? PV.value(p) : Number(p.amount || 0);
+      const val = Number(PV ? PV.value(p) : p.amount) || 0;
+      if (p.outcome && p.state !== 'won') continue;
       if (p.state === 'won') {
         const left = contractOpen(p);
-        out.push(item('money', { key: 'contract:' + p.id, ref: p.id, kind: 'pursuit', title: p.name, why: `Won, ${left.length} contract item${left.length > 1 ? 's' : ''} open: ${left[0]}`, due: today, overdue: 0, value: val, owner: p.owner }));
+        out.push(item('money', { key: 'contract:' + p.id + ':' + left.length, ref: p.id, kind: 'pursuit', title: p.name, why: `Won, ${left.length} contract item${left.length > 1 ? 's' : ''} open: ${left[0]}`, due: today, overdue: 0, value: val, owner: p.owner }));
         continue;
       }
+      if (p.proposed && PV && PV.liveProposal(p, today)) out.push(item('proposed', { key: 'proposed:' + p.id + ':' + (p.proposed.at || ''), ref: p.id, kind: 'proposal', title: p.name, why: `Claude proposes: ${p.proposed.nextAction}${p.proposed.why ? ' (' + p.proposed.why + ')' : ''}`, due: today, overdue: 0, value: val, owner: p.owner }));
       if (p.state === 'table') {
         const d = decisionOf(p);
-        if (lapsed(p, today)) { out.push(item('money', { key: 'lapsed:' + p.id, ref: p.id, kind: 'pursuit', title: p.name, why: `Proposal validity lapsed ${p.validUntil}: decide, re-issue or close`, due: p.validUntil, overdue: days(p.validUntil, today), value: 0, owner: p.owner })); continue; }
+        if (lapsed(p, today)) { out.push(item('money', { key: 'lapsed:' + p.id + ':' + p.validUntil, ref: p.id, kind: 'pursuit', title: p.name, why: `Proposal validity lapsed ${p.validUntil}: decide, re-issue or close`, due: p.validUntil, overdue: days(p.validUntil, today), value: 0, owner: p.owner })); continue; }
+        if (p.chaseOn && p.chaseOn <= today && (!d.date || p.chaseOn < d.date)) { out.push(item('money', { key: 'chase:' + p.id + ':' + p.chaseOn, ref: p.id, kind: 'pursuit', title: p.name, why: `Chase due ${p.chaseOn}. ${p.nextAction || 'Ask for a yes, no or a date'}`, due: p.chaseOn, overdue: days(p.chaseOn, today), value: val, owner: p.owner })); continue; }
         if (d.date && d.date <= addDays(today, 2)) out.push(item('money', { key: 'decision:' + p.id + ':' + d.date, ref: p.id, kind: 'pursuit', title: p.name, why: `Decision ${d.date < today ? 'was due' : 'due'} ${d.date}${d.assumed ? ' (assumed)' : ''}. ${p.nextAction || 'Chase for a yes, no or a date'}`, due: d.date, overdue: Math.max(0, days(d.date, today)), value: val, owner: p.owner }));
         continue;
       }
       if (p.dueBy && p.dueBy <= today) out.push(item('action', { key: 'action:' + p.id + ':' + p.dueBy, ref: p.id, kind: 'pursuit', title: p.name, why: p.nextAction || 'Next action due', due: p.dueBy, overdue: days(p.dueBy, today), value: val, owner: p.owner }));
-      if (p.proposed && PV && PV.liveProposal(p, today)) out.push(item('proposed', { key: 'proposed:' + p.id, ref: p.id, kind: 'proposal', title: p.name, why: `Claude proposes: ${p.proposed.nextAction}${p.proposed.why ? ' (' + p.proposed.why + ')' : ''}`, due: today, overdue: 0, value: val, owner: p.owner }));
     }
     for (const t of todos) {
       if (t.status === 'done' || t.status === 'skipped') continue;

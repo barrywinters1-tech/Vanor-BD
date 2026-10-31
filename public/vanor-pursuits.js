@@ -122,7 +122,7 @@
     const onTableMonthly = counted.filter(isMonthly).reduce((t, p) => t + value(p), 0);
     const overdue = open.filter(p => late(p, today)).length;
     const staleCount = open.filter(p => stale(p, today)).length;
-    return { by, counts, total: open.length, onTable, onTableMonthly, overdue, stale: staleCount, proposalsOut: by.table.length };
+    return { by, counts, total: open.length, onTable, onTableMonthly, overdue, stale: staleCount, proposalsOut: counted.length };
   }
 
   // The only numbers that matter first: proposals out, fees invoiced, days since the last invoice.

@@ -61,9 +61,9 @@ export default function VanorWorkspace() {
       if (!ready) { setSetup(user.role === 'admin' ? 'import' : 'waiting'); return; }
       setSetup('ready');
       if (!(window as any).VanorClassify) await new Promise<void>((resolve) => { const s = document.createElement('script'); s.src = '/vanor-classify.js?v=5'; s.onload = () => resolve(); s.onerror = () => resolve(); document.head.appendChild(s); });
-      if (!(window as any).VanorPursuits) await new Promise<void>((resolve) => { const s = document.createElement('script'); s.src = '/vanor-pursuits.js?v=6'; s.onload = () => resolve(); s.onerror = () => resolve(); document.head.appendChild(s); });
-      if (!(window as any).VanorStrip) await new Promise<void>((resolve) => { const s = document.createElement('script'); s.src = '/vanor-strip.js?v=1'; s.onload = () => resolve(); s.onerror = () => resolve(); document.head.appendChild(s); });
-      if (!window.VanorWorkbench) await new Promise<void>((resolve, reject) => { const script = document.createElement('script'); script.src = '/vanor-runtime.js?v=76'; script.onload = () => resolve(); script.onerror = () => reject(new Error('The Vanor application failed to load.')); document.head.appendChild(script); });
+      if (!(window as any).VanorPursuits) await new Promise<void>((resolve) => { const s = document.createElement('script'); s.src = '/vanor-pursuits.js?v=7'; s.onload = () => resolve(); s.onerror = () => resolve(); document.head.appendChild(s); });
+      if (!(window as any).VanorStrip) await new Promise<void>((resolve) => { const s = document.createElement('script'); s.src = '/vanor-strip.js?v=2'; s.onload = () => resolve(); s.onerror = () => resolve(); document.head.appendChild(s); });
+      if (!window.VanorWorkbench) await new Promise<void>((resolve, reject) => { const script = document.createElement('script'); script.src = '/vanor-runtime.js?v=77'; script.onload = () => resolve(); script.onerror = () => reject(new Error('The Vanor application failed to load.')); document.head.appendChild(script); });
       if (host.current && window.VanorWorkbench) handle = await window.VanorWorkbench.start({ element: host.current, repo, seed: null, actor: user.actor });
     })().catch(e => setError(e.message || String(e)));
     return () => handle?.dispose();

@@ -19,9 +19,9 @@ export async function addTodos(items: TodoIn[]) {
     const id = 'todo:' + createHash('sha1').update([t.type, t.title, t.recordId || '', t.pursuitId || '', t.link || ''].join('|')).digest('hex').slice(0, 16);
     let fresh = false;
     await updateEntity('work', id, cur => {
-      if (cur.kind === 'todo' && cur.status) return { ...cur, why: t.why || cur.why, link: t.link || cur.link, due: t.due || cur.due };
+      if (cur.kind === 'todo' && cur.status) return { ...cur, why: t.why || cur.why, link: /^https:\/\//.test(t.link || '') ? t.link : cur.link, due: t.due || cur.due };
       fresh = true;
-      return { id, kind: 'todo', status: 'open', type: t.type, title: t.title.slice(0, 160), why: (t.why || '').slice(0, 300), due: t.due || today(), owner: t.owner || '', link: t.link || '', recordId: t.recordId || '', pursuitId: t.pursuitId || '', source: (t.source || '').slice(0, 200), createdAt: new Date().toISOString(), createdBy: 'Claude' };
+      return { id, kind: 'todo', status: 'open', type: t.type, title: t.title.slice(0, 160), why: (t.why || '').slice(0, 300), due: t.due || today(), owner: t.owner || '', link: /^https:\/\//.test(t.link || '') ? t.link : '', recordId: t.recordId || '', pursuitId: t.pursuitId || '', source: (t.source || '').slice(0, 200), createdAt: new Date().toISOString(), createdBy: 'Claude' };
     }, true);
     (fresh ? added : skipped).push(fresh ? id : ({ title: t.title, why: 'already on the board' } as any));
   }

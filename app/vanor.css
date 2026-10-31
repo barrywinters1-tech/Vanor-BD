@@ -2389,3 +2389,10 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 14px; pad
 .link-btn { background: none; border: 0; color: var(--accent); font-size: 13px; padding: 6px 0; cursor: pointer; }
 .strip-empty { margin: 6px 0; }
 @media (max-width: 640px) { .strip-row { flex-direction: column; align-items: stretch; } .strip-acts { justify-content: flex-start; } .strip-acts .btn { min-height: 40px; } }
+/* People: where we stand, review tray (31 Oct 2026) */
+table.people td.stand { color: var(--muted); font-size: 13px; max-width: 420px; }
+.tray { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.tray-card { padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
+.tray-card blockquote { margin: 0; padding: 6px 10px; border-left: 3px solid var(--accent); background: var(--soft, transparent); }
+.tray-card .row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+@media (max-width: 640px) { table.people td.stand { display: block; max-width: none; } }
