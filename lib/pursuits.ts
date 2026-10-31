@@ -9,15 +9,16 @@ const V = (globalThis as any).VanorPursuits;
 export const PURSUIT_RULES = { lanes: V.LANES, states: V.STATES, closed: V.CLOSED, gate: V.GATE, rungs: V.RUNGS, buying: V.BUYING };
 
 const slug = (s: string) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
-const FIELDS = ['name', 'lane', 'state', 'atStake', 'amount', 'type', 'invoicedOn', 'lostReason', 'latest', 'nextAction', 'owner', 'dueBy', 'org', 'person', 'email', 'recordId', 'source', 'notes'] as const;
+const FIELDS = ['name', 'lane', 'state', 'atStake', 'amount', 'type', 'invoicedOn', 'lostReason', 'issuedOn', 'validUntil', 'decisionDate', 'chaseOn', 'outcome', 'contract', 'latest', 'nextAction', 'owner', 'dueBy', 'org', 'person', 'email', 'recordId', 'source', 'notes'] as const;
 // Money and outcome decisions belong to the founders: Claude never sets them, new or existing (31 Oct 2026).
-const FOUNDER_ONLY = ['invoicedOn', 'lostReason'] as const;
+const FOUNDER_ONLY = ['invoicedOn', 'lostReason', 'outcome', 'contract'] as const;
 const CLAUDE_NEW_PER_DAY = 5;
 
 export type PursuitInput = {
   id?: string; name?: string; lane?: string; state?: string; atStake?: string; latest?: string; nextAction?: string;
   owner?: string; dueBy?: string; org?: string; person?: string; email?: string; recordId?: string; source?: string; notes?: string;
   amount?: number; type?: string; invoicedOn?: string; lostReason?: string;
+  issuedOn?: string; validUntil?: string; decisionDate?: string; chaseOn?: string; outcome?: string; contract?: Record<string, boolean>;
   gate?: { asset?: boolean; problem?: boolean; capital?: boolean; route?: boolean };
 };
 

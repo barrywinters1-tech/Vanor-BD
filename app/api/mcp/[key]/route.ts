@@ -19,6 +19,7 @@ import { PRICE_LIST, RULES, firstStep, options as feeOptions, offerLines, decisi
 import { signalFeed, setHeadline } from '../../../../lib/signals-feed';
 import { researchCompany, normCompany } from '../../../../lib/company-intel';
 import { bolsterPeople } from '../../../../lib/people-bolster';
+import { addTodos, listTodos, jobRan } from '../../../../lib/todos';
 import { researchBatch, saveIntel, signalContacts } from '../../../../lib/company-intel-store';
 import { listPursuits, savePursuits, proposeNext, recordMeetings, setPerson, peopleDue } from '../../../../lib/pursuits';
 
@@ -202,6 +203,7 @@ function createServer() {
     owner: z.enum(['Barry', 'Graeme', 'Both']).optional(), dueBy: date.optional(), org: z.string().max(120).optional(),
     person: z.string().max(160).optional(), email: z.string().max(160).optional(), recordId: z.string().optional(),
     source: z.string().max(200).optional(), notes: z.string().max(600).optional(),
+    issuedOn: date.optional().describe('Date the proposal was sent'), validUntil: date.optional(), decisionDate: date.optional().describe('Only a date the client stated; quote it in latest'), chaseOn: date.optional(),
     gate: z.object({ asset: z.boolean().optional(), problem: z.boolean().optional(), capital: z.boolean().optional(), route: z.boolean().optional() }).optional(),
   });
   server.registerTool('pursuits_list', {
@@ -240,6 +242,23 @@ function createServer() {
     inputSchema: { apply: z.boolean().optional(), limit: z.number().int().min(1).max(400).optional() },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ apply, limit }) => out(await bolsterPeople({ apply: !!apply, limit: limit || 150 }), apply ? 'People bolstered.' : 'Dry run.'));
+  server.registerTool('todo_add', {
+    title: 'Put to-dos on the board strip (replies owed, meetings to arrange, drafts waiting)',
+    description: 'Batch. type: reply (someone is waiting for Barry or Graeme), meeting (a meeting to arrange; say which slots were offered), followup, event, action. title names the real person and company; why says what happened and quotes the email or note; link = the Outlook draft webLink if a draft was made; recordId = the board contact id if known; due = YYYY-MM-DD. Items with placeholder text instead of a real name are refused. Re-adding the same item only refreshes it.',
+    inputSchema: { items: z.array(z.object({ type: z.enum(['reply', 'meeting', 'followup', 'event', 'action']), title: z.string().min(3).max(160), why: z.string().max(300).optional(), due: date.optional(), owner: z.enum(['Barry', 'Graeme', 'Both']).optional(), link: z.string().max(600).optional(), recordId: z.string().optional(), pursuitId: z.string().optional(), draftText: z.string().max(4000).optional().describe('The draft body, checked for placeholders; not stored'), source: z.string().max(200).optional() })).min(1).max(50) },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ items }) => out(await addTodos(items), 'To-dos added.'));
+  server.registerTool('todos_list', {
+    title: 'Open to-dos on the board strip',
+    inputSchema: { includeDone: z.boolean().optional() },
+    annotations: { readOnlyHint: true },
+  }, async ({ includeDone }) => out({ items: await listTodos({ includeDone }) }, 'To-dos.'));
+  server.registerTool('job_ran', {
+    title: 'Report that a scheduled job ran (call at the end of every scheduled run)',
+    description: 'job = short stable name (e.g. morning-sync, distress-watch). ok=false with a note when something failed. expectHours = how often it should run; the board flags it if it goes quiet.',
+    inputSchema: { job: z.string().min(2).max(60), name: z.string().max(80).optional(), ok: z.boolean(), note: z.string().max(300).optional(), expectHours: z.number().int().min(1).max(400).optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  }, async (p) => out(await jobRan(p), 'Run logged.'));
   server.registerTool('people_due', {
     title: 'People due a meeting (by rung cadence), overdue first',
     inputSchema: { limit: z.number().int().min(1).max(200).optional(), all: z.boolean().optional() },

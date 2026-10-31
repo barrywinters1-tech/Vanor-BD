@@ -72,6 +72,7 @@
     if (p.amount != null && p.amount !== '' && !(Number(p.amount) >= 0 && Number.isFinite(Number(p.amount)))) return 'Amount must be a number in pounds.';
     if (p.type && !TYPES.includes(p.type)) return 'Type must be one-off or monthly.';
     if (p.invoicedOn && (!/^\d{4}-\d{2}-\d{2}$/.test(p.invoicedOn) || Number.isNaN(Date.parse(p.invoicedOn)))) return 'Invoice date must be a real date.';
+    for (const [k, l] of [['issuedOn', 'Proposal issued'], ['validUntil', 'Valid until'], ['decisionDate', 'Client decision date'], ['chaseOn', 'Chase on']]) if (p[k] && (!/^\d{4}-\d{2}-\d{2}$/.test(p[k]) || Number.isNaN(Date.parse(p[k])))) return l + ' must be a real date.';
     if (s === 'lost' && !String(p.lostReason || '').trim()) return 'Say why it was lost, so we learn which lanes to drop.';
     return '';
   }
@@ -91,7 +92,12 @@
   const isMonthly = p => !!p && p.type === 'monthly';
   const daysBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
   // A proposal from Claude stands for 7 days, then drops off the board (the pursuit keeps its own next action).
-  const liveProposal = (p, today) => !!(p && p.proposed && p.proposed.at && daysBetween(String(p.proposed.at).slice(0, 10), today) <= PROPOSAL_DAYS);
+  // Funder sales cycles are longer: Claude's proposals on funder pursuits stand 21 days (panel, 31 Oct 2026).
+  const FUNDER_PROPOSAL_DAYS = 21;
+  const proposalDays = p => (p && p.lane === 'funder' ? FUNDER_PROPOSAL_DAYS : PROPOSAL_DAYS);
+  const liveProposal = (p, today) => !!(p && p.proposed && p.proposed.at && daysBetween(String(p.proposed.at).slice(0, 10), today) <= proposalDays(p));
+  // A proposal whose validity has lapsed no longer counts in the pounds out.
+  const lapsedProposal = (p, today) => !!(p && p.validUntil && today && p.validUntil < today);
   const touched = p => p && (p.founderTouchedAt || p.createdAt || p.updatedAt);
   const stale = (p, today) => isOpen(p) && !!touched(p) && daysBetween(String(touched(p)).slice(0, 10), today) > STALE_DAYS;
   const late = (p, today) => !!(p.dueBy && p.dueBy < today);
@@ -111,8 +117,9 @@
     for (const p of open) by[stateOf(p)].push(p);
     for (const k of Object.keys(by)) by[k] = sortRows(by[k], today);
     const counts = Object.fromEntries(LANES.map(l => [l.key, pursuits.filter(isOpen).filter(p => laneOf(p) === l.key).length]));
-    const onTable = by.table.filter(p => !isMonthly(p)).reduce((t, p) => t + value(p), 0);
-    const onTableMonthly = by.table.filter(isMonthly).reduce((t, p) => t + value(p), 0);
+    const counted = by.table.filter(p => !lapsedProposal(p, today));
+    const onTable = counted.filter(p => !isMonthly(p)).reduce((t, p) => t + value(p), 0);
+    const onTableMonthly = counted.filter(isMonthly).reduce((t, p) => t + value(p), 0);
     const overdue = open.filter(p => late(p, today)).length;
     const staleCount = open.filter(p => stale(p, today)).length;
     return { by, counts, total: open.length, onTable, onTableMonthly, overdue, stale: staleCount, proposalsOut: by.table.length };
@@ -124,7 +131,7 @@
     const oneOff = inv.filter(p => !isMonthly(p)).reduce((t, p) => t + value(p), 0);
     const monthly = inv.filter(isMonthly).reduce((t, p) => t + value(p), 0);
     const last = inv.map(p => p.invoicedOn).sort().pop() || '';
-    const out = pursuits.filter(isOpen).filter(p => stateOf(p) === 'table');
+    const out = pursuits.filter(isOpen).filter(p => stateOf(p) === 'table' && !lapsedProposal(p, today));
     return { proposalsOut: out.length, proposalsValue: out.filter(p => !isMonthly(p)).reduce((t, p) => t + value(p), 0), proposalsMonthly: out.filter(isMonthly).reduce((t, p) => t + value(p), 0), invoicedOneOff: oneOff, invoicedMonthly: monthly, invoices: inv.length, lastInvoice: last, daysSinceInvoice: last ? daysBetween(last, today) : null };
   }
 
@@ -144,6 +151,6 @@
     return { next, days, overdue: days < 0, dueSoon: days >= 0 && days <= DUE_SOON_DAYS };
   }
 
-  root.VanorPursuits = { DUE_SOON_DAYS, TARGET_FIRST_DAYS, touched, TYPES, IN_HOUSE, PROPOSAL_DAYS, STALE_DAYS, value, isMonthly, liveProposal, stale, money, daysBetween, LANES, LANE, STATES, STATE, CLOSED, GATE, RUNGS, RUNG, BUYING, isPursuit, isOpen, laneOf, stateOf, gateMissing, validate, pounds, sortRows, board, nextMeeting, meetingStatus, addDays };
+  root.VanorPursuits = { FUNDER_PROPOSAL_DAYS, lapsedProposal, proposalDays, DUE_SOON_DAYS, TARGET_FIRST_DAYS, touched, TYPES, IN_HOUSE, PROPOSAL_DAYS, STALE_DAYS, value, isMonthly, liveProposal, stale, money, daysBetween, LANES, LANE, STATES, STATE, CLOSED, GATE, RUNGS, RUNG, BUYING, isPursuit, isOpen, laneOf, stateOf, gateMissing, validate, pounds, sortRows, board, nextMeeting, meetingStatus, addDays };
   if (typeof module !== 'undefined') module.exports = root.VanorPursuits;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

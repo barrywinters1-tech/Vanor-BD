@@ -2,6 +2,7 @@
 // Triggered by Vercel Cron (see vercel.json) with CRON_SECRET.
 import { timingSafeEqual } from 'node:crypto';
 import { runIntel } from '../../../../lib/intel-ingest';
+import { jobRan } from '../../../../lib/todos';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,5 +16,7 @@ export async function GET(request: Request) {
   const started = Date.now();
   const result: Record<string, unknown> = {};
   try { result.scan = await runIntel({ write: true }); } catch (e) { result.scanError = e instanceof Error ? e.message : String(e); }
+  const added = (result.scan as any)?.added?.length ?? 0;
+  await jobRan({ job: 'signals-scan', name: 'Signals scan (05:40 weekdays)', ok: !result.scanError, note: result.scanError ? String(result.scanError) : `${added} new signals`, expectHours: 80 }).catch(() => {});
   return Response.json(result);
 }

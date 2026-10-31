@@ -111,3 +111,12 @@ test('target first-contact deadline is 14 days from when it was added; due means
   assert.equal(V.meetingStatus({ rung: 'contact', lastMet: '2026-09-10' }, '2026-11-04').dueSoon, true);
   assert.equal(V.meetingStatus({ rung: 'contact', lastMet: '2026-09-20' }, '2026-11-04').dueSoon, false);
 });
+
+test('lapsed proposals leave the pounds out; funder proposals stand 21 days', () => {
+  const ps = [{ kind: 'pursuit', id: 'a', name: 'A', state: 'table', amount: 10000, validUntil: '2026-10-01', gate: full, nextAction: 'x' }, { kind: 'pursuit', id: 'b', name: 'B', state: 'table', amount: 5000, gate: full, nextAction: 'x' }];
+  assert.equal(V.money(ps, T).proposalsValue, 5000);
+  const prop = { at: '2026-10-15T09:00:00Z', nextAction: 'x' };
+  assert.equal(V.liveProposal({ lane: 'funder', proposed: prop }, T), true);
+  assert.equal(V.liveProposal({ lane: 'hotel', proposed: prop }, T), false);
+  assert.ok(V.validate({ kind: 'pursuit', name: 'Z', state: 'watch', decisionDate: '31/10/2026' }));
+});
