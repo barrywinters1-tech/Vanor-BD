@@ -21,7 +21,7 @@ import { researchCompany, normCompany } from '../../../../lib/company-intel';
 import { bolsterPeople } from '../../../../lib/people-bolster';
 import { addTodos, listTodos, jobRan } from '../../../../lib/todos';
 import { proposePeople } from '../../../../lib/people-tray';
-import { openCaptures, captureDone } from '../../../../lib/captures';
+import { openCaptures, captureDone, captureImages } from '../../../../lib/captures';
 import { researchBatch, saveIntel, signalContacts } from '../../../../lib/company-intel-store';
 import { listPursuits, savePursuits, proposeNext, recordMeetings, setPerson, peopleDue } from '../../../../lib/pursuits';
 
@@ -274,9 +274,10 @@ function createServer() {
     inputSchema: { limit: z.number().int().min(1).max(10).optional() },
     annotations: { readOnlyHint: true },
   }, async ({ limit }) => {
-    const caps = await openCaptures(limit || 5);
-    const content: any[] = [{ type: 'text', text: JSON.stringify(caps.map(c => ({ id: c.id, eventId: c.eventId, eventTitle: c.eventTitle, by: c.by, createdAt: c.createdAt, text: c.text, photos: (c.images || []).length }))) }];
-    for (const c of caps) for (const img of (c.images || []).slice(0, 5)) { const m = String(img).match(/^data:(image\/[a-z]+);base64,(.+)$/); if (m) { content.push({ type: 'text', text: `Photo for ${c.id}:` }); content.push({ type: 'image', data: m[2], mimeType: m[1] }); } }
+    const caps = await openCaptures(limit || 3);
+    const content: any[] = [{ type: 'text', text: JSON.stringify(caps.map(c => ({ id: c.id, eventId: c.eventId, eventTitle: c.eventTitle, by: c.by, createdAt: c.createdAt, text: c.text, photos: c.photos || (c.images || []).length }))) }];
+    let budget = 6;
+    for (const c of caps) for (const img of (await captureImages(c)).slice(0, 5)) { if (budget-- <= 0) break; const m = String(img).match(/^data:(image\/[a-z]+);base64,(.+)$/); if (m) { content.push({ type: 'text', text: `Photo for ${c.id}:` }); content.push({ type: 'image', data: m[2], mimeType: m[1] }); } }
     return { content };
   });
   server.registerTool('capture_done', {

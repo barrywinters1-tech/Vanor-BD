@@ -65,7 +65,7 @@ export async function signalFeed({ days = 30, buyersOnly = true, limit = 60 }: {
     }
   }
   const byCo = new Map<string, Entity[]>();
-  for (const r of records) if (r.kind !== 'lead' && r.company) { const k = norm(r.company); if (k.length > 3) (byCo.get(k) || byCo.set(k, []).get(k)!).push(r); }
+  for (const r of records) if (r.kind !== 'lead' && r.company && dById.get(r.id)?.status !== 'Archive' && !dById.get(r.id)?.mergedInto) { const k = norm(r.company); if (k.length > 3) (byCo.get(k) || byCo.set(k, []).get(k)!).push(r); }
   const withPlay = items.map(it => { const t = triggerFor(it.stage); const k = norm(it.company); const warm = (k.length > 3 ? byCo.get(k) || [] : []).filter(r => r.name).slice(0, 3).map(r => ({ id: r.id, name: r.name })); return { ...it, who: t.who, angle: t.angle, warm, hasPerson: it.hasPerson || warm.length > 0 }; });
   return dedupeItems(withPlay.map(it => tidyItem(it))).slice(0, limit);
 }

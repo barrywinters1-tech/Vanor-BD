@@ -354,20 +354,27 @@ export async function companiesHouseDirectors(name: string) {
 
 /** Find a Tender (UK public procurement, OCDS API, free, no key): PM, employer's agent, monitoring and owner's engineer notices only. */
 const TENDER_WORDS = /\b(project manag\w*|employer'?s agent|monitoring surveyor|technical advis\w*|owner'?s engineer|cost consultan\w*|quantity survey\w*|clerk of works|programme manag\w*|delivery partner|technical due diligence|independent certifier)\b/i;
+const CONSTRUCTION_WORDS = /\b(construction|building works?|refurbish\w*|redevelop\w*|new build|housing|homes|estate regeneration|capital (works|programme|project)|school|hospital|campus|infrastructure|civil engineering)\b/i;
 export async function fetchFindATender(errors: string[]): Promise<Signal[]> {
   const from = new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 19);
   try {
-    const r = await fetch(`https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages?updatedFrom=${from}&stages=tender&limit=100`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(15000), cache: 'no-store' });
+    const out: Signal[] = [];
+    let url: string | undefined = `https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages?updatedFrom=${from}&stages=tender&limit=100`;
+    for (let page = 0; url && page < 5; page++) {
+    const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(12000), cache: 'no-store' });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const j: any = await r.json();
-    const out: Signal[] = [];
+    url = j.links?.next || undefined;
     for (const rel of j.releases || []) {
       const t = rel.tender || {}; const text = `${t.title || ''} ${t.description || ''}`;
+      const cpv = [t.classification?.id, ...((t.items || []).map((i: any) => i.classification?.id))].filter(Boolean).map(String);
       if (!TENDER_WORDS.test(text)) continue;
+      if (!cpv.some(c => /^(45|71)/.test(c)) && !CONSTRUCTION_WORDS.test(text)) continue;
       const buyer = (rel.parties || []).find((p: any) => (p.roles || []).includes('buyer'))?.name || rel.buyer?.name || '';
       const value = t.value?.amount ? ` Value £${Math.round(t.value.amount).toLocaleString('en-GB')}.` : '';
       const deadline = t.tenderPeriod?.endDate ? ` Deadline ${String(t.tenderPeriod.endDate).slice(0, 10)}.` : '';
       out.push({ title: `${buyer || 'Public buyer'}: ${String(t.title || 'tender').slice(0, 140)}`, link: `https://www.find-tender.service.gov.uk/Notice/${encodeURIComponent(rel.id || rel.ocid || '')}`, date: rel.date || new Date().toISOString(), summary: `${String(t.description || '').slice(0, 300)}${value}${deadline}`, source: 'find_a_tender', applicant: buyer, hint: { applicant: buyer } });
+    }
     }
     return out;
   } catch (e) { errors.push(`find_a_tender: ${e instanceof Error ? e.message : e}`); return []; }

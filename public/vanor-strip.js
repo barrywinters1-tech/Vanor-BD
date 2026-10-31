@@ -52,7 +52,7 @@
   function seqNext(d) { const st = Number(d.seqStep || 0); if (!d.seqStarted || st < 1 || st >= SEQ.length) return null; return { step: st + 1, date: addDays(d.seqStarted, SEQ[st]), label: SEQ_LABEL[st] }; }
   function item(group, o) { return { group, ...o }; }
 
-  function build({ pursuits = [], todos = [], people = [], events = [], jobs = [], state = {}, today, owner = 'Both', overdueOnly = false, PV }) {
+  function build({ pursuits = [], todos = [], people = [], events = [], jobs = [], captures = [], state = {}, today, owner = 'Both', overdueOnly = false, PV }) {
     const out = [];
     const snoozed = state.snoozed || {}, done = state.done || {};
     const live = k => !(done[k]) && !(snoozed[k] && snoozed[k] > today);
@@ -97,7 +97,7 @@
       if (until >= 0 && until <= 14 && ['Booked', 'Attending', 'Interested', 'Qualified', 'Deciding'].includes(e.status)) {
         const need = !e.targets ? 'name 3-5 targets and send pre-event emails' : ['Interested', 'Qualified', 'Deciding'].includes(e.status) ? 'decide whether to book' : 'pre-event emails out?';
         out.push(item('event', { key: 'event:' + e.id + ':pre', ref: e.id, kind: 'event', title: e.title, why: `${e.date}${until === 0 ? ' (today)' : ` (in ${until} day${until > 1 ? 's' : ''})`}: ${need}`, due: e.date, overdue: 0, value: 0, owner: e.owner || '' }));
-      } else if (until < 0 && until >= -3 && ['Booked', 'Attending'].includes(e.status)) {
+      } else if (until < 0 && until >= -3 && ['Booked', 'Attending'].includes(e.status) && !captures.some(c => c.eventId === e.id)) {
         out.push(item('event', { key: 'event:' + e.id + ':post', ref: e.id, kind: 'event', title: e.title, why: 'Who did you meet? Capture them and the follow-ups are drafted.', due: e.date, overdue: -until, value: 0, owner: e.owner || '' }));
       }
     }

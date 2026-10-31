@@ -187,7 +187,8 @@ export async function GET(request: NextRequest, context: Context) {
       list(access, 'source'), list(access, 'decision'), list(access, 'work'),
       list(access, 'event'), list(access, 'planned_event'), metadata(access),
     ]);
-    const body = { records, decisions: Object.fromEntries(decisions.map(item => [item.id, item])), work, events, plannedEvents, meta };
+    // Card photos live in their own rows and never ship with the board (they are read only by captures_list).
+    const body = { records, decisions: Object.fromEntries(decisions.map(item => [item.id, item])), work: (work as any[]).filter(w => w.kind !== 'captureimg'), events, plannedEvents, meta };
     return reply(action === 'backup' ? { schemaVersion: 5, backup: true, exportedAt: new Date().toISOString(), ...body } : body);
   } catch (error) { return fail(error); }
 }
