@@ -41,10 +41,17 @@ export async function savePursuits(items: PursuitInput[], actor = 'Claude') {
   const byName = new Map(existing.map((p: Entity) => [String(p.name).toLowerCase(), p]));
   const saved: string[] = [], rejected: { name: string; reason: string }[] = [];
   const todayIso = today();
-  let madeToday = existing.filter((p: Entity) => p.createdBy === 'Claude' && String(p.createdAt || '').slice(0, 10) === todayIso).length;
+  const londonDay = (iso: unknown) => iso ? new Date(String(iso)).toLocaleDateString('en-CA', { timeZone: 'Europe/London' }) : '';
+  let madeToday = existing.filter((p: Entity) => p.createdBy === 'Claude' && londonDay(p.createdAt) === todayIso).length;
   for (const item of items) {
-    const prior = item.id ? existing.find((p: Entity) => p.id === item.id) : byName.get(String(item.name || '').toLowerCase());
+    let prior = item.id ? existing.find((p: Entity) => p.id === item.id) : byName.get(String(item.name || '').toLowerCase());
     const id = prior?.id || item.id || 'pursuit:' + slug(item.name || crypto.randomUUID());
+    if (!prior) {
+      // A near-identical name (dash, spacing, full stop) slugs to an existing id: that is an update, not a new pursuit.
+      prior = existing.find((p: Entity) => p.id === id);
+      // An id that already belongs to a non-pursuit row must never be taken over.
+      if (!prior && (!id.startsWith('pursuit:') || await getOne('work', id))) { rejected.push({ name: item.name || id, reason: 'That id is not free for a new pursuit.' }); continue; }
+    }
     if (!prior && actor === 'Claude') {
       if (!String(item.source || '').trim()) { rejected.push({ name: item.name || id, reason: 'A pursuit Claude creates needs source: the quote or link that shows it exists.' }); continue; }
       if (madeToday >= CLAUDE_NEW_PER_DAY) { rejected.push({ name: item.name || id, reason: `Claude may create at most ${CLAUDE_NEW_PER_DAY} pursuits a day; the founders decide the rest.` }); continue; }
@@ -66,7 +73,7 @@ export async function savePursuits(items: PursuitInput[], actor = 'Claude') {
       const history = [{ at: new Date().toISOString(), by: actor, change: prior ? changes.join('; ') || 'no change' : 'created' }, ...((cur.history as unknown[]) || [])].slice(0, 30);
       // A founder edit to the next action or date settles any proposal.
       const proposed = (patch.nextAction !== undefined || patch.dueBy !== undefined || patch.state !== undefined) && actor !== 'Claude' ? null : cur.proposed || null;
-      return { ...cur, ...patch, kind: 'pursuit', archived: V.CLOSED.includes(merged.state) ? true : false, proposed, history, updatedAt: new Date().toISOString(), updatedBy: actor };
+      return { ...cur, ...patch, kind: 'pursuit', archived: V.CLOSED.includes(merged.state) ? true : false, proposed, history, updatedAt: new Date().toISOString(), updatedBy: actor, ...(actor !== 'Claude' ? { founderTouchedAt: new Date().toISOString() } : {}) };
     }, true);
     saved.push(id);
     if (!prior && actor === 'Claude') madeToday++;
@@ -100,7 +107,7 @@ export async function recordMeetings(meetings: Met[]) {
   const t = today();
   for (const m of meetings) {
     const who = m.email || m.name || '?';
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(m.date) || m.date > t) { toConfirm.push({ who, date: m.date, why: 'Date is in the future or invalid; nothing recorded.' }); continue; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(m.date) || Number.isNaN(Date.parse(m.date)) || m.date >= t) { toConfirm.push({ who, date: m.date, why: 'Date is today, in the future or invalid; a meeting counts once the day has passed. Nothing recorded.' }); continue; }
     const r = await resolveByEmail(m);
     if (!r) {
       if (m.email) unmatched.push(m.email);
@@ -125,6 +132,7 @@ export async function recordMeetings(meetings: Met[]) {
 }
 
 export async function setPerson(id: string, p: { rung?: string; lane?: string; lastNote?: string; buyingStage?: string; lastMet?: string; inHousePM?: string }) {
+  if (p.lastMet && (!/^\d{4}-\d{2}-\d{2}$/.test(p.lastMet) || p.lastMet > today())) throw new Error('lastMet cannot be in the future');
   if (p.inHousePM && !V.IN_HOUSE.includes(p.inHousePM)) throw new Error('inHousePM must be yes, no or unknown');
   if (p.rung && !V.RUNG[p.rung]) throw new Error('Unknown rung ' + p.rung);
   if (p.lane && !V.LANE[p.lane]) throw new Error('Unknown lane ' + p.lane);

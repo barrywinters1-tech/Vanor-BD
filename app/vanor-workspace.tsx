@@ -38,7 +38,6 @@ class SitesRepository {
   previewCategorisation(ids?: string[]) { return this.request('/categorize', { method: 'POST', body: JSON.stringify({ mode: 'preview', ids }) }); }
   applyCategorisation(ids?: string[]) { return this.request('/categorize', { method: 'POST', body: JSON.stringify({ mode: 'apply', ids }) }); }
   runScan() { return this.request('/run-scan', { method: 'POST', body: '{}' }); }
-  runDrafts() { return this.request('/run-drafts', { method: 'POST', body: '{}' }); }
   findContacts(id: string) { return this.request('/find-contacts', { method: 'POST', body: JSON.stringify({ id }) }); }
   enrich(id: string) { return this.request('/enrich', { method: 'POST', body: JSON.stringify({ id }) }); }
   exportBackup() { return this.request('/backup'); }

@@ -30,12 +30,13 @@ export async function signalFeed({ days = 30, buyersOnly = true, limit = 60 }: {
   const [records, decisions] = await Promise.all([listScope('source'), listScope('decision')]);
   const dById = new Map(decisions.map(d => [d.id, d]));
   const cellOf = new Map<string, { cell: string; score: number }>();
+  const hidden = (id: string) => { const d = dById.get(id); return d?.status === 'Archive' || !!d?.signalPursuit; };
   const items: FeedItem[] = [];
   const dismissed = (id: string) => new Set<string>((dById.get(id)?.dismissedSignals as string[]) || []);
   for (const r of records) {
     if (r.origin === 'intel') {
       const date = iso(r.intel?.signalDate || r.createdAt); if (date < since) continue;
-      if (dismissed(r.id).has('lead')) continue;
+      if (dismissed(r.id).has('lead') || hidden(r.id)) continue;
       const h = r.headlines?.lead || {};
       const src = /gazette/i.test(r.source || '') ? 'The Gazette' : /planning/i.test(r.source || '') ? 'Planning' : /hiring/i.test(r.source || '') ? 'Hiring' : 'Press';
       const it = r.intel || {}; const stage = it.stage || (src === 'The Gazette' ? 'distress' : src === 'Planning' ? 'submitted' : 'news');
@@ -49,7 +50,7 @@ export async function signalFeed({ days = 30, buyersOnly = true, limit = 60 }: {
     const mates = records.filter(y => y.kind !== 'opportunity' && norm(y.company) === k);
     let best: Entity | null = null, bestScore = -1;
     for (const y of mates) { const c = cellOf.get(y.id); if (c && c.score > bestScore) { bestScore = c.score; best = y; } }
-    const target = best || r; const dis = dismissed(target.id);
+    const target = best || r; if (hidden(target.id)) continue; const dis = dismissed(target.id);
     for (const sg of sigs) {
       if (sg.type === 'inactive') continue; const date = String(sg.date || '').slice(0, 10); if (date < since) continue;
       const key = signalKey(sg.type, date); if (dis.has(key)) continue;

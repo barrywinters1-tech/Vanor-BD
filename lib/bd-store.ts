@@ -97,7 +97,7 @@ export async function searchSources(query: string, limit = 20) {
 export async function findByEmail(email: string) {
   const { data, error } = await db().from('entities').select('payload,revision')
     .eq('tenant_id', await tenantId()).eq('scope', 'source')
-    .ilike('payload->>email', email.trim()).limit(5);
+    .ilike('payload->>email', email.trim().replace(/[\\%_]/g, c => '\\' + c)).limit(5);
   if (error) fail(error);
   return (data || []).map(row => ({ ...(row.payload as Entity), _rev: row.revision }) as Entity);
 }

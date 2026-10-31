@@ -69,7 +69,7 @@
     if (!CLOSED.includes(s) && s !== 'watch' && !String(p.nextAction || '').trim()) return 'Every open pursuit needs one next action.';
     if (p.amount != null && p.amount !== '' && !(Number(p.amount) >= 0 && Number.isFinite(Number(p.amount)))) return 'Amount must be a number in pounds.';
     if (p.type && !TYPES.includes(p.type)) return 'Type must be one-off or monthly.';
-    if (p.invoicedOn && !/^\d{4}-\d{2}-\d{2}$/.test(p.invoicedOn)) return 'Invoice date must be a date.';
+    if (p.invoicedOn && (!/^\d{4}-\d{2}-\d{2}$/.test(p.invoicedOn) || Number.isNaN(Date.parse(p.invoicedOn)))) return 'Invoice date must be a real date.';
     if (s === 'lost' && !String(p.lostReason || '').trim()) return 'Say why it was lost, so we learn which lanes to drop.';
     return '';
   }
@@ -90,7 +90,8 @@
   const daysBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
   // A proposal from Claude stands for 7 days, then drops off the board (the pursuit keeps its own next action).
   const liveProposal = (p, today) => !!(p && p.proposed && p.proposed.at && daysBetween(String(p.proposed.at).slice(0, 10), today) <= PROPOSAL_DAYS);
-  const stale = (p, today) => isOpen(p) && !!p.updatedAt && daysBetween(String(p.updatedAt).slice(0, 10), today) > STALE_DAYS;
+  const touched = p => p && (p.founderTouchedAt || p.createdAt || p.updatedAt);
+  const stale = (p, today) => isOpen(p) && !!touched(p) && daysBetween(String(touched(p)).slice(0, 10), today) > STALE_DAYS;
   const late = (p, today) => !!(p.dueBy && p.dueBy < today);
   function sortRows(list, today) {
     return list.slice().sort((a, b) =>
@@ -139,6 +140,6 @@
     return { next, days, overdue: days < 0, dueSoon: days >= 0 && days <= 14 };
   }
 
-  root.VanorPursuits = { TYPES, IN_HOUSE, PROPOSAL_DAYS, STALE_DAYS, value, isMonthly, liveProposal, stale, money, daysBetween, LANES, LANE, STATES, STATE, CLOSED, GATE, RUNGS, RUNG, BUYING, isPursuit, isOpen, laneOf, stateOf, gateMissing, validate, pounds, sortRows, board, nextMeeting, meetingStatus, addDays };
+  root.VanorPursuits = { touched, TYPES, IN_HOUSE, PROPOSAL_DAYS, STALE_DAYS, value, isMonthly, liveProposal, stale, money, daysBetween, LANES, LANE, STATES, STATE, CLOSED, GATE, RUNGS, RUNG, BUYING, isPursuit, isOpen, laneOf, stateOf, gateMissing, validate, pounds, sortRows, board, nextMeeting, meetingStatus, addDays };
   if (typeof module !== 'undefined') module.exports = root.VanorPursuits;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

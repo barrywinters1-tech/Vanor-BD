@@ -97,3 +97,10 @@ test('proposals expire after 7 days; stale after 14', () => {
   assert.equal(V.stale({ kind: 'pursuit', state: 'act', updatedAt: '2026-10-10T00:00:00Z' }, T), true);
   assert.equal(V.stale({ kind: 'pursuit', state: 'act', updatedAt: '2026-10-25T00:00:00Z' }, T), false);
 });
+
+test('stale counts from the founder\'s last touch, not Claude\'s refresh', () => {
+  const p = { kind: 'pursuit', state: 'act', updatedAt: '2026-10-29T00:00:00Z', founderTouchedAt: '2026-10-01T00:00:00Z' };
+  assert.equal(V.stale(p, T), true);
+  assert.equal(V.stale({ ...p, founderTouchedAt: '2026-10-28T00:00:00Z' }, T), false);
+  assert.match(V.validate({ name: 'X', lane: 'funder', state: 'watch', invoicedOn: '2026-13-01' }), /real date/);
+});

@@ -211,10 +211,10 @@ function createServer() {
   }, async ({ lane, includeClosed }) => out(await listPursuits({ lane: lane || 'all', includeClosed }), 'Pursuits.'));
   server.registerTool('pursuits_save', {
     title: 'Create or update pursuits (batch)',
-    description: 'Matches by id, else exact name. Anything outside Watch must have all four gate conditions true and a next action, or it is rejected with the reason. Claude may create up to 5 pursuits a day, each in Watch, each with a source (quote or link); it may refresh latest/notes/contact fields and the amount; it can never set invoicedOn or lostReason; on an EXISTING pursuit Claude cannot change state, nextAction, dueBy or owner (use pursuit_propose) unless confirmedBy names the founder who said so in chat.',
-    inputSchema: { items: z.array(pursuitItem).min(1).max(50), confirmedBy: z.enum(['Barry', 'Graeme']).optional() },
+    description: 'Matches by id, else exact name. Anything outside Watch must have all four gate conditions true and a next action, or it is rejected with the reason. Claude may create up to 5 pursuits a day, each in Watch, each with a source (quote or link); it may refresh latest/notes/contact fields and the amount; it can never set invoicedOn or lostReason; on an EXISTING pursuit Claude cannot change state, nextAction, dueBy or owner (use pursuit_propose). Founders change those on the board; there is no override from here.',
+    inputSchema: { items: z.array(pursuitItem).min(1).max(50) },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ items, confirmedBy }) => out(await savePursuits(items, confirmedBy || 'Claude'), 'Pursuits saved.'));
+  }, async ({ items }) => out(await savePursuits(items, 'Claude'), 'Pursuits saved.'));
   server.registerTool('pursuit_propose', {
     title: 'Propose the next move on a pursuit from new evidence (mail, calendar, transcript)',
     description: 'The board shows it as "Proposed" with an Accept button; the founder\'s current next action stays until accepted. why = the evidence, e.g. "Matthew replied 30 Oct: board meets 5 Nov". latest = one line on what just happened.',
@@ -232,7 +232,7 @@ function createServer() {
     description: 'Rungs set the meeting rhythm: partner and active every 6 weeks, referrer every 13 weeks, contact twice a year, target = not met yet. Promote to active the first time someone puts a named job in front of us.',
     inputSchema: { id: z.string(), rung: z.enum(['target', 'contact', 'referrer', 'active', 'partner']).optional(), lane: z.enum(['funder', 'claims', 'dc', 'hotel', 'offices', 'other']).optional(), buyingStage: z.enum(['Aware', 'Understands', 'Interested', 'Respects', 'Trusts', 'Able', 'Ready']).optional(), lastNote: z.string().max(300).optional(), lastMet: date.optional(), inHousePM: z.enum(['yes', 'no', 'unknown']).optional().describe('Offices lane: does this agent or adviser run its own PM or design team? yes = competitor, no = a possible referrer') },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ id, ...p }) => out(await setPerson(id, p), 'Person updated.'));
+  }, async ({ id, ...p }) => { if (!(await getOne('source', id))) throw new Error('No contact with id ' + id); return out(await setPerson(id, p), 'Person updated.'); });
   server.registerTool('people_due', {
     title: 'People due a meeting (by rung cadence), overdue first',
     inputSchema: { limit: z.number().int().min(1).max(200).optional(), all: z.boolean().optional() },
