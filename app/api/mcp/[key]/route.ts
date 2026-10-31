@@ -13,7 +13,7 @@ import {
   findByEmail, getOne, listScope, listWork, logEvent, saveEntity, searchSources, updateEntity, type Entity,
 } from '../../../../lib/bd-store';
 import '../../../../public/vanor-classify.js';
-import { lookupPerson } from '../../../../lib/rocketreach';
+import { lookupPerson, searchPeople } from '../../../../lib/rocketreach';
 import { runIntel } from '../../../../lib/intel-ingest';
 import { PRICE_LIST, RULES, firstStep, options as feeOptions, offerLines, decisionDateFrom } from '../../../../lib/fees';
 import { signalFeed, setHeadline } from '../../../../lib/signals-feed';
@@ -335,6 +335,12 @@ function createServer() {
     return out({ filled }, filled.length ? `Filled ${filled.join(', ')}.` : 'Nothing empty to fill.');
   });
 
+  server.registerTool('find_people', {
+    title: 'Find named decision-makers at a company (the board\'s own RocketReach search)',
+    description: 'Read-only. Returns up to 5 people currently at the company whose titles match, most senior first. Use the role from a signal\'s "who to call" as titles (e.g. ["Head of Asset Management","Development Director"]). Accept only a clean employer and title match; nothing is added to the board (propose people with people_propose or pursuits_save).',
+    inputSchema: { company: z.string().min(2).max(120), titles: z.array(z.string().min(2).max(80)).max(8).optional(), limit: z.number().int().min(1).max(5).optional() },
+    annotations: { readOnlyHint: true, openWorldHint: true },
+  }, async ({ company, titles, limit }) => { const r = await searchPeople({ company, titles, limit: limit || 3 }); if (r.message) throw new Error(r.message); return out({ items: r.candidates }, 'People found.'); });
   server.registerTool('enrich_contact', {
     title: 'Enrich contact via RocketReach',
     description: 'Look up email, phone and LinkedIn for a contact. Uses RocketReach credit, so only call it for contacts worth chasing (fit 2, or chase score 40+). Fills empty fields only; never overwrites.',
