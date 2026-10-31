@@ -148,7 +148,8 @@ export function sellability(lead: Lead, buyerType: string, text: string, date: s
   const exposedParty = !!(lead.parties.funder || (lead.parties.developer && !isContractor));
   let moment = MOMENT[lead.stage];
   if (lead.stage === 'distress') moment = exposedParty ? 0.8 : lead.sector !== 'unknown' && !isContractor ? 0.5 : 0.3;
-  const complexity = COMPLEX.test(text) ? 1.12 : 1;
+  // Complexity bonus removed 31 Oct 2026 (review: it lifted heritage window jobs to Warm). Kept as 1 so parts stay comparable.
+  const complexity = 1;
   moment = Math.min(1, moment * complexity);
   const buyer = lead.stage === 'distress' && !exposedParty ? Math.min(BUYER[buyerKey], 0.5) : BUYER[buyerKey];
   const size = lead.valueBand === 'Value unknown' && lead.isLarge ? 0.6 : SIZE_BAND[lead.valueBand] ?? 0.4;
@@ -165,7 +166,6 @@ export function sellability(lead: Lead, buyerType: string, text: string, date: s
     buyerKey === 'contractor' ? 'contractor, not a buyer' : buyerKey === 'unknown' ? 'buyer type unclear' : `${buyerKey.replace('_', ' ')} buys this`,
     lead.valueBand === 'Value unknown' ? (lead.isLarge ? 'large, value unstated' : 'size unknown') : lead.valueBand,
     opts.warm ? 'warm contact on the board' : (opts.knownContacts || 0) > 0 ? `${opts.knownContacts} contact${opts.knownContacts === 1 ? '' : 's'} on the board` : named ? 'company named' : 'nobody named',
-    complexity > 1 ? 'complex: our edge' : '',
     sector < 1 && lead.sector !== 'unknown' ? 'off-sector' : '',
   ].filter(Boolean).join(' · ');
   return { score, tier, parts: { moment: +moment.toFixed(2), buyer, size, access, fresh, sector, complexity }, play: STAGE_PLAY[lead.stage], call: CALL_FOR[buyerKey], why };

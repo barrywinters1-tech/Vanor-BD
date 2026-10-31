@@ -104,3 +104,10 @@ test('stale counts from the founder\'s last touch, not Claude\'s refresh', () =>
   assert.equal(V.stale({ ...p, founderTouchedAt: '2026-10-28T00:00:00Z' }, T), false);
   assert.match(V.validate({ name: 'X', lane: 'funder', state: 'watch', invoicedOn: '2026-13-01' }), /real date/);
 });
+
+test('target first-contact deadline is 14 days from when it was added; due means within 7 days', () => {
+  const V = (globalThis as any).VanorPursuits;
+  assert.equal(V.nextMeeting({ rung: 'target', targetSince: '2026-10-31' }, '2026-10-31'), '2026-11-14');
+  assert.equal(V.meetingStatus({ rung: 'contact', lastMet: '2026-05-10' }, '2026-11-04').dueSoon, true);
+  assert.equal(V.meetingStatus({ rung: 'contact', lastMet: '2026-05-20' }, '2026-11-04').dueSoon, false);
+});

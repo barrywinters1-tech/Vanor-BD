@@ -140,6 +140,7 @@ export async function setPerson(id: string, p: { rung?: string; lane?: string; l
   await updateEntity('decision', id, d => {
     const next: Entity = { ...d };
     for (const k of ['rung', 'lane', 'buyingStage', 'inHousePM'] as const) if (p[k]) next[k] = p[k];
+    if (p.rung === 'target' && !d.targetSince) next.targetSince = today();
     if (p.lastNote) { next.lastNote = p.lastNote; next.lastNoteDate = today(); }
     if (p.lastMet) { const dates = [...new Set([...(d.metDates as string[] || []), p.lastMet])].sort().slice(-12); next.metDates = dates; next.lastMet = dates[dates.length - 1]; next.metCount = dates.length; }
     return next;

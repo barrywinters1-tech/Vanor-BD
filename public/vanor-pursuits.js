@@ -40,6 +40,8 @@
     { key: 'target', label: 'Target', days: 0, hint: 'Not met yet; we want to' },
   ];
   const RUNG = Object.fromEntries(RUNGS.map(r => [r.key, r]));
+  const DUE_SOON_DAYS = 7;
+  const TARGET_FIRST_DAYS = 14;
 
   // McMakin, How Clients Buy: where a buyer is after this meeting.
   const BUYING = ['Aware', 'Understands', 'Interested', 'Respects', 'Trusts', 'Able', 'Ready'];
@@ -130,16 +132,18 @@
   // Next meeting due for a person. Target: due now if never met. Unknown rung: contact.
   function nextMeeting(person, today) {
     const rung = RUNG[person && person.rung] || RUNG.contact;
-    if (rung.key === 'target') return person && person.lastMet ? addDays(person.lastMet, RUNG.contact.days) : today;
+    // A target has a first-contact deadline: 14 days from when it was added (working setting).
+    if (rung.key === 'target') return person && person.lastMet ? addDays(person.lastMet, RUNG.contact.days) : (person && person.targetSince ? addDays(String(person.targetSince).slice(0, 10), TARGET_FIRST_DAYS) : today);
     if (!person || !person.lastMet) return today;
     return addDays(person.lastMet, rung.days);
   }
   function meetingStatus(person, today) {
     const next = nextMeeting(person, today);
     const days = Math.round((Date.parse(next) - Date.parse(today)) / 864e5);
-    return { next, days, overdue: days < 0, dueSoon: days >= 0 && days <= 14 };
+    // 'Due' means overdue or due within DUE_SOON_DAYS, defined once here (review 31 Oct 2026).
+    return { next, days, overdue: days < 0, dueSoon: days >= 0 && days <= DUE_SOON_DAYS };
   }
 
-  root.VanorPursuits = { touched, TYPES, IN_HOUSE, PROPOSAL_DAYS, STALE_DAYS, value, isMonthly, liveProposal, stale, money, daysBetween, LANES, LANE, STATES, STATE, CLOSED, GATE, RUNGS, RUNG, BUYING, isPursuit, isOpen, laneOf, stateOf, gateMissing, validate, pounds, sortRows, board, nextMeeting, meetingStatus, addDays };
+  root.VanorPursuits = { DUE_SOON_DAYS, TARGET_FIRST_DAYS, touched, TYPES, IN_HOUSE, PROPOSAL_DAYS, STALE_DAYS, value, isMonthly, liveProposal, stale, money, daysBetween, LANES, LANE, STATES, STATE, CLOSED, GATE, RUNGS, RUNG, BUYING, isPursuit, isOpen, laneOf, stateOf, gateMissing, validate, pounds, sortRows, board, nextMeeting, meetingStatus, addDays };
   if (typeof module !== 'undefined') module.exports = root.VanorPursuits;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
