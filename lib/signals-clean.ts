@@ -10,13 +10,14 @@ const GENERIC_COMPANY = new Set(['plans', 'plan', 'work', 'works', 'new', 'lates
 export const cleanCompany = (company = '', headline = ''): string => {
   const c = String(company).trim(); if (!c) return '';
   const n = norm(c); const h = norm(headline);
-  if (GENERIC_COMPANY.has(n) || (n.length > 3 && n === h) || c.split(/\s+/).length > 12) return '';
+  if (/&(hellip|nbsp|#\d+|[a-z]+;)|…|\.\.\.$/.test(c) || GENERIC_COMPANY.has(n) || (n.length > 3 && n === h) || c.split(/\s+/).length > 12) return '';
   return c;
 };
 const LOW_VALUE_NOTE = /\b(context only|no outreach|low fit|watch only|not a vanor buyer)\b/i;
 /** Caps and labels: no Hot without a named party; the Claude note "context only / low fit" caps the row at Watch. */
-export function tidyItem<T extends { tier: string; score: number; why: string; whyScore: string; parties: Record<string, string>; company: string; headline: string }>(it: T): T & { needsContact: boolean } {
-  const needsContact = /nobody named/i.test(it.whyScore || '') || !Object.values(it.parties || {}).some(Boolean);
+export function tidyItem<T extends { tier: string; score: number; why: string; whyScore: string; parties: Record<string, string>; company: string; headline: string; hasPerson?: boolean }>(it: T): T & { needsContact: boolean } {
+  // A company being named is not a person being named: needsContact is true unless a real individual is attached.
+  const needsContact = !it.hasPerson;
   let { tier, score } = it;
   if (LOW_VALUE_NOTE.test(it.why || '')) { tier = 'Watch'; score = Math.min(score, 30); }
   else if (tier === 'Hot' && needsContact) tier = 'Warm';

@@ -18,13 +18,13 @@ function headline(company: string, sg: { type: string; text?: string }) {
     case 'planning': return `${company}: ${t.length > 6 && t.length < 90 ? t : 'planning application lodged'}`;
     case 'new_spv': return `${company} sets up a new vehicle`;
     case 'new_director': return `${company} appoints a new director`;
-    case 'distress': return `${company}: ${t || 'insolvency notice'}`;
+    case 'distress': return `${company}: ${t && norm(t) !== norm(company) ? t : 'insolvency notice'}`;
     default: return `${company}: ${t || sg.type}`;
   }
 }
 
 
-export type FeedItem = { id: string; key: string; date: string; source: string; headline: string; why: string; text: string; link: string; cell: string; company: string; needsContact?: boolean; polished: boolean; stage: string; sector: string; value: string; region: string; parties: Record<string, string>; play: string; tier: string; score: number; whyScore: string; call: string };
+export type FeedItem = { id: string; key: string; date: string; source: string; headline: string; why: string; text: string; link: string; cell: string; company: string; needsContact?: boolean; hasPerson?: boolean; polished: boolean; stage: string; sector: string; value: string; region: string; parties: Record<string, string>; play: string; tier: string; score: number; whyScore: string; call: string };
 const CH_STAGE: Record<string, string> = { property: 'funded', lending: 'funded', planning: 'submitted', new_spv: 'acquired', new_director: 'leadership', distress: 'distress' };
 
 export async function signalFeed({ days = 30, buyersOnly = true, limit = 60 }: { days?: number; buyersOnly?: boolean; limit?: number } = {}): Promise<FeedItem[]> {
@@ -45,7 +45,7 @@ export async function signalFeed({ days = 30, buyersOnly = true, limit = 60 }: {
       const h = r.headlines?.lead || {};
       const src = /gazette/i.test(r.source || '') ? 'The Gazette' : /planning/i.test(r.source || '') ? 'Planning' : /hiring/i.test(r.source || '') ? 'Hiring' : 'Press';
       const it = r.intel || {}; const stage = it.stage || (src === 'The Gazette' ? 'distress' : src === 'Planning' ? 'submitted' : 'news');
-      items.push({ id: r.id, key: 'lead', date, source: src, headline: h.headline || r.title || r.company || r.name, why: h.why || '', text: String(r.context || '').split('\n')[0].slice(0, 200), link: r.sourceUrl || '', cell: cellOf.get(r.id)?.cell || '', company: r.company || '', polished: !!h.headline, stage, sector: it.sector || '', value: it.valueBand || '', region: it.region || r.region || '', parties: it.parties || {}, play: it.play || STAGE_PLAY[stage as Stage] || '', tier: it.tier || '', score: Number(it.score || 0), whyScore: it.why || '', call: it.call || '' });
+      items.push({ id: r.id, key: 'lead', date, source: src, headline: h.headline || r.title || r.company || r.name, why: h.why || '', text: String(r.context || '').split('\n')[0].slice(0, 200), link: r.sourceUrl || '', cell: cellOf.get(r.id)?.cell || '', company: r.company || '', polished: !!h.headline, hasPerson: !!r.email || (!!r.name && !/director|head of|manager|whoever|\bmd\b|principal|team/i.test(r.name)), stage, sector: it.sector || '', value: it.valueBand || '', region: it.region || r.region || '', parties: it.parties || {}, play: it.play || STAGE_PLAY[stage as Stage] || '', tier: it.tier || '', score: Number(it.score || 0), whyScore: it.why || '', call: it.call || '' });
     }
   }
   const seen = new Set<string>();
@@ -61,7 +61,7 @@ export async function signalFeed({ days = 30, buyersOnly = true, limit = 60 }: {
       const key = signalKey(sg.type, date); if (dis.has(key)) continue;
       const h = target.headlines?.[key] || r.headlines?.[key] || {};
       const stage = CH_STAGE[sg.type] || 'news';
-      items.push({ id: target.id, key, date, source: SOURCE[sg.type] || 'Companies House', headline: h.headline || headline(r.company, sg), why: h.why || '', text: `${sg.text || ''}${mates.length ? ` · ${mates.length} contact${mates.length > 1 ? 's' : ''} on the board` : ''}`, link: '', cell: cellOf.get(target.id)?.cell || '', company: r.company || '', polished: !!h.headline, stage, sector: '', value: '', region: r.region || '', parties: { developer: r.company || '' }, play: STAGE_PLAY[stage as Stage] || '', tier: '', score: 0, whyScore: '', call: '' });
+      items.push({ id: target.id, key, date, source: SOURCE[sg.type] || 'Companies House', headline: h.headline || headline(r.company, sg), why: h.why || '', text: `${sg.text || ''}${mates.length ? ` · ${mates.length} contact${mates.length > 1 ? 's' : ''} on the board` : ''}`, link: '', cell: cellOf.get(target.id)?.cell || '', company: r.company || '', polished: !!h.headline, hasPerson: mates.length > 0, stage, sector: '', value: '', region: r.region || '', parties: { developer: r.company || '' }, play: STAGE_PLAY[stage as Stage] || '', tier: '', score: 0, whyScore: '', call: '' });
     }
   }
   return dedupeItems(items.map(it => tidyItem(it))).slice(0, limit);
