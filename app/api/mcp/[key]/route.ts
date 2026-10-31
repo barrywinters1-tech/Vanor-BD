@@ -197,7 +197,7 @@ function createServer() {
     id: z.string().optional(), name: z.string().min(2).max(120).optional(),
     lane: z.enum(['funder', 'claims', 'dc', 'hotel', 'offices', 'other']).optional(),
     state: z.enum(['table', 'act', 'waiting', 'watch', 'won', 'lost', 'parked']).optional(),
-    atStake: z.string().max(120).optional(), latest: z.string().max(300).optional(), nextAction: z.string().max(200).optional(),
+    atStake: z.string().max(120).optional(), amount: z.number().min(0).max(5e7).optional().describe('Fee in pounds, a number'), type: z.enum(['one-off', 'monthly']).optional(), latest: z.string().max(300).optional(), nextAction: z.string().max(200).optional(),
     owner: z.enum(['Barry', 'Graeme', 'Both']).optional(), dueBy: date.optional(), org: z.string().max(120).optional(),
     person: z.string().max(160).optional(), email: z.string().max(160).optional(), recordId: z.string().optional(),
     source: z.string().max(200).optional(), notes: z.string().max(600).optional(),
@@ -211,7 +211,7 @@ function createServer() {
   }, async ({ lane, includeClosed }) => out(await listPursuits({ lane: lane || 'all', includeClosed }), 'Pursuits.'));
   server.registerTool('pursuits_save', {
     title: 'Create or update pursuits (batch)',
-    description: 'Matches by id, else exact name. Anything outside Watch must have all four gate conditions true and a next action, or it is rejected with the reason. Claude may create pursuits and refresh latest/notes/contact fields; on an EXISTING pursuit Claude cannot change state, nextAction, dueBy or owner (use pursuit_propose) unless confirmedBy names the founder who said so in chat.',
+    description: 'Matches by id, else exact name. Anything outside Watch must have all four gate conditions true and a next action, or it is rejected with the reason. Claude may create up to 5 pursuits a day, each in Watch, each with a source (quote or link); it may refresh latest/notes/contact fields and the amount; it can never set invoicedOn or lostReason; on an EXISTING pursuit Claude cannot change state, nextAction, dueBy or owner (use pursuit_propose) unless confirmedBy names the founder who said so in chat.',
     inputSchema: { items: z.array(pursuitItem).min(1).max(50), confirmedBy: z.enum(['Barry', 'Graeme']).optional() },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ items, confirmedBy }) => out(await savePursuits(items, confirmedBy || 'Claude'), 'Pursuits saved.'));
@@ -223,14 +223,14 @@ function createServer() {
   }, async ({ id, ...p }) => out(await proposeNext(id, p), 'Proposed.'));
   server.registerTool('people_met', {
     title: 'People: record meetings from the calendar (batch)',
-    description: 'One item per external person per meeting that actually happened. Matches by email, else exact name. Sets last met, counts meetings, and optionally the one-line note from the meeting, the rung (target/contact/referrer/active/partner), lane and the McMakin buying stage reached (Aware, Understands, Interested, Respects, Trusts, Able, Ready). Returns the unmatched so they can be added.',
-    inputSchema: { meetings: z.array(z.object({ email: z.string().optional(), name: z.string().optional(), date, note: z.string().max(300).optional(), rung: z.enum(['target', 'contact', 'referrer', 'active', 'partner']).optional(), lane: z.enum(['funder', 'claims', 'dc', 'hotel', 'offices', 'other']).optional(), buyingStage: z.enum(['Aware', 'Understands', 'Interested', 'Respects', 'Trusts', 'Able', 'Ready']).optional() })).min(1).max(100) },
+    description: 'One item per external person per meeting that actually happened. Matches by exact email only; a name alone is never auto-recorded. Pass eventId (the calendar event id) so a meeting is never counted twice. Future dates are refused. Returns toConfirm (names with no email, bad dates) and unmatched emails for the founders. Sets last met, counts meetings, and optionally the one-line note from the meeting, the rung (target/contact/referrer/active/partner), lane and the McMakin buying stage reached (Aware, Understands, Interested, Respects, Trusts, Able, Ready). Returns the unmatched so they can be added.',
+    inputSchema: { meetings: z.array(z.object({ email: z.string().optional(), name: z.string().optional(), date, eventId: z.string().max(200).optional(), note: z.string().max(300).optional(), rung: z.enum(['target', 'contact', 'referrer', 'active', 'partner']).optional(), lane: z.enum(['funder', 'claims', 'dc', 'hotel', 'offices', 'other']).optional(), buyingStage: z.enum(['Aware', 'Understands', 'Interested', 'Respects', 'Trusts', 'Able', 'Ready']).optional() })).min(1).max(100) },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ meetings }) => out(await recordMeetings(meetings), 'Meetings recorded.'));
   server.registerTool('person_set', {
     title: 'People: set a person\'s rung, lane, buying stage or note',
     description: 'Rungs set the meeting rhythm: partner and active every 6 weeks, referrer every 13 weeks, contact twice a year, target = not met yet. Promote to active the first time someone puts a named job in front of us.',
-    inputSchema: { id: z.string(), rung: z.enum(['target', 'contact', 'referrer', 'active', 'partner']).optional(), lane: z.enum(['funder', 'claims', 'dc', 'hotel', 'offices', 'other']).optional(), buyingStage: z.enum(['Aware', 'Understands', 'Interested', 'Respects', 'Trusts', 'Able', 'Ready']).optional(), lastNote: z.string().max(300).optional(), lastMet: date.optional() },
+    inputSchema: { id: z.string(), rung: z.enum(['target', 'contact', 'referrer', 'active', 'partner']).optional(), lane: z.enum(['funder', 'claims', 'dc', 'hotel', 'offices', 'other']).optional(), buyingStage: z.enum(['Aware', 'Understands', 'Interested', 'Respects', 'Trusts', 'Able', 'Ready']).optional(), lastNote: z.string().max(300).optional(), lastMet: date.optional(), inHousePM: z.enum(['yes', 'no', 'unknown']).optional().describe('Offices lane: does this agent or adviser run its own PM or design team? yes = competitor, no = a possible referrer') },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ id, ...p }) => out(await setPerson(id, p), 'Person updated.'));
   server.registerTool('people_due', {

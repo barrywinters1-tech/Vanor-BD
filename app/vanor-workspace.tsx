@@ -39,15 +39,8 @@ class SitesRepository {
   applyCategorisation(ids?: string[]) { return this.request('/categorize', { method: 'POST', body: JSON.stringify({ mode: 'apply', ids }) }); }
   runScan() { return this.request('/run-scan', { method: 'POST', body: '{}' }); }
   runDrafts() { return this.request('/run-drafts', { method: 'POST', body: '{}' }); }
-  generateDraft(id: string) { return this.request('/draft', { method: 'POST', body: JSON.stringify({ id }) }); }
-  batchApprove() { return this.request('/batch-approve', { method: 'POST', body: '{}' }); }
-  syncTasks() { return this.request('/sync-tasks', { method: 'POST', body: '{}' }); }
-  task(payload: unknown) { return this.request('/task', { method: 'POST', body: JSON.stringify(payload) }); }
-  pursue(payload: unknown) { return this.request('/pursue', { method: 'POST', body: JSON.stringify(payload) }); }
   findContacts(id: string) { return this.request('/find-contacts', { method: 'POST', body: JSON.stringify({ id }) }); }
   enrich(id: string) { return this.request('/enrich', { method: 'POST', body: JSON.stringify({ id }) }); }
-  templates() { return this.request('/templates'); }
-  saveTemplate(patch: unknown) { return this.request('/template', { method: 'POST', body: JSON.stringify(patch) }); }
   exportBackup() { return this.request('/backup'); }
   backup() { return this.exportBackup(); }
   restoreBackup(backup: unknown) { return this.request('/restore', { method: 'POST', body: JSON.stringify(backup) }); }
@@ -67,10 +60,9 @@ export default function VanorWorkspace() {
       const [ready, user] = await Promise.all([repo.isReady(), fetch('/api/workspace/user').then(r => r.json())]);
       if (!ready) { setSetup(user.role === 'admin' ? 'import' : 'waiting'); return; }
       setSetup('ready');
-      if (!(window as any).VanorPriority) await new Promise<void>((resolve) => { const s = document.createElement('script'); s.src = '/vanor-priority.js?v=18'; s.onload = () => resolve(); s.onerror = () => resolve(); document.head.appendChild(s); });
       if (!(window as any).VanorClassify) await new Promise<void>((resolve) => { const s = document.createElement('script'); s.src = '/vanor-classify.js?v=5'; s.onload = () => resolve(); s.onerror = () => resolve(); document.head.appendChild(s); });
-      if (!(window as any).VanorPursuits) await new Promise<void>((resolve) => { const s = document.createElement('script'); s.src = '/vanor-pursuits.js?v=2'; s.onload = () => resolve(); s.onerror = () => resolve(); document.head.appendChild(s); });
-      if (!window.VanorWorkbench) await new Promise<void>((resolve, reject) => { const script = document.createElement('script'); script.src = '/vanor-runtime.js?v=66'; script.onload = () => resolve(); script.onerror = () => reject(new Error('The Vanor application failed to load.')); document.head.appendChild(script); });
+      if (!(window as any).VanorPursuits) await new Promise<void>((resolve) => { const s = document.createElement('script'); s.src = '/vanor-pursuits.js?v=3'; s.onload = () => resolve(); s.onerror = () => resolve(); document.head.appendChild(s); });
+      if (!window.VanorWorkbench) await new Promise<void>((resolve, reject) => { const script = document.createElement('script'); script.src = '/vanor-runtime.js?v=67'; script.onload = () => resolve(); script.onerror = () => reject(new Error('The Vanor application failed to load.')); document.head.appendChild(script); });
       if (host.current && window.VanorWorkbench) handle = await window.VanorWorkbench.start({ element: host.current, repo, seed: null, actor: user.actor });
     })().catch(e => setError(e.message || String(e)));
     return () => handle?.dispose();

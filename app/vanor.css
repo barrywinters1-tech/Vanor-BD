@@ -2359,3 +2359,11 @@ label.check { display: flex; gap: 8px; align-items: center; font-size: 14px; pad
   .focus-row.lean.pursuit-row { grid-template-columns: minmax(0,1fr); }
   .pursuit-stake { text-align: left; min-width: 0; grid-row: 2; }
 }
+
+/* Money line: the three numbers that matter first (31 Oct 2026) */
+.money-line { padding: 14px 18px; }
+.money-cells { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.money-cells > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.money-cells b { font-size: 22px; line-height: 1.15; font-weight: 600; }
+.money-cells span { font-size: 12px; color: var(--muted, #5b6b70); }
+@media (max-width: 640px) { .money-cells { grid-template-columns: 1fr; gap: 10px; } .money-cells > div { flex-direction: row; align-items: baseline; justify-content: space-between; } .money-cells b { font-size: 18px; } }

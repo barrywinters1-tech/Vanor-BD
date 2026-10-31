@@ -13,7 +13,10 @@ test('validate: only Watch may miss a gate condition', () => {
   assert.match(V.validate({ name: 'X', lane: 'funder', state: 'table', gate: full }), /next action/);
   assert.match(V.validate({ name: 'X', lane: 'nope', state: 'watch' }), /lane/);
   assert.match(V.validate({ name: '', lane: 'funder' }), /name/);
-  assert.equal(V.validate({ name: 'X', lane: 'hotel', state: 'lost' }), '');
+  assert.match(V.validate({ name: 'X', lane: 'hotel', state: 'lost' }), /why/);
+  assert.equal(V.validate({ name: 'X', lane: 'hotel', state: 'lost', lostReason: 'Went in-house' }), '');
+  assert.match(V.validate({ name: 'X', lane: 'funder', state: 'watch', amount: 'lots' }), /Amount/);
+  assert.equal(V.validate({ name: 'X', lane: 'funder', state: 'watch', amount: 12000, type: 'monthly' }), '');
 });
 
 test('pounds parses fees for totals', () => {
@@ -57,4 +60,40 @@ test('meeting cadence by rung', () => {
   assert.equal(V.meetingStatus({ rung: 'contact', lastMet: '2026-09-01' }, T).overdue, false);
   assert.equal(V.nextMeeting({ rung: 'target' }, T), T);
   assert.equal(V.nextMeeting({ rung: 'partner' }, T), T);
+});
+
+test('amount beats free text; monthly never added to one-off', () => {
+  assert.equal(V.value({ amount: 12000, atStake: '£6k-£60k' }), 12000);
+  assert.equal(V.value({ atStake: '£42,500' }), 42500);
+  const ps = [
+    { kind: 'pursuit', id: 'a', name: 'A', lane: 'funder', state: 'table', amount: 30800, gate: full, nextAction: 'x' },
+    { kind: 'pursuit', id: 'b', name: 'B', lane: 'dc', state: 'table', amount: 6500, type: 'monthly', gate: full, nextAction: 'x' },
+  ];
+  const b = V.board(ps, { today: T });
+  assert.equal(b.onTable, 30800);
+  assert.equal(b.onTableMonthly, 6500);
+  assert.equal(b.proposalsOut, 2);
+});
+
+test('money line: invoiced, last invoice, days since', () => {
+  const ps = [
+    { kind: 'pursuit', id: 'a', name: 'A', lane: 'funder', state: 'won', amount: 9000, invoicedOn: '2026-10-20' },
+    { kind: 'pursuit', id: 'b', name: 'B', lane: 'dc', state: 'won', amount: 4000, type: 'monthly', invoicedOn: '2026-10-25' },
+    { kind: 'pursuit', id: 'c', name: 'C', lane: 'dc', state: 'table', amount: 1000, nextAction: 'x', gate: full },
+  ];
+  const m = V.money(ps, T);
+  assert.equal(m.invoicedOneOff, 9000);
+  assert.equal(m.invoicedMonthly, 4000);
+  assert.equal(m.lastInvoice, '2026-10-25');
+  assert.equal(m.daysSinceInvoice, 5);
+  assert.equal(m.proposalsOut, 1);
+  assert.equal(V.money([], T).daysSinceInvoice, null);
+});
+
+test('proposals expire after 7 days; stale after 14', () => {
+  assert.equal(V.liveProposal({ proposed: { at: '2026-10-25T08:00:00Z' } }, T), true);
+  assert.equal(V.liveProposal({ proposed: { at: '2026-10-20T08:00:00Z' } }, T), false);
+  assert.equal(V.liveProposal({}, T), false);
+  assert.equal(V.stale({ kind: 'pursuit', state: 'act', updatedAt: '2026-10-10T00:00:00Z' }, T), true);
+  assert.equal(V.stale({ kind: 'pursuit', state: 'act', updatedAt: '2026-10-25T00:00:00Z' }, T), false);
 });

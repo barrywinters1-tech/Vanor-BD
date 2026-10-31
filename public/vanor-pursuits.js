@@ -31,6 +31,7 @@
   ];
 
   // Rungs, and how often we meet people on each. Target = not met yet, we want to.
+  // These day counts are working guesses (31 Oct 2026), to be reviewed against real use after 30 days.
   const RUNGS = [
     { key: 'partner', label: 'Partner', days: 42, hint: 'Has sent us work; owner and plan' },
     { key: 'active', label: 'Active', days: 42, hint: 'Has put a named job in front of us' },
@@ -43,6 +44,9 @@
   // McMakin, How Clients Buy: where a buyer is after this meeting.
   const BUYING = ['Aware', 'Understands', 'Interested', 'Respects', 'Trusts', 'Able', 'Ready'];
 
+  const TYPES = ['one-off', 'monthly'];
+  const IN_HOUSE = ['yes', 'no', 'unknown'];
+  const PROPOSAL_DAYS = 7, STALE_DAYS = 14;
   const isPursuit = w => !!w && w.kind === 'pursuit';
   const isOpen = p => isPursuit(p) && !p.archived && !CLOSED.includes(p.state);
   const laneOf = p => (LANE[p && p.lane] ? p.lane : 'other');
@@ -63,6 +67,10 @@
       if (miss.length) return `Only Watch can hold a pursuit missing: ${miss.map(k => GATE.find(c => c.key === k).label.toLowerCase()).join('; ')}.`;
     }
     if (!CLOSED.includes(s) && s !== 'watch' && !String(p.nextAction || '').trim()) return 'Every open pursuit needs one next action.';
+    if (p.amount != null && p.amount !== '' && !(Number(p.amount) >= 0 && Number.isFinite(Number(p.amount)))) return 'Amount must be a number in pounds.';
+    if (p.type && !TYPES.includes(p.type)) return 'Type must be one-off or monthly.';
+    if (p.invoicedOn && !/^\d{4}-\d{2}-\d{2}$/.test(p.invoicedOn)) return 'Invoice date must be a date.';
+    if (s === 'lost' && !String(p.lostReason || '').trim()) return 'Say why it was lost, so we learn which lanes to drop.';
     return '';
   }
 
@@ -76,12 +84,19 @@
     return Math.round(n);
   }
 
+  // Pounds for one pursuit: the numeric amount if set, else the first figure in the old free-text field.
+  const value = p => (p && p.amount != null && p.amount !== '' && Number(p.amount) >= 0 ? Math.round(Number(p.amount)) : pounds(p && p.atStake));
+  const isMonthly = p => !!p && p.type === 'monthly';
+  const daysBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
+  // A proposal from Claude stands for 7 days, then drops off the board (the pursuit keeps its own next action).
+  const liveProposal = (p, today) => !!(p && p.proposed && p.proposed.at && daysBetween(String(p.proposed.at).slice(0, 10), today) <= PROPOSAL_DAYS);
+  const stale = (p, today) => isOpen(p) && !!p.updatedAt && daysBetween(String(p.updatedAt).slice(0, 10), today) > STALE_DAYS;
   const late = (p, today) => !!(p.dueBy && p.dueBy < today);
   function sortRows(list, today) {
     return list.slice().sort((a, b) =>
       (late(b, today) - late(a, today)) ||
       String(a.dueBy || '9999').localeCompare(String(b.dueBy || '9999')) ||
-      (pounds(b.atStake) - pounds(a.atStake)) ||
+      (value(b) - value(a)) ||
       String(a.name).localeCompare(String(b.name)));
   }
 
@@ -93,9 +108,21 @@
     for (const p of open) by[stateOf(p)].push(p);
     for (const k of Object.keys(by)) by[k] = sortRows(by[k], today);
     const counts = Object.fromEntries(LANES.map(l => [l.key, pursuits.filter(isOpen).filter(p => laneOf(p) === l.key).length]));
-    const onTable = by.table.reduce((t, p) => t + pounds(p.atStake), 0);
+    const onTable = by.table.filter(p => !isMonthly(p)).reduce((t, p) => t + value(p), 0);
+    const onTableMonthly = by.table.filter(isMonthly).reduce((t, p) => t + value(p), 0);
     const overdue = open.filter(p => late(p, today)).length;
-    return { by, counts, total: open.length, onTable, overdue };
+    const staleCount = open.filter(p => stale(p, today)).length;
+    return { by, counts, total: open.length, onTable, onTableMonthly, overdue, stale: staleCount, proposalsOut: by.table.length };
+  }
+
+  // The only numbers that matter first: proposals out, fees invoiced, days since the last invoice.
+  function money(pursuits, today) {
+    const inv = pursuits.filter(isPursuit).filter(p => p.invoicedOn);
+    const oneOff = inv.filter(p => !isMonthly(p)).reduce((t, p) => t + value(p), 0);
+    const monthly = inv.filter(isMonthly).reduce((t, p) => t + value(p), 0);
+    const last = inv.map(p => p.invoicedOn).sort().pop() || '';
+    const out = pursuits.filter(isOpen).filter(p => stateOf(p) === 'table');
+    return { proposalsOut: out.length, proposalsValue: out.filter(p => !isMonthly(p)).reduce((t, p) => t + value(p), 0), proposalsMonthly: out.filter(isMonthly).reduce((t, p) => t + value(p), 0), invoicedOneOff: oneOff, invoicedMonthly: monthly, invoices: inv.length, lastInvoice: last, daysSinceInvoice: last ? daysBetween(last, today) : null };
   }
 
   function addDays(iso, n) { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
@@ -112,6 +139,6 @@
     return { next, days, overdue: days < 0, dueSoon: days >= 0 && days <= 14 };
   }
 
-  root.VanorPursuits = { LANES, LANE, STATES, STATE, CLOSED, GATE, RUNGS, RUNG, BUYING, isPursuit, isOpen, laneOf, stateOf, gateMissing, validate, pounds, sortRows, board, nextMeeting, meetingStatus, addDays };
+  root.VanorPursuits = { TYPES, IN_HOUSE, PROPOSAL_DAYS, STALE_DAYS, value, isMonthly, liveProposal, stale, money, daysBetween, LANES, LANE, STATES, STATE, CLOSED, GATE, RUNGS, RUNG, BUYING, isPursuit, isOpen, laneOf, stateOf, gateMissing, validate, pounds, sortRows, board, nextMeeting, meetingStatus, addDays };
   if (typeof module !== 'undefined') module.exports = root.VanorPursuits;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

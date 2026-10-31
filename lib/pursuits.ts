@@ -2,18 +2,22 @@
 // Pursuits are stored in the 'work' scope with kind 'pursuit' so no migration is needed;
 // the older engine ignores them (see listWork in bd-store).
 import '../public/vanor-pursuits.js';
-import { findByEmail, getOne, listScope, searchSources, updateEntity, type Entity } from './bd-store';
+import { findByEmail, getOne, listScope, updateEntity, type Entity } from './bd-store';
 import { today } from './bd-logic';
 
 const V = (globalThis as any).VanorPursuits;
 export const PURSUIT_RULES = { lanes: V.LANES, states: V.STATES, closed: V.CLOSED, gate: V.GATE, rungs: V.RUNGS, buying: V.BUYING };
 
 const slug = (s: string) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
-const FIELDS = ['name', 'lane', 'state', 'atStake', 'latest', 'nextAction', 'owner', 'dueBy', 'org', 'person', 'email', 'recordId', 'source', 'notes'] as const;
+const FIELDS = ['name', 'lane', 'state', 'atStake', 'amount', 'type', 'invoicedOn', 'lostReason', 'latest', 'nextAction', 'owner', 'dueBy', 'org', 'person', 'email', 'recordId', 'source', 'notes'] as const;
+// Money and outcome decisions belong to the founders: Claude never sets them, new or existing (31 Oct 2026).
+const FOUNDER_ONLY = ['invoicedOn', 'lostReason'] as const;
+const CLAUDE_NEW_PER_DAY = 5;
 
 export type PursuitInput = {
   id?: string; name?: string; lane?: string; state?: string; atStake?: string; latest?: string; nextAction?: string;
   owner?: string; dueBy?: string; org?: string; person?: string; email?: string; recordId?: string; source?: string; notes?: string;
+  amount?: number; type?: string; invoicedOn?: string; lostReason?: string;
   gate?: { asset?: boolean; problem?: boolean; capital?: boolean; route?: boolean };
 };
 
@@ -23,9 +27,9 @@ export async function listPursuits({ lane = 'all', includeClosed = false }: { la
   const b = V.board(all, { lane, today: t });
   const strip = (p: Entity) => ({ id: p.id, name: p.name, lane: V.laneOf(p), state: V.stateOf(p), atStake: p.atStake || '', latest: p.latest || '',
     nextAction: p.nextAction || '', owner: p.owner || '', dueBy: p.dueBy || '', late: !!(p.dueBy && p.dueBy < t), org: p.org || '', person: p.person || '',
-    email: p.email || '', recordId: p.recordId || '', gateMissing: V.gateMissing(p), proposed: p.proposed || null });
+    email: p.email || '', recordId: p.recordId || '', gateMissing: V.gateMissing(p), amount: p.amount ?? null, type: p.type || 'one-off', invoicedOn: p.invoicedOn || '', stale: V.stale(p, t), proposed: V.liveProposal(p, t) ? p.proposed : null });
   return {
-    today: t, total: b.total, onTable: b.onTable, overdue: b.overdue, counts: b.counts,
+    today: t, total: b.total, onTable: b.onTable, onTableMonthly: b.onTableMonthly, overdue: b.overdue, stale: b.stale, counts: b.counts, money: V.money(all, t),
     byState: Object.fromEntries(Object.entries(b.by).map(([k, rows]) => [k, (rows as Entity[]).map(strip)])),
     closed: includeClosed ? all.filter((p: Entity) => V.CLOSED.includes(p.state) || p.archived).map(strip) : undefined,
   };
@@ -36,15 +40,24 @@ export async function savePursuits(items: PursuitInput[], actor = 'Claude') {
   const existing = (await listScope('work')).filter(V.isPursuit);
   const byName = new Map(existing.map((p: Entity) => [String(p.name).toLowerCase(), p]));
   const saved: string[] = [], rejected: { name: string; reason: string }[] = [];
+  const todayIso = today();
+  let madeToday = existing.filter((p: Entity) => p.createdBy === 'Claude' && String(p.createdAt || '').slice(0, 10) === todayIso).length;
   for (const item of items) {
     const prior = item.id ? existing.find((p: Entity) => p.id === item.id) : byName.get(String(item.name || '').toLowerCase());
     const id = prior?.id || item.id || 'pursuit:' + slug(item.name || crypto.randomUUID());
+    if (!prior && actor === 'Claude') {
+      if (!String(item.source || '').trim()) { rejected.push({ name: item.name || id, reason: 'A pursuit Claude creates needs source: the quote or link that shows it exists.' }); continue; }
+      if (madeToday >= CLAUDE_NEW_PER_DAY) { rejected.push({ name: item.name || id, reason: `Claude may create at most ${CLAUDE_NEW_PER_DAY} pursuits a day; the founders decide the rest.` }); continue; }
+    }
     const patch: Entity = { id };
     for (const k of FIELDS) if (item[k] !== undefined) patch[k] = item[k];
+    if (actor === 'Claude') for (const k of FOUNDER_ONLY) delete patch[k];
+    if (!prior) { patch.createdAt = new Date().toISOString(); patch.createdBy = actor; }
     if (item.gate) patch.gate = { ...(prior?.gate || {}), ...item.gate };
     // Claude may create pursuits and refresh facts, but on an existing pursuit the founder owns
     // state, next action, date and owner: Claude's view of those goes through proposeNext.
     if (prior && actor === 'Claude') for (const k of ['state', 'nextAction', 'dueBy', 'owner'] as const) delete patch[k];
+    if (!prior && actor === 'Claude') { patch.state = 'watch'; delete patch.nextAction; }
     const merged: Entity = { ...(prior || {}), ...patch, kind: 'pursuit' };
     const why = V.validate(merged);
     if (why) { rejected.push({ name: item.name || id, reason: why }); continue; }
@@ -56,6 +69,7 @@ export async function savePursuits(items: PursuitInput[], actor = 'Claude') {
       return { ...cur, ...patch, kind: 'pursuit', archived: V.CLOSED.includes(merged.state) ? true : false, proposed, history, updatedAt: new Date().toISOString(), updatedBy: actor };
     }, true);
     saved.push(id);
+    if (!prior && actor === 'Claude') madeToday++;
   }
   return { saved, rejected };
 }
@@ -70,41 +84,54 @@ export async function proposeNext(id: string, p: { nextAction: string; dueBy?: s
 }
 
 // ---------- People ----------
-type Met = { email?: string; name?: string; date: string; note?: string; lane?: string; rung?: string; buyingStage?: string };
+type Met = { email?: string; name?: string; date: string; note?: string; lane?: string; rung?: string; buyingStage?: string; eventId?: string };
 
-async function resolve(m: Met): Promise<Entity | null> {
-  if (m.email) { const hit = (await findByEmail(m.email))[0]; if (hit) return hit; }
-  if (m.name) { const hits = await searchSources(m.name, 5); const exact = hits.find((h: Entity) => String(h.name || '').toLowerCase() === m.name!.toLowerCase()); if (exact) return exact; }
-  return null;
+/** Exact email match only. A name alone is never enough to say someone was met (a wrong match hides the people we most need to chase). */
+async function resolveByEmail(m: Met): Promise<Entity | null> {
+  if (!m.email) return null;
+  const hits = await findByEmail(m.email);
+  return hits.length === 1 ? hits[0] : null;
 }
 
-/** Record meetings (from the calendar). Sets last met to the newest date, counts distinct dates, and optional note/rung/lane/stage. */
+/** Record meetings that have happened. Auto-records only on an exact email match, a past date and an unseen calendar event id.
+ *  Everything else comes back in toConfirm for a founder to decide. */
 export async function recordMeetings(meetings: Met[]) {
-  const matched: string[] = [], unmatched: string[] = [];
+  const matched: string[] = [], unmatched: string[] = [], toConfirm: { who: string; date: string; why: string }[] = [], skipped: string[] = [];
+  const t = today();
   for (const m of meetings) {
-    const r = await resolve(m);
-    if (!r) { unmatched.push(m.email || m.name || '?'); continue; }
+    const who = m.email || m.name || '?';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(m.date) || m.date > t) { toConfirm.push({ who, date: m.date, why: 'Date is in the future or invalid; nothing recorded.' }); continue; }
+    const r = await resolveByEmail(m);
+    if (!r) {
+      if (m.email) unmatched.push(m.email);
+      else toConfirm.push({ who, date: m.date, why: 'No email on the calendar event; a name alone is not enough to mark someone as met.' });
+      continue;
+    }
+    let dup = false;
     await updateEntity('decision', r.id, d => {
+      const seen = (d.metEvents as string[]) || [];
+      if (m.eventId && seen.includes(m.eventId)) { dup = true; return d; }
       const dates = [...new Set([...(d.metDates as string[] || []), m.date])].sort().slice(-12);
-      const next: Entity = { ...d, metDates: dates, lastMet: dates[dates.length - 1], metCount: dates.length };
+      const next: Entity = { ...d, metDates: dates, lastMet: dates[dates.length - 1], metCount: dates.length, metSource: 'calendar' };
+      if (m.eventId) next.metEvents = [...seen, m.eventId].slice(-30);
       if (m.note && m.date >= String(d.lastNoteDate || '')) { next.lastNote = m.note; next.lastNoteDate = m.date; }
       if (m.rung && V.RUNG[m.rung]) next.rung = m.rung;
       if (m.lane && V.LANE[m.lane]) next.lane = m.lane;
-      if (m.buyingStage && V.BUYING.includes(m.buyingStage)) next.buyingStage = m.buyingStage;
       return next;
     }, true);
-    matched.push(r.id);
+    if (dup) skipped.push(who); else matched.push(r.id);
   }
-  return { matched: matched.length, unmatched };
+  return { matched: matched.length, alreadyRecorded: skipped.length, unmatched, toConfirm };
 }
 
-export async function setPerson(id: string, p: { rung?: string; lane?: string; lastNote?: string; buyingStage?: string; lastMet?: string }) {
+export async function setPerson(id: string, p: { rung?: string; lane?: string; lastNote?: string; buyingStage?: string; lastMet?: string; inHousePM?: string }) {
+  if (p.inHousePM && !V.IN_HOUSE.includes(p.inHousePM)) throw new Error('inHousePM must be yes, no or unknown');
   if (p.rung && !V.RUNG[p.rung]) throw new Error('Unknown rung ' + p.rung);
   if (p.lane && !V.LANE[p.lane]) throw new Error('Unknown lane ' + p.lane);
   if (p.buyingStage && !V.BUYING.includes(p.buyingStage)) throw new Error('Unknown buying stage ' + p.buyingStage);
   await updateEntity('decision', id, d => {
     const next: Entity = { ...d };
-    for (const k of ['rung', 'lane', 'buyingStage'] as const) if (p[k]) next[k] = p[k];
+    for (const k of ['rung', 'lane', 'buyingStage', 'inHousePM'] as const) if (p[k]) next[k] = p[k];
     if (p.lastNote) { next.lastNote = p.lastNote; next.lastNoteDate = today(); }
     if (p.lastMet) { const dates = [...new Set([...(d.metDates as string[] || []), p.lastMet])].sort().slice(-12); next.metDates = dates; next.lastMet = dates[dates.length - 1]; next.metCount = dates.length; }
     return next;
