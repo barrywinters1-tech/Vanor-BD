@@ -20,7 +20,7 @@ export async function proposePeople(items: Candidate[]) {
     if (work.some(w => w.id === id && w.status !== 'open')) { skipped.push({ name, why: 'already reviewed' }); continue; }
     const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, '');
     const nameHit = records.find(r => norm(String(r.name || '')) === norm(name));
-    await updateEntity('work', id, cur => ({ ...cur, id, kind: 'candidate', status: cur.status || 'open', name, company: c.company || '', email, jobTitle: c.jobTitle || '', source: c.source.slice(0, 120), quote: (c.quote || '').slice(0, 300), rung: c.rung || '', lane: c.lane || '', metOn: c.metOn || '', matchId: c.matchId || nameHit?.id || '', createdAt: cur.createdAt || new Date().toISOString() }), true);
+    await updateEntity('work', id, cur => ({ ...cur, id, kind: 'candidate', status: cur.status || 'open', name, company: c.company || '', email, jobTitle: c.jobTitle || '', source: c.source.slice(0, 120), quote: (c.quote || '').slice(0, 300), rung: c.rung || '', lane: c.lane || '', metOn: c.metOn || '', matchId: (c.matchId && records.some(r => r.id === c.matchId) ? c.matchId : '') || nameHit?.id || '', createdAt: cur.createdAt || new Date().toISOString() }), true);
     added.push(id);
   }
   return { added: added.length, skipped };

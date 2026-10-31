@@ -2396,3 +2396,6 @@ table.people td.stand { color: var(--muted); font-size: 13px; max-width: 420px; 
 .tray-card blockquote { margin: 0; padding: 6px 10px; border-left: 3px solid var(--accent); background: var(--soft, transparent); }
 .tray-card .row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
 @media (max-width: 640px) { table.people td.stand { display: block; max-width: none; } }
+.sig-play, .sig-warm { display: block; font-size: 12.5px; margin-top: 3px; }
+.sig-play b, .sig-warm b { font-weight: 600; }
+.names .sig-play b, .names .sig-warm b { display: inline; font-size: inherit; }

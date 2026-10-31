@@ -33,6 +33,19 @@
   /** A proposal leaves the £ figure once its validity has lapsed. */
   const lapsed = (p, today) => !!(p.validUntil && p.validUntil < today);
 
+  const TRIGGER = {
+    distress: ["The lender's workout or monitoring lead, the employer, or the administrator (never the insolvent firm)", 'A two-week position review: what is built, what it costs to finish, and the completion route.'],
+    funded: ["The funder's credit or asset-management lead, and the developer's development director", 'Independent monitoring from first drawdown, or a pre-start peer review of programme and cost.'],
+    stalled: ["The development director, or the funder's asset manager", 'Position finding and a recovery plan before the restart is fixed.'],
+    contractor_appointed: ["The client's development director, or the funder", "An early-warning review of the contractor's programme and cost as works start."],
+    acquired: ["The new owner's asset manager or development director", 'A peer review before the team is fixed; for hotels, a refurbishment or PIP cost review.'],
+    granted: ["The applicant's development director", 'Who owns delivery risk before the contractor is appointed?'],
+    tender: ["The buyer's procurement lead (check the framework route first)", 'Bid or no-bid: does the scope fit and is the deadline workable?'],
+    leadership: ['The newly appointed director', 'An introduction in their first 90 days.'],
+    on_site: ["The client's development director or the funder", 'Independent monitoring or a mid-build position check.'],
+  };
+  const triggerFor = stage => { const t = TRIGGER[stage]; return t ? { who: t[0], angle: t[1] } : { who: 'Whoever loses money if the date moves', angle: 'A short, specific observation and a 20-minute call.' }; };
+  const valueFloor = band => { const m = String(band || '').replace(/,/g, '').match(/£\s?(\d+(?:\.\d+)?)\s?(m|bn|k)?/i); if (!m) return 0; const n = parseFloat(m[1]); const u = (m[2] || 'm').toLowerCase(); return u === 'bn' ? n * 1000 : u === 'k' ? n / 1000 : n; };
   function item(group, o) { return { group, ...o }; }
 
   function build({ pursuits = [], todos = [], people = [], events = [], jobs = [], state = {}, today, owner = 'Both', overdueOnly = false, PV }) {
@@ -91,6 +104,6 @@
     return GROUPS.map(g => ({ ...g, items: shown.filter(i => i.group === g.key) })).filter(g => g.items.length);
   }
 
-  root.VanorStrip = { GROUPS, CONTRACT, contractOpen, decisionOf, lapsed, build, addDays };
+  root.VanorStrip = { TRIGGER, triggerFor, valueFloor, GROUPS, CONTRACT, contractOpen, decisionOf, lapsed, build, addDays };
   if (typeof module !== 'undefined') module.exports = root.VanorStrip;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

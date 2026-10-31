@@ -2,7 +2,7 @@
 import { listScope, updateEntity, type Entity } from './bd-store';
 import { STAGE_PLAY, type Stage } from './lead-classify';
 import '../public/vanor-classify.js';
-import { PLANNING_FLOOR_M, valueFloor, tidyItem, dedupeItems } from './signals-clean';
+import { PLANNING_FLOOR_M, valueFloor, tidyItem, dedupeItems, triggerFor } from './signals-clean';
 const iso = (v: any) => ((globalThis as any).VanorClassify?.isoDate?.(v) as string) || String(v || '').slice(0, 10);
 
 const DAY = 864e5;
@@ -24,7 +24,7 @@ function headline(company: string, sg: { type: string; text?: string }) {
 }
 
 
-export type FeedItem = { id: string; key: string; date: string; source: string; headline: string; why: string; text: string; link: string; cell: string; company: string; needsContact?: boolean; hasPerson?: boolean; polished: boolean; stage: string; sector: string; value: string; region: string; parties: Record<string, string>; play: string; tier: string; score: number; whyScore: string; call: string };
+export type FeedItem = { id: string; key: string; date: string; source: string; headline: string; why: string; text: string; link: string; cell: string; company: string; needsContact?: boolean; hasPerson?: boolean; who?: string; angle?: string; warm?: { id: string; name: string }[]; polished: boolean; stage: string; sector: string; value: string; region: string; parties: Record<string, string>; play: string; tier: string; score: number; whyScore: string; call: string };
 const CH_STAGE: Record<string, string> = { property: 'funded', lending: 'funded', planning: 'submitted', new_spv: 'acquired', new_director: 'leadership', distress: 'distress' };
 
 export async function signalFeed({ days = 30, buyersOnly = true, limit = 60 }: { days?: number; buyersOnly?: boolean; limit?: number } = {}): Promise<FeedItem[]> {
@@ -43,7 +43,7 @@ export async function signalFeed({ days = 30, buyersOnly = true, limit = 60 }: {
       const b = C?.bar?.(r, Date.now(), { skipAge: true }); if (b && !b.pass) continue;
       if (/planning/i.test(r.source || '') && valueFloor(r.intel?.valueBand) < PLANNING_FLOOR_M) continue;
       const h = r.headlines?.lead || {};
-      const src = /gazette/i.test(r.source || '') ? 'The Gazette' : /planning/i.test(r.source || '') ? 'Planning' : /hiring/i.test(r.source || '') ? 'Hiring' : 'Press';
+      const src = /gazette/i.test(r.source || '') ? 'The Gazette' : /planning/i.test(r.source || '') ? 'Planning' : /hiring/i.test(r.source || '') ? 'Hiring' : /tender/i.test(r.source || '') ? 'Tender' : 'Press';
       const it = r.intel || {}; const stage = it.stage || (src === 'The Gazette' ? 'distress' : src === 'Planning' ? 'submitted' : 'news');
       items.push({ id: r.id, key: 'lead', date, source: src, headline: h.headline || r.title || r.company || r.name, why: h.why || '', text: String(r.context || '').split('\n')[0].slice(0, 200), link: r.sourceUrl || '', cell: cellOf.get(r.id)?.cell || '', company: r.company || '', polished: !!h.headline, hasPerson: !!r.email || (!!r.name && !/director|head of|manager|whoever|\bmd\b|principal|team/i.test(r.name)), stage, sector: it.sector || '', value: it.valueBand || '', region: it.region || r.region || '', parties: it.parties || {}, play: it.play || STAGE_PLAY[stage as Stage] || '', tier: it.tier || '', score: Number(it.score || 0), whyScore: it.why || '', call: it.call || '' });
     }
@@ -64,7 +64,10 @@ export async function signalFeed({ days = 30, buyersOnly = true, limit = 60 }: {
       items.push({ id: target.id, key, date, source: SOURCE[sg.type] || 'Companies House', headline: h.headline || headline(r.company, sg), why: h.why || '', text: `${sg.text || ''}${mates.length ? ` · ${mates.length} contact${mates.length > 1 ? 's' : ''} on the board` : ''}`, link: '', cell: cellOf.get(target.id)?.cell || '', company: r.company || '', polished: !!h.headline, hasPerson: mates.length > 0, stage, sector: '', value: '', region: r.region || '', parties: { developer: r.company || '' }, play: STAGE_PLAY[stage as Stage] || '', tier: '', score: 0, whyScore: '', call: '' });
     }
   }
-  return dedupeItems(items.map(it => tidyItem(it))).slice(0, limit);
+  const byCo = new Map<string, Entity[]>();
+  for (const r of records) if (r.kind !== 'lead' && r.company) { const k = norm(r.company); if (k.length > 3) (byCo.get(k) || byCo.set(k, []).get(k)!).push(r); }
+  const withPlay = items.map(it => { const t = triggerFor(it.stage); const k = norm(it.company); const warm = (k.length > 3 ? byCo.get(k) || [] : []).filter(r => r.name).slice(0, 3).map(r => ({ id: r.id, name: r.name })); return { ...it, who: t.who, angle: t.angle, warm, hasPerson: it.hasPerson || warm.length > 0 }; });
+  return dedupeItems(withPlay.map(it => tidyItem(it))).slice(0, limit);
 }
 
 export async function setHeadline(id: string, key: string, h: { headline: string; why: string }) {

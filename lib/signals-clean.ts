@@ -34,3 +34,17 @@ export function dedupeItems<T extends { id: string; key: string; date: string; c
   }
   return out;
 }
+
+/** Who to call and what to offer for each kind of trigger (expert panel, 31 Oct 2026). */
+export const TRIGGER: Record<string, { who: string; angle: string }> = {
+  distress: { who: "The lender's workout or monitoring lead, the employer, or the administrator (never the insolvent firm)", angle: 'A two-week position review: what is built, what it costs to finish, and the completion route.' },
+  funded: { who: "The funder's credit or asset-management lead, and the developer's development director", angle: 'Independent monitoring from first drawdown, or a pre-start peer review of programme and cost.' },
+  stalled: { who: "The development director, or the funder's asset manager", angle: 'Position finding and a recovery plan before the restart is fixed.' },
+  contractor_appointed: { who: "The client's development director, or the funder", angle: 'An early-warning review of the contractor\'s programme and cost as works start.' },
+  acquired: { who: "The new owner's asset manager or development director", angle: 'A peer review before the team is fixed; for hotels, a refurbishment or PIP cost review.' },
+  granted: { who: "The applicant's development director", angle: 'Who owns delivery risk before the contractor is appointed?' },
+  tender: { who: "The buyer's procurement lead (check the framework route first)", angle: 'Bid or no-bid: does the scope fit and is the deadline workable?' },
+  leadership: { who: 'The newly appointed director', angle: 'An introduction in their first 90 days.' },
+  on_site: { who: "The client's development director or the funder", angle: 'Independent monitoring or a mid-build position check.' },
+};
+export const triggerFor = (stage = '') => TRIGGER[stage] || { who: 'Whoever loses money if the date moves', angle: 'A short, specific observation and a 20-minute call.' };

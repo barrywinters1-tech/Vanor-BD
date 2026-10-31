@@ -33,6 +33,14 @@ export const FEEDS: Record<string, string> = {
   insider_media: 'https://www.insidermedia.com/rss/news',
   gazette_construction: 'https://www.thegazette.co.uk/insolvency/notice/data.feed?text=construction+OR+fit-out+OR+interiors+OR+mechanical+OR+electrical&results-page-size=50',
   hospitalitynet: 'https://www.hospitalitynet.org/rss/news.xml',
+  // Added 31 Oct 2026 (Barry: keep every source and add more). Property Week section feeds confirmed on propertyweek.com/rss-feeds.
+  pw_finance: 'https://www.propertyweek.com/XmlServers/navsectionRSS.aspx?navsectioncode=1040',
+  pw_investment: 'https://www.propertyweek.com/XmlServers/navsectionRSS.aspx?navsectioncode=1038',
+  pw_hotels: 'https://www.propertyweek.com/XmlServers/navsectionRSS.aspx?navsectioncode=957',
+  pw_offices: 'https://www.propertyweek.com/XmlServers/navsectionRSS.aspx?navsectioncode=449',
+  // Data-centre press (feed URLs not yet confirmed from here; a failing feed is reported by name on the board).
+  dcd: 'https://www.datacenterdynamics.com/en/rss/',
+  datacentre_review: 'https://datacentrereview.com/feed/',
 };
 
 // ---- buyer map (lib/buyers.py) ----
@@ -102,7 +110,7 @@ export function isSignal(s: Signal) {
   const t = `${s.title} ${s.summary}`.toLowerCase();
   if (s.source === 'planit' || s.source === 'planning_data_gov' || s.source === 'london_datahub')
     return !t.includes('size: small') && !PLANNING_NOISE.test(t) && CONFIG.sectors.some(k => t.includes(k));
-  if (s.source.startsWith('gazette') || s.source.startsWith('hiring')) return true;
+  if (s.source.startsWith('gazette') || s.source.startsWith('hiring') || s.source === 'find_a_tender') return true;
   // Press: a stage we act on, a sector we serve, and a size or a named party (Glenigan's 10 homes / £250k rule).
   return isLeadWorthy(classifyLead(`${s.title}. ${s.summary}`, s.hint));
 }
@@ -118,6 +126,7 @@ export function score(s: Signal, today = new Date()): Scored {
   const lead = classifyLead(text, s.hint || (s.applicant ? { applicant: s.applicant } : undefined));
   if ((s.source === 'planit' || s.source === 'london_datahub') && ['news', 'leadership'].includes(lead.stage)) lead.stage = 'submitted';
   if (s.source.startsWith('hiring')) lead.stage = 'hiring';
+  if (s.source === 'find_a_tender') { lead.stage = 'tender'; if (s.applicant) lead.parties.developer = lead.parties.developer || s.applicant; }
   if (s.source.startsWith('gazette')) {
     // The insolvent company is the subject, never the buyer. The buyer is the employer or funder it owes a building to, if the notice names one (it rarely does).
     lead.stage = 'distress';
@@ -343,10 +352,31 @@ export async function companiesHouseDirectors(name: string) {
   } catch { return []; }
 }
 
+/** Find a Tender (UK public procurement, OCDS API, free, no key): PM, employer's agent, monitoring and owner's engineer notices only. */
+const TENDER_WORDS = /\b(project manag\w*|employer'?s agent|monitoring surveyor|technical advis\w*|owner'?s engineer|cost consultan\w*|quantity survey\w*|clerk of works|programme manag\w*|delivery partner|technical due diligence|independent certifier)\b/i;
+export async function fetchFindATender(errors: string[]): Promise<Signal[]> {
+  const from = new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 19);
+  try {
+    const r = await fetch(`https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages?updatedFrom=${from}&stages=tender&limit=100`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(15000), cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j: any = await r.json();
+    const out: Signal[] = [];
+    for (const rel of j.releases || []) {
+      const t = rel.tender || {}; const text = `${t.title || ''} ${t.description || ''}`;
+      if (!TENDER_WORDS.test(text)) continue;
+      const buyer = (rel.parties || []).find((p: any) => (p.roles || []).includes('buyer'))?.name || rel.buyer?.name || '';
+      const value = t.value?.amount ? ` Value £${Math.round(t.value.amount).toLocaleString('en-GB')}.` : '';
+      const deadline = t.tenderPeriod?.endDate ? ` Deadline ${String(t.tenderPeriod.endDate).slice(0, 10)}.` : '';
+      out.push({ title: `${buyer || 'Public buyer'}: ${String(t.title || 'tender').slice(0, 140)}`, link: `https://www.find-tender.service.gov.uk/Notice/${encodeURIComponent(rel.id || rel.ocid || '')}`, date: rel.date || new Date().toISOString(), summary: `${String(t.description || '').slice(0, 300)}${value}${deadline}`, source: 'find_a_tender', applicant: buyer, hint: { applicant: buyer } });
+    }
+    return out;
+  } catch (e) { errors.push(`find_a_tender: ${e instanceof Error ? e.message : e}`); return []; }
+}
+
 /** Fetch everything, keep real signals, score, dedupe by link, best first. */
 export async function scan(today = new Date()) {
   const errors: string[] = [];
-  const all = (await Promise.all([fetchFeeds(errors), fetchGazette(errors), fetchPlanIt(errors), fetchLondonDatahub(errors), fetchHiring(errors)])).flat();
+  const all = (await Promise.all([fetchFeeds(errors), fetchGazette(errors), fetchPlanIt(errors), fetchLondonDatahub(errors), fetchHiring(errors), fetchFindATender(errors)])).flat();
   const seen = new Set<string>();
   const scored = all.filter(isSignal).filter(s => s.link && !seen.has(s.link) && seen.add(s.link)).map(s => score(s, today))
     .sort((a, b) => b.score - a.score);
