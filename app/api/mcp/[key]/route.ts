@@ -12,15 +12,10 @@ import {
 import {
   findByEmail, getOne, listScope, listWork, logEvent, saveEntity, searchSources, updateEntity, type Entity,
 } from '../../../../lib/bd-store';
+import '../../../../public/vanor-classify.js';
 import { lookupPerson } from '../../../../lib/rocketreach';
 import { runIntel } from '../../../../lib/intel-ingest';
-import { priorityList, normRegion, workQueue, today as todayScreen, leadMatrix } from '../../../../lib/priority';
-import { triage, setStep, followUpsDue, undoLast, recordProposal, openProposals, decisionsDue, meetingOutcome, logIntro, settleIntro, ledgerFor , proposeOutcome, skipMeeting } from '../../../../lib/pursuit';
 import { PRICE_LIST, RULES, firstStep, options as feeOptions, offerLines, decisionDateFrom } from '../../../../lib/fees';
-import { logOutcome, funnel, STEPS } from '../../../../lib/funnel';
-import { listTasks, addTask, completeTask, deriveTasks, sweepTasks } from '../../../../lib/tasks';
-import { cleanBoard } from '../../../../lib/clean';
-import { generateDrafts, approvedDrafts, markDraftPushed, saveDraft, autoClassify, batchApprove, listTemplates, saveTemplate, saveProposal, approvedProposals, markProposalPushed, getSettings } from '../../../../lib/outreach';
 import { signalFeed, setHeadline } from '../../../../lib/signals-feed';
 import { researchCompany, normCompany } from '../../../../lib/company-intel';
 import { researchBatch, saveIntel, signalContacts } from '../../../../lib/company-intel-store';
@@ -31,6 +26,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 const ACTOR = 'Claude';
+const normRegion = (v?: string) => ((globalThis as any).VanorClassify?.normRegion(v || '') || '') as string;
 const out = (data: unknown, text: string) => ({ structuredContent: data as Record<string, unknown>, content: [{ type: 'text' as const, text: text + '\n' + JSON.stringify(data) }] });
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('YYYY-MM-DD');
 const score = z.number().int().min(0).max(2);
@@ -63,28 +59,6 @@ function createServer() {
       'Never invent projects, fees, problems or contact details.',
     ].join(' ') },
   );
-
-  server.registerTool('pipeline_overview', {
-    title: 'Pipeline overview and chase list',
-    description: 'Start here. Counts by board stage and review status, cards due or overdue today, and the highest-scoring contacts not yet on the board.',
-    inputSchema: { limit: z.number().int().min(1).max(50).optional() },
-    annotations: { readOnlyHint: true },
-  }, async ({ limit }) => {
-    const [records, decisionList, work] = await Promise.all([listScope('source'), listScope('decision'), listWork()]);
-    const decisions = Object.fromEntries(decisionList.map(d => [d.id, d]));
-    const at = today();
-    const stages: Record<string, number> = {};
-    work.filter(w => !w.archived).forEach(w => { stages[w.stage] = (stages[w.stage] || 0) + 1; });
-    const review: Record<string, number> = {};
-    records.filter(r => r.kind !== 'opportunity').forEach(r => { const s = reviewStatus(r, decisions[r.id], at); review[s] = (review[s] || 0) + 1; });
-    const prio = await priorityList({ cell: 'All', limit: limit || 15, lane: 'Now' });
-    const data = {
-      today: at, contacts: records.length, withEmail: records.filter(r => r.email).length,
-      lanes: prio.lanes, workNow: prio.rows.map(x => ({ id: x.id, name: x.name, company: x.company, reason: x.reason, move: x.move })),
-      boardStages: stages, reviewStatus: review, ...chaseList(records, decisions, work, at, limit || 15),
-    };
-    return out(data, `${records.length} contacts, ${work.filter(w => !w.archived).length} live board cards.`);
-  });
 
   server.registerTool('search_contacts', {
     title: 'Search contacts',
@@ -149,63 +123,6 @@ function createServer() {
     await updateEntity('source', id, r => (!r.lastContact || String(r.lastContact).slice(0, 10) < when) ? { ...r, lastContact: when } : r);
     await logEvent({ entityId: id, recordId: id, type: `Interaction: ${kind.replace('_', ' ')}`, note: text, date: when, source: source || '' });
     return out(await summary(id), 'Interaction logged.');
-  });
-
-  server.registerTool('set_next_action', {
-    title: 'Set next action',
-    description: 'Set the next ask and date for a contact. Writes to their live board card if they have one, otherwise to their review record.',
-    inputSchema: { id: z.string(), nextAsk: z.string().min(5).max(300), nextDate: date, reason: z.string().min(5).max(500) },
-    annotations: { readOnlyHint: false, destructiveHint: false },
-  }, async ({ id, nextAsk, nextDate, reason }) => {
-    if (!validDate(nextDate)) throw new Error('Invalid date.');
-    if (!await getOne('source', id)) throw new Error(`No contact with id ${id}.`);
-    const card = (await workFor(id)).find(w => !w.archived && w.stage !== 'Won');
-    if (card) await updateEntity('work', card.id, w => ({ ...w, nextAsk, nextDate, waiting: false }));
-    else await updateEntity('decision', id, d => ({ ...d, nextAsk, nextDate }), true);
-    await logEvent({ entityId: card?.id || id, recordId: id, type: 'Next action set', note: `${nextAsk} (by ${nextDate}). ${reason}` });
-    return out(await summary(id), card ? 'Board card updated.' : 'Review record updated.');
-  });
-
-  server.registerTool('record_assessment', {
-    title: 'Record Claude assessment',
-    description: 'Save your evidence-based scoring of a contact: buyer fit (0-2) and the seven conditions (0-2 each) with the evidence for each score, plus one suggested next move. '
-      + 'Conditions: ' + CONDITIONS.map(k => `${k} = ${CONDITION_QUESTIONS[k]}`).join('; '),
-    inputSchema: {
-      id: z.string(),
-      fit: score.describe('0 = not a buyer of Vanor services, 1 = adjacent/influencer/introducer, 2 = senior decision-maker in a target sector'),
-      fitReason: z.string().min(5).max(300),
-      scores: z.object(Object.fromEntries(CONDITIONS.map(k => [k, score])) as Record<string, typeof score>),
-      evidence: z.record(z.string(), z.string().max(400)).describe('Evidence per condition you scored above 0, keyed by condition name.'),
-      suggestedAction: z.string().min(5).max(400),
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ id, fit, fitReason, scores, evidence, suggestedAction }) => {
-    for (const [k, v] of Object.entries(scores)) if (v > 0 && !evidence[k]?.trim()) throw new Error(`Give evidence for ${k} or score it 0.`);
-    const blocker = CONDITIONS.find(k => (scores as Record<string, number>)[k] < 2) || '';
-    await updateEntity('source', id, r => ({ ...r, fitScore: fit, fitReason, suggestedScores: scores, suggestedEvidence: evidence,
-      suggestedBlocker: blocker, suggestedAction, suggestionOrigin: 'Claude assessment', assessedAt: new Date().toISOString() }));
-    return out(await summary(id), 'Assessment saved as a suggestion for founder review.');
-  });
-
-  server.registerTool('record_fit_batch', {
-    title: 'Record buyer fit for many contacts',
-    description: 'Bulk-save buyer fit (0-2), sector and a short reason for up to 200 contacts at once. Only touches fit fields; never founder evidence. Use for scoring passes.',
-    inputSchema: { items: z.array(z.object({ id: z.string(), fit: score, sector: z.string().max(40), reason: z.string().max(200) })).min(1).max(200) },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ items }) => {
-    let saved = 0; const missing: string[] = [];
-    const queue = [...items];
-    const worker = async () => {
-      for (let item = queue.shift(); item; item = queue.shift()) {
-        const it = item;
-        try {
-          await updateEntity('source', it.id, r => ({ ...r, fitScore: it.fit, fitSector: it.sector, fitReason: it.reason, assessedAt: r.assessedAt || new Date().toISOString() }));
-          saved++;
-        } catch { missing.push(it.id); }
-      }
-    };
-    await Promise.all(Array.from({ length: 20 }, worker));
-    return out({ saved, missing }, `Saved fit for ${saved} contact(s).`);
   });
 
   server.registerTool('add_lead', {
@@ -276,218 +193,6 @@ function createServer() {
     annotations: { readOnlyHint: true },
   }, async ({ minFit, maxAgeDays, limit }) => out(await signalContacts({ minFit: minFit ?? 2, maxAgeDays: maxAgeDays ?? 120, limit: limit ?? 40 }), 'Signals listed.'));
 
-  server.registerTool('priority_list', {
-    title: 'Priority matrix: who to work, in order',
-    description: 'Who to work, in order. Every contact has ONE lane: Now (work this week: live opportunity, they replied, unanswered thread, fresh trigger on a right buyer, hiring), Next (right buyer with email and nothing live, intro to ask for, gone quiet), Later (nothing to do until research flags a trigger), Off (not a buyer or archived). Each row carries lane, reason and move in plain English. Pass lane="Now" for the founders\' working list. The older cell/grade fields remain for reference: Grade A/B/C = right buyer, Heat 1-3 = need + relationship, cells A1…C, T1 = top 40 grade-A accounts.',
-    inputSchema: { lane: z.enum(['Now', 'Next', 'Later', 'Off']).optional(), region: z.string().max(40).optional().describe('London, South East, North West, Scotland… or UK-wide'), cell: z.enum(['All', 'A1', 'A2', 'A3', 'B1', 'B2', 'B3', 'T1']).optional(), limit: z.number().int().min(1).max(100).optional() },
-    annotations: { readOnlyHint: true },
-  }, async ({ cell, limit, lane, region }) => out(await priorityList({ cell: cell || 'All', limit: limit || 30, lane, region }), 'Priority list.'));
-
-  server.registerTool('log_outcome', {
-    title: 'Log an outreach outcome (closes the loop)',
-    description: 'Record a funnel step against a contact: sent (an email Barry/Graeme actually sent, from Outlook Sent Items), reply (the contact wrote back), meeting_booked (calendar event with them), meeting_held, proposal, won. '
-      + 'Pass ref = the Outlook message id or calendar event id so the same thing is never counted twice. trigger = the signal that led to the outreach (lending, property, planning, distress, new_spv, new_director, scan, warm, none). Drafts are NOT sent; never log a draft as sent.',
-    inputSchema: {
-      id: z.string(), step: z.enum(STEPS), date, ref: z.string().max(300).optional(), trigger: z.string().max(40).optional(),
-      channel: z.enum(['email', 'call', 'linkedin', 'in_person']).optional(), note: z.string().min(5).max(1000), source: z.string().max(80).optional(),
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async (input) => out(await logOutcome(input), 'Outcome logged.'));
-
-  server.registerTool('move_events', {
-    title: 'Move misfiled history to the right contact',
-    description: 'Re-attach Claude-logged interactions/outcomes that were filed against the wrong contact. Moves every Claude-authored event on fromId whose "at" timestamp falls within [fromAt, toAt] to toId. Founder-authored events are never moved. Returns the moved count.',
-    inputSchema: { fromId: z.string(), toId: z.string(), fromAt: z.string().describe('ISO timestamp, inclusive'), toAt: z.string().describe('ISO timestamp, inclusive') },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ fromId, toId, fromAt, toAt }) => {
-    if (!await getOne('source', toId)) throw new Error(`No contact with id ${toId}.`);
-    const events = (await listScope('event')).filter(e => (e.recordId === fromId || e.entityId === fromId) && e.actor === ACTOR && String(e.at) >= fromAt && String(e.at) <= toAt);
-    let moved = 0, latest = '';
-    for (const e of events) {
-      const saved = await saveEntity('event', { ...e, entityId: e.entityId === fromId ? toId : e.entityId, recordId: toId, movedFrom: fromId }, e._rev || 1);
-      if (saved) { moved++; latest = [latest, String(e.date || e.at).slice(0, 10)].sort().pop() || latest; }
-    }
-    if (latest) await updateEntity('source', toId, r => (!r.lastContact || String(r.lastContact).slice(0, 10) < latest) ? { ...r, lastContact: latest } : r);
-    return out({ moved, of: events.length }, `Moved ${moved} events.`);
-  });
-
-  server.registerTool('generate_draft', {
-    title: 'Engine draft for a contact',
-    description: 'Runs the outreach engine for one contact: picks the angle (signal-led, nurture, intro via a warm contact, first approach, chase) and writes a first draft in Barry\'s voice onto the record (decision.draft, status "suggested"). Returns it so you can polish it with save_draft. Never overwrites a draft the founders have edited or approved.',
-    inputSchema: { id: z.string() },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ id }) => { const made = await generateDrafts({ ids: [id], limit: 1 }); const d = await getOne('decision', id); return out({ ...made, draft: d?.draft || null }, 'Draft generated.'); });
-
-  server.registerTool('save_draft', {
-    title: 'Save a polished draft onto the record',
-    description: 'Write your improved subject/body/angle for a contact into the board (decision.draft). Keep BARRY\'S VOICE. Status stays "suggested" until a founder approves it in the board; an approved or pushed draft is never downgraded. Use after generate_draft, or for a contact with no draft.',
-    inputSchema: { id: z.string(), subject: z.string().min(2).max(120), body: z.string().min(20).max(3000), angle: z.string().max(200).optional(), kind: z.enum(['signal', 'nurture', 'intro', 'first', 'chase', 'post_meeting']).optional(), to: z.string().email().optional() },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ id, ...patch }) => out(await saveDraft(id, patch as any, 'Claude'), 'Draft saved.'));
-
-  server.registerTool('approved_drafts', {
-    title: 'Drafts approved in the board, waiting for Outlook',
-    description: 'Founders approve drafts inside the board. This lists those not yet in Outlook Drafts: to, subject, body (plain text, already in Barry\'s voice, do not rewrite). Create each as an Outlook DRAFT (never send), then call mark_draft_pushed with the Outlook message id.',
-    inputSchema: { limit: z.number().int().min(1).max(50).optional() },
-    annotations: { readOnlyHint: true },
-  }, async ({ limit }) => out({ drafts: await approvedDrafts(limit || 30) }, 'Approved drafts.'));
-
-  server.registerTool('mark_draft_pushed', {
-    title: 'Record that an approved draft is now in Outlook Drafts',
-    inputSchema: { id: z.string(), outlookId: z.string().min(5) },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ id, outlookId }) => out(await markDraftPushed(id, outlookId), 'Marked pushed.'));
-
-  server.registerTool('auto_classify', {
-    title: 'Auto-classify unscored contacts',
-    description: 'Gives every contact with no fit score a provisional fit (0-2), sector and reason from segment and seniority. Runs daily at 06:40 anyway; call it after adding many leads. Never overwrites existing scores.',
-    inputSchema: { limit: z.number().int().min(1).max(500).optional() },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ limit }) => out(await autoClassify({ limit: limit || 300 }), 'Classified.'));
-
-  server.registerTool('batch_approve', {
-    title: 'Approve the top polished drafts in one go',
-    description: 'Approves up to N drafts (ranked by priority score) that Claude has polished or a founder has edited; raw engine text is never approved this way. Respects the board setting (batchApprove on/off, daily cap). Use only when the board setting allows it; founders can also press "Approve top N" in the board.',
-    inputSchema: { limit: z.number().int().min(1).max(25).optional() },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
-  }, async ({ limit }) => out(await batchApprove({ limit, actor: 'Claude' }), 'Batch approved.'));
-
-  server.registerTool('list_templates', {
-    title: 'Email templates the engine uses',
-    description: 'The editable template library (first_approach, signal_cold, signal_warm, nurture, chase1, chase2, intro_ask, post_meeting, proposal_cover) with placeholders {first} {company} {wc} {offer} {scheme} {via_first} {name}. custom=true when a founder has edited it. When polishing a draft, stay close to the template the founders chose.',
-    inputSchema: {},
-    annotations: { readOnlyHint: true },
-  }, async () => out({ templates: await listTemplates(), settings: await getSettings() }, 'Templates.'));
-
-  server.registerTool('save_template', {
-    title: 'Edit an email template',
-    description: 'Overwrite a template\'s subject and/or body. Only do this when a founder asks for a template change; keep the placeholders.',
-    inputSchema: { key: z.string(), subject: z.string().max(120).optional(), body: z.string().max(3000).optional() },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ key, ...patch }) => out(await saveTemplate(key, patch), 'Template saved.'));
-
-  server.registerTool('save_proposal', {
-    title: 'Draft a proposal onto a contact record',
-    description: 'After a logged meeting that names a scheme or problem, write a short staged proposal (Stress Test / peer review / position finding, then options) in plain text: title, scheme, body (the proposal, 300-900 words, headed sections, fees only if the founders stated them), cover (the covering email in Barry\'s voice, use the proposal_cover template), subject, to. Stored as decision.proposal status "suggested"; founders approve in the board under Today > Proposals to issue; the morning run then puts it in Outlook Drafts (never sent). Never overwrites an approved or pushed proposal.',
-    inputSchema: { id: z.string(), title: z.string().min(3).max(160), scheme: z.string().max(160), body: z.string().min(100).max(12000), cover: z.string().min(20).max(3000), subject: z.string().min(2).max(120), to: z.string().email() },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ id, ...p }) => out(await saveProposal(id, p), 'Proposal saved.'));
-
-  server.registerTool('approved_proposals', {
-    title: 'Proposals approved in the board, waiting for Outlook',
-    description: 'List approved proposals not yet in Outlook Drafts: to, subject, cover (email body), body (proposal text, append under a line after the cover, or attach as the email body). Create an Outlook DRAFT (never send), then mark_proposal_pushed.',
-    inputSchema: { limit: z.number().int().min(1).max(50).optional() },
-    annotations: { readOnlyHint: true },
-  }, async ({ limit }) => out({ proposals: await approvedProposals(limit || 20) }, 'Approved proposals.'));
-
-  server.registerTool('mark_proposal_pushed', {
-    title: 'Record that an approved proposal is now in Outlook Drafts',
-    inputSchema: { id: z.string(), outlookId: z.string().min(5) },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ id, outlookId }) => out(await markProposalPushed(id, outlookId), 'Marked pushed.'));
-
-  server.registerTool('list_tasks', {
-    title: 'Tasks on the board',
-    description: 'The founders\' task list: next asks, drafts to send, proposals to send, event prep and follow-ups, promises from meetings. Filter by owner (Barry/Graeme/All) and status (Open/Done/Snoozed/All). dueBefore = YYYY-MM-DD.',
-    inputSchema: { owner: z.string().optional(), status: z.enum(['Open', 'Done', 'Snoozed', 'All']).optional(), dueBefore: z.string().optional(), limit: z.number().int().min(1).max(300).optional() },
-    annotations: { readOnlyHint: true },
-  }, async (a) => out({ tasks: await listTasks(a as any) }, 'Tasks.'));
-  server.registerTool('add_task', {
-    title: 'Add a task for a founder',
-    description: 'Use for a concrete commitment Barry or Graeme made (from a meeting transcript or email), or something only they can do. One line, imperative, with a due date. Idempotent on source + title. Never add vague tasks ("follow up").',
-    inputSchema: { title: z.string().min(5).max(140), owner: z.enum(['Barry', 'Graeme']), due: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), priority: z.enum(['High', 'Normal', 'Low']).optional(), sourceKind: z.enum(['record', 'event', 'meeting', 'manual']).optional(), sourceId: z.string().optional(), sourceLabel: z.string().optional(), notes: z.string().max(600).optional() },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ title, owner, due, priority, sourceKind, sourceId, sourceLabel, notes }) => out(await addTask({ title, owner, due, priority: priority || 'Normal', source: { kind: sourceKind || 'meeting', id: sourceId, label: sourceLabel }, notes: notes || '', createdBy: 'Claude' }), 'Task added.'));
-  server.registerTool('complete_task', {
-    title: 'Mark a task done',
-    description: 'Only when the evidence shows it was done (e.g. the email was sent, the booking confirmed). Say why in the note of a log_interaction if relevant.',
-    inputSchema: { id: z.string() },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ id }) => out(await completeTask(id, 'Claude'), 'Done.'));
-  server.registerTool('derive_tasks', {
-    title: 'Refresh engine tasks',
-    description: 'Creates tasks from next asks, pushed drafts and proposals, event deadlines and event follow-ups. Runs daily anyway.',
-    inputSchema: {}, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async () => out(await deriveTasks(), 'Derived.'));
-  server.registerTool('clean_board', {
-    title: 'Clean the contact list',
-    description: 'Finds duplicate people (same email, or same name at the same company) and dead records (no name, no email, no company or signal). With apply=false it only reports. With apply=true it archives the duplicates (keeping the richest or any founder-touched record) and the dead ones, each with a reason, never deleting. Records with a board card, assessment, draft, next ask or founder-logged history are never touched.',
-    inputSchema: { apply: z.boolean().optional(), limit: z.number().int().min(1).max(2000).optional() },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ apply, limit }) => out(await cleanBoard({ apply: !!apply, limit: limit || 400 }), 'Clean-up.'));
-  server.registerTool('sweep_tasks', {
-    title: 'Overdue sweep',
-    description: 'Closes tasks whose reason has gone (contact archived, draft or proposal no longer waiting in Outlook, event passed, 45+ days overdue) and returns what is still overdue, oldest first, plus a one-line summary for the daily report. Nothing is deleted. Runs daily anyway.',
-    inputSchema: {}, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async () => out(await sweepTasks(), 'Swept.'));
-
-  server.registerTool('work_queue', {
-    title: 'The one ranked list (follow-ups due, to do, inbox)',
-    description: 'What the Focus screen shows. Every live contact in one of six buckets, ranked: followup (email issued, clock run out, no reply), todo (founder said yes; steps to_write / replied / meeting / proposal), inbox (nobody has said yes or no yet; only Now/Next lanes), waiting (email issued, clock still running), later (parked), off. Default returns followup + todo + inbox + waiting ranked. Filter by bucket and region.',
-    inputSchema: { bucket: z.enum(['followup', 'todo', 'inbox', 'waiting', 'later', 'off']).optional(), region: z.string().optional(), limit: z.number().int().min(1).max(500).optional() },
-    annotations: { readOnlyHint: true },
-  }, async ({ bucket, region, limit }) => out(await workQueue({ bucket, region, limit: limit || 50 }), 'Queue.'));
-  server.registerTool('triage_lead', {
-    title: 'Triage a lead: yes, no or later',
-    description: 'The founders\' decision on a lead. yes = a proper lead, goes on the To do list at step to_write. no = not a lead, archived with the reason (never deleted). later = parked for `days` (default 30), then back in the inbox. Only call this when Barry or Graeme has made the decision in chat; never decide for them.',
-    inputSchema: { id: z.string(), decision: z.enum(['yes', 'no', 'later']), reason: z.string().optional(), days: z.number().int().min(1).max(365).optional(), actor: z.enum(['Barry', 'Graeme']).optional() },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ id, decision, reason, days, actor }) => out(await triage(id, decision, actor || 'Barry', reason || '', days || 30), 'Triaged.'));
-  server.registerTool('pursuit_step', {
-    title: 'Move a pursued lead along (email issued, replied, meeting, proposal, won, lost)',
-    description: 'Steps for a lead the founders said yes to. sent = "email issued": logs Outcome: sent and starts the follow-up clock (5 working days; 7 after the second chase); call it again when a chase goes. replied / meeting / proposal / won log the matching outcome and stop the clock. lost archives with the note. Only when a founder has said so in chat or the mailbox shows it (a reply or a sent email to that person).',
-    inputSchema: { id: z.string(), step: z.enum(['to_write', 'sent', 'replied', 'meeting', 'proposal', 'won', 'lost']), note: z.string().optional(), actor: z.enum(['Barry', 'Graeme']).optional() },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
-  }, async ({ id, step, note, actor }) => out(await setStep(id, step, actor || 'Barry', note || ''), 'Stepped.'));
-  server.registerTool('undo_pursuit', {
-    title: 'Undo the last board press on a lead',
-    description: 'Restores the lead to the state before the last Yes/No/Later or step press and retires the outcome event it logged (kept as "Undone: …"). Only when a founder says a press was a mistake.',
-    inputSchema: { id: z.string(), actor: z.enum(['Barry', 'Graeme']).optional() },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
-  }, async ({ id, actor }) => out(await undoLast(id, actor || 'Barry'), 'Undone.'));
-  server.registerTool('follow_ups_due', {
-    title: 'Follow-ups due (the alert list)',
-    description: 'Leads where an email was issued, the clock has run out and nobody has replied. Ordered by how long overdue. With tasks=true also creates a "Chase X" task per lead (idempotent) so the morning report carries it. Use this at the top of every daily and hourly report.',
-    inputSchema: { tasks: z.boolean().optional() },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ tasks }) => out(await followUpsDue({ createTasks: !!tasks }), 'Follow-ups.'));
-
-  server.registerTool('today', {
-    title: 'The Today screen: chase, write, waiting',
-    description: 'What Barry sees. One row per live contact: section (chase = a clock has run out: no reply, or a proposal past its decision date; write = someone replied or was met and nothing has gone back; waiting = sent, clock running; new = untriaged), one sentence of what to do, the due date and the one button. Use this first in every report; it replaces work_queue + follow_ups_due + proposals_open for reading. Those remain for writing tasks.',
-    inputSchema: { section: z.enum(['chase', 'write', 'waiting', 'new', 'touch']).optional(), region: z.string().max(40).optional(), limit: z.number().int().min(1).max(300).optional() },
-    annotations: { readOnlyHint: true },
-  }, async ({ section, region, limit }) => out(await todayScreen({ section, region, limit: limit || 100 }), 'Today.'));
-  server.registerTool('lead_matrix', {
-    title: 'Lead matrix: every contact classified by five fixed questions, with P(fee) and expected value',
-    description: 'v3.1 (30 Oct 2026). Jev-style, no model judgement: Who (buyer / introducer / other), Need (live / latent / none), Access (warm / replied / email / none), Stage (none / sent / replied / met / opportunity / priced / won), Timing (now / soon / later), each read from the record and the event log. Returns the cells with counts and expected value, the calibrated step rates (Vanor funnel Beta-blended with research priors), pipeline expected value and the top rows by expected value with their one action. MODELLED, not a forecast; say so whenever you quote a number from it. Use it in the Monday review.',
-    inputSchema: { limit: z.number().int().min(1).max(50).optional() },
-    annotations: { readOnlyHint: true },
-  }, async ({ limit }) => out(await leadMatrix({ limit: limit || 15 }), 'Lead matrix.'));
-  server.registerTool('touches_due', {
-    title: 'Keep in touch: contacts whose tier cadence has run out',
-    description: 'v3 (29 Oct 2026). Every contact has a tier (A monthly, B quarterly, C yearly, Parked = no cadence), worked out from the record unless a founder set it, and a last touch (newest sent, reply, meeting or intro). This lists the ones overdue with nothing live, best first (A before B before C, then most overdue). Draft at most three a day: a short note in Barry\'s voice with one specific item (their scheme, a piece of news, an introduction) and no ask; "no ask" is the rule.',
-    inputSchema: { limit: z.number().int().min(1).max(50).optional() },
-    annotations: { readOnlyHint: true },
-  }, async ({ limit }) => { const t = await todayScreen({ section: 'touch', limit: limit || 10 }); return out({ count: t.counts.touch, rows: t.rows.map(r => ({ id: r.id, name: r.name, company: r.company, email: r.email, tier: r.tier, lastTouch: r.lastTouch, nextTouch: r.nextTouch, type: r.type, sentence: r.sentence })) }, 'Touches due.'); });
-  server.registerTool('meeting_outcome', {
-    title: 'The one press after a buyer meeting: opportunity, relationship or done',
-    description: 'opportunity = a scheme is named; the follow-up offers a bounded free first look (2 hours, one page, inside a week) and states the stage-2 price and a decision date. relationship = no job now; re-engage on a date (default 60 days), nothing chased until then. done = thanks and move on; archived. Only call when a founder confirmed it in chat, or propose it in the report for one-click confirmation; when a transcript makes it obvious (a scheme named and a next step agreed), call it with the scheme and say so in the report.',
-    inputSchema: { id: z.string(), outcome: z.enum(['opportunity', 'relationship', 'done']), scheme: z.string().max(160).optional(), reengageDays: z.number().int().min(7).max(365).optional(), reason: z.string().max(200).optional(), actor: z.enum(['Barry', 'Graeme']).optional() },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ id, outcome, scheme, reengageDays, reason, actor }) => out(await meetingOutcome(id, outcome, actor || 'Barry', { scheme, reengageDays, reason }), 'Outcome recorded.'));
-  server.registerTool('propose_outcome', {
-    title: 'Reconcile: propose the outcome of a buyer meeting from the transcript',
-    description: 'v3 (29 Oct 2026). The reconcile job calls this instead of meeting_outcome. The board shows "proposed: opportunity (scheme)" on the row with the proposed button first; Barry or Graeme confirms or changes it; if untouched for two working days the proposal stands and the follow-up flow runs. Pass evidence = the transcript line that decided it (max 300 chars). Never call meeting_outcome from a scheduled run.',
-    inputSchema: { id: z.string(), outcome: z.enum(['opportunity', 'relationship', 'done']), scheme: z.string().max(160).optional(), reengageDays: z.number().int().min(7).max(365).optional(), reason: z.string().max(200).optional(), evidence: z.string().max(300).optional(), ref: z.string().max(300).optional() },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ id, outcome, scheme, reengageDays, reason, evidence, ref }) => out(await proposeOutcome(id, outcome, { scheme, reengageDays, reason, evidence, ref }), 'Outcome proposed.'));
-  server.registerTool('skip_meeting', {
-    title: 'Reconcile: record that a calendar event needed no BD action',
-    description: 'v3. Every external calendar event today ends as processed (log_outcome meeting_held + propose_outcome) or skipped; call this for the skips (internal, personal, cancelled, no-show, supplier) so the day ends with zero unaccounted events. ref = the calendar event id.',
-    inputSchema: { ref: z.string().max(300), subject: z.string().max(200), reason: z.string().max(200), date: date.optional() },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ ref, subject, reason, date: d }) => out(await skipMeeting(ref, subject, reason, d), 'Skipped.'));
   const pursuitItem = z.object({
     id: z.string().optional(), name: z.string().min(2).max(120).optional(),
     lane: z.enum(['funder', 'claims', 'dc', 'hotel', 'offices', 'other']).optional(),
@@ -533,23 +238,6 @@ function createServer() {
     inputSchema: { limit: z.number().int().min(1).max(200).optional(), all: z.boolean().optional() },
     annotations: { readOnlyHint: true },
   }, async ({ limit, all }) => out(await peopleDue({ limit: limit || 20, onlyDue: !all }), 'People due.'));
-  server.registerTool('log_intro', {
-    title: 'Introductions ledger: made, promised or lead passed',
-    description: 'made = Barry or Graeme introduced this contact to someone (they owe us one; after 10 working days the board asks how it went). promised = this contact said they will introduce us to someone (chased after 10 working days). lead_passed = we handed this contact a project or a name. counterpart = the other party, as named. Idempotent on contact + kind + date + counterpart.',
-    inputSchema: { id: z.string(), kind: z.enum(['made', 'promised', 'lead_passed']), counterpart: z.string().min(2).max(120), about: z.string().max(300).optional(), date: z.string().optional().describe('yyyy-mm-dd, default today'), actor: z.enum(['Barry', 'Graeme']).optional() },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async (input) => out(await logIntro(input), 'Intro logged.'));
-  server.registerTool('settle_intro', {
-    title: 'Mark an introduction as happened or lapsed',
-    inputSchema: { eventId: z.string(), status: z.enum(['happened', 'lapsed']), actor: z.enum(['Barry', 'Graeme']).optional() },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ eventId, status, actor }) => out(await settleIntro(eventId, status, actor || 'Barry'), 'Settled.'));
-  server.registerTool('ledger', {
-    title: 'Who owes whom: the introductions ledger for a contact',
-    inputSchema: { id: z.string() },
-    annotations: { readOnlyHint: true },
-  }, async ({ id }) => out(ledgerFor(await listScope('event'), id), 'Ledger.'));
-
   server.registerTool('price_list', {
     title: 'Vanor price list and the first step to offer a lead',
     description: 'The fixed price list (from the pricing workbook, 16 Oct 2026) and, for a given contact id, the first-step product to offer, options A/B/C, a decision date ten working days out and the two sentences to put in the follow-up email in Barry\'s voice. Read-only. Use it when drafting any follow-up to a buyer meeting: every buyer follow-up carries a priced first step and a decision date.',
@@ -560,19 +248,6 @@ function createServer() {
     const dd = decisionDate || decisionDateFrom();
     return out({ rules: RULES, priceList: PRICE_LIST, ...(rec ? { contact: { id, name: rec.name, company: rec.company, type: rec.type, stage: rec.stage }, firstStep: firstStep(rec), options: feeOptions(rec), decisionDate: dd, offerLines: offerLines(rec, dd) } : {}) }, 'Price list.');
   });
-  server.registerTool('record_proposal', {
-    title: 'Record a priced ask put to a client',
-    description: 'Call this when an email Barry or Graeme actually SENT (Sent Items) or a meeting put a price and a decision date to a client. Moves the lead to step proposal, stores price and decision date, starts the decision clock. Never for drafts.',
-    inputSchema: { id: z.string(), product: z.string().optional().describe('price_list key or name'), price: z.number().min(0), unit: z.enum(['fixed', 'month']).optional(), options: z.string().max(200).optional().describe('e.g. "A £9,500 / B £25,000 / C £13,000 a month"'), decisionDate: z.string().describe('yyyy-mm-dd'), note: z.string().max(500).optional(), ref: z.string().max(300).optional().describe('Outlook message id or calendar event id'), actor: z.enum(['Barry', 'Graeme']).optional() },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async (input) => out(await recordProposal(input), 'Proposal recorded.'));
-  server.registerTool('proposals_open', {
-    title: 'Open proposals and decisions due',
-    description: 'Every open proposal with price, decision date and days left (negative = overdue). With tasks=true also creates a "Decision due" task for each one whose date has arrived or that has no date. Use at the top of every daily report after follow_ups_due.',
-    inputSchema: { tasks: z.boolean().optional() },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ tasks }) => out(tasks ? await decisionsDue({ createTasks: true }) : { open: await openProposals() }, 'Proposals.'));
-
   server.registerTool('signal_feed', {
     title: 'Signals feed (what the board shows under Signals)',
     description: 'Newest-first list of surfaced leads and company signals: id, key, date, source, headline, why, text, cell, polished (true once a Claude headline exists). Use to polish headlines (set_headline) and for the weekly digest. buyersOnly=false includes grade-C companies (e.g. Gazette insolvencies).',
@@ -586,13 +261,6 @@ function createServer() {
     inputSchema: { id: z.string(), key: z.string(), headline: z.string().min(8).max(90), why: z.string().min(8).max(160) },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ id, key, headline, why }) => out(await setHeadline(id, key, { headline, why }), 'Headline saved.'));
-
-  server.registerTool('funnel_report', {
-    title: 'Outreach funnel and what is working',
-    description: 'Counts of sent / replies / meetings / proposals / won over the last N days (default 30), reply and meeting rates, and the same split by trigger type and priority cell so you can see which triggers and plays convert. Use in the Monday brief.',
-    inputSchema: { days: z.number().int().min(7).max(365).optional() },
-    annotations: { readOnlyHint: true },
-  }, async ({ days }) => out(await funnel({ days: days || 30 }), 'Funnel.'));
 
   server.registerTool('fill_contact_details', {
     title: 'Fill missing contact details',

@@ -1,17 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'node:crypto';
+import '../../../../public/vanor-classify.js';
 import { categoriseLead } from '../../../../lib/lead-categorisation';
 
 import { workspaceAccess } from '../../../../lib/workspace-auth';
 import { issueTicket } from '../../../../lib/import-backup';
 import { researchCompany, normCompany } from '../../../../lib/company-intel';
 import { saveIntel, researchBatch } from '../../../../lib/company-intel-store';
-import { autoClassify, generateDrafts, batchApprove, listTemplates, saveTemplate, getSettings } from '../../../../lib/outreach';
 import { runIntel } from '../../../../lib/intel-ingest';
 import { lookupPerson, searchPeople } from '../../../../lib/rocketreach';
-import { addTask, completeTask, snoozeTask, deriveTasks, sweepTasks } from '../../../../lib/tasks';
-import { normRegion, workQueue, today } from '../../../../lib/priority';
-import { triage, setStep, STEP_LABEL, followUpsDue, undoLast, recordProposal, meetingOutcome, logIntro, settleIntro } from '../../../../lib/pursuit';
 import { logEvent, saveEntity as storeSave, updateEntity as storeUpdate } from '../../../../lib/bd-store';
 import { runBackup } from '../../../../lib/backup-job';
 
@@ -178,10 +175,6 @@ export async function GET(request: NextRequest, context: Context) {
       if (error) throw error;
       return reply({ revision: data?.[0]?.updated_at || '' });
     }
-    if (action === 'templates') return reply({ templates: await listTemplates(), settings: await getSettings() });
-    if (action === 'queue') { const q = request.nextUrl.searchParams; return reply(await workQueue({ bucket: (q.get('bucket') || undefined) as any, region: q.get('region') || undefined, limit: Number(q.get('limit') || 50) })); }
-    if (action === 'today') return reply(await today({ section: (request.nextUrl.searchParams.get('section') || undefined) as any, region: request.nextUrl.searchParams.get('region') || undefined }));
-    if (action === 'follow-ups') return reply(await followUpsDue({ createTasks: request.nextUrl.searchParams.get('tasks') === '1' }));
     if (action === 'entity') {
       const scope = request.nextUrl.searchParams.get('scope') || '';
       const id = request.nextUrl.searchParams.get('id') || '';
@@ -198,6 +191,8 @@ export async function GET(request: NextRequest, context: Context) {
   } catch (error) { return fail(error); }
 }
 
+const normRegion = (v?: string) => ((globalThis as any).VanorClassify?.normRegion(v || '') || '') as string;
+
 export async function POST(request: NextRequest, context: Context) {
   try {
     const action = await actionFor(context);
@@ -206,34 +201,7 @@ export async function POST(request: NextRequest, context: Context) {
     if (action === 'run-scan') return reply(await runIntel({ write: true }));
     if (action === 'run-research') return reply(await researchBatch({ limit: 25, budgetMs: 45000 }));
     if (action === 'run-backup') return reply(await runBackup());
-    if (action === 'run-drafts') return reply({ classified: await autoClassify({ limit: 120 }), drafts: await generateDrafts({ limit: 40 }) });
-    if (action === 'batch-approve') { const { data } = await access.db.auth.getUser(); const email = data.user?.email || ''; return reply(await batchApprove({ actor: /graeme/i.test(email) ? 'Graeme' : 'Barry' })); }
     const body: any = await request.json();
-    if (action === 'template') {
-      const key = String(body?.key || '');
-      await saveTemplate(key, body?.reset ? { subject: undefined, body: undefined, reset: true } : { subject: body?.subject, body: body?.body }); return reply({ templates: await listTemplates() });
-    }
-    if (action === 'sync-tasks') { const d = await deriveTasks(); return reply({ ...d, sweep: await sweepTasks() }); }
-    if (action === 'task') {
-      const { data } = await access.db.auth.getUser(); const actor = /graeme/i.test(data.user?.email || '') ? 'Graeme' : 'Barry';
-      if (body?.op === 'done' || body?.op === 'reopen') return reply(await completeTask(String(body.id), actor, body.op === 'done'));
-      if (body?.op === 'snooze') return reply(await snoozeTask(String(body.id), Number(body.days || 7), actor));
-      if (body?.op === 'add') return reply(await addTask({ id: 'task:' + crypto.randomUUID(), title: String(body.title || '').slice(0, 140), owner: body.owner === 'Graeme' ? 'Graeme' : 'Barry', due: String(body.due || ''), priority: ['High', 'Low'].includes(body.priority) ? body.priority : 'Normal', source: { kind: 'manual', id: body.sourceId || undefined, label: body.sourceLabel || undefined }, notes: String(body.notes || ''), createdBy: actor }));
-      return reply({ error: 'Unknown task op.' }, 400);
-    }
-    if (action === 'pursue') {
-      // The decision flow: triage yes/no/later, then steps (to_write, sent = "email issued", replied, meeting, proposal, won, lost).
-      const { data } = await access.db.auth.getUser(); const actor = /graeme/i.test(data.user?.email || '') ? 'Graeme' : 'Barry';
-      const id = String(body?.id || ''); if (!id) return reply({ error: 'No id.' }, 400);
-      if (body?.op === 'triage') { const t = String(body.decision || ''); if (!['yes', 'no', 'later'].includes(t)) return reply({ error: 'decision must be yes, no or later.' }, 400); return reply(await triage(id, t as any, actor, String(body.reason || ''), Number(body.days || 30))); }
-      if (body?.op === 'step' && body.step === 'proposal' && (body.price != null || body.decisionDate)) { return reply(await recordProposal({ id, price: Number(body.price || 0), unit: body.unit === 'month' ? 'month' : 'fixed', product: String(body.product || ''), decisionDate: String(body.decisionDate || ''), actor, note: String(body.note || '') })); }
-      if (body?.op === 'step') { const s = String(body.step || ''); if (!Object.keys(STEP_LABEL).includes(s)) return reply({ error: 'Unknown step.' }, 400); return reply(await setStep(id, s as any, actor, String(body.note || ''))); }
-      if (body?.op === 'outcome') { const o = String(body.outcome || ''); if (!['opportunity', 'relationship', 'done'].includes(o)) return reply({ error: 'outcome must be opportunity, relationship or done.' }, 400); return reply(await meetingOutcome(id, o as any, actor, { scheme: String(body.scheme || ''), reengageDays: Number(body.reengageDays || 60), reason: String(body.reason || '') })); }
-      if (body?.op === 'intro') { const k = String(body.kind || ''); if (!['made', 'promised', 'lead_passed'].includes(k)) return reply({ error: 'kind must be made, promised or lead_passed.' }, 400); return reply(await logIntro({ id, kind: k as any, counterpart: String(body.counterpart || '').trim() || 'someone', about: String(body.about || ''), actor })); }
-      if (body?.op === 'introSettle') return reply(await settleIntro(String(body.eventId || ''), body.status === 'lapsed' ? 'lapsed' : 'happened', actor));
-      if (body?.op === 'undo') return reply(await undoLast(id, actor));
-      return reply({ error: 'Unknown pursue op.' }, 400);
-    }
     if (action === 'find-contacts') {
       // On demand only: founders press the button once a lead is worth pursuing. Adds up to 3 decision-makers at the company as leads with whatever RocketReach returns.
       const id = String(body?.id || ''); const rec = id ? await one(access, 'source', id) : null;
@@ -263,13 +231,6 @@ export async function POST(request: NextRequest, context: Context) {
       await storeUpdate('source', id, r => ({ ...r, email: r.email || result.emails[0]?.email || '', phone: r.phone || result.phones[0]?.number || '', linkedin: r.linkedin || result.linkedin || '', jobTitle: r.jobTitle || result.title || '', region: (!r.region || /^(uk|uk-wide)$/i.test(String(r.region))) && result.location ? (normRegion(result.location) || r.region || '') : r.region, enrichment: { provider: 'RocketReach', at: new Date().toISOString(), ...result } }));
       await logEvent({ entityId: id, recordId: id, type: 'Contact enriched', actor: 'RocketReach search', note: `On request: ${result.status}, ${result.emails.length} email(s), ${result.phones.length} phone(s).` });
       return reply({ status: result.status, email: result.emails[0]?.email || '', phone: result.phones[0]?.number || '', linkedin: result.linkedin || '' });
-    }
-    if (action === 'draft') {
-      const id = String(body?.id || '');
-      if (!id) return reply({ error: 'Give a contact id.' }, 400);
-      const made = await generateDrafts({ ids: [id], limit: 1 });
-      const stored = await one(access, 'decision', id);
-      return reply({ ...made, decision: stored });
     }
     if (action === 'research') {
       const name = String(body?.company || '').trim();

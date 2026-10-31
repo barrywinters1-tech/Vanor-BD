@@ -1,6 +1,5 @@
 // Server-side view of the Signals feed, for the Claude runs (headline polishing, weekly digest).
 import { listScope, updateEntity, type Entity } from './bd-store';
-import { priorityList } from './priority';
 import { STAGE_PLAY, type Stage } from './lead-classify';
 import '../public/vanor-classify.js';
 const iso = (v: any) => ((globalThis as any).VanorClassify?.isoDate?.(v) as string) || String(v || '').slice(0, 10);
@@ -28,9 +27,9 @@ const CH_STAGE: Record<string, string> = { property: 'funded', lending: 'funded'
 
 export async function signalFeed({ days = 30, buyersOnly = true, limit = 60 }: { days?: number; buyersOnly?: boolean; limit?: number } = {}): Promise<FeedItem[]> {
   const since = new Date(Date.now() - days * DAY).toISOString().slice(0, 10);
-  const [records, decisions, prio] = await Promise.all([listScope('source'), listScope('decision'), priorityList({ cell: 'All', limit: 5000 })]);
+  const [records, decisions] = await Promise.all([listScope('source'), listScope('decision')]);
   const dById = new Map(decisions.map(d => [d.id, d]));
-  const cellOf = new Map<string, { cell: string; score: number }>((prio.rows || []).map((x: any) => [x.id, { cell: x.cell, score: x.score }]));
+  const cellOf = new Map<string, { cell: string; score: number }>();
   const items: FeedItem[] = [];
   const dismissed = (id: string) => new Set<string>((dById.get(id)?.dismissedSignals as string[]) || []);
   for (const r of records) {
@@ -59,7 +58,7 @@ export async function signalFeed({ days = 30, buyersOnly = true, limit = 60 }: {
       items.push({ id: target.id, key, date, source: SOURCE[sg.type] || 'Companies House', headline: h.headline || headline(r.company, sg), why: h.why || '', text: `${sg.text || ''}${mates.length ? ` · ${mates.length} contact${mates.length > 1 ? 's' : ''} on the board` : ''}`, link: '', cell: cellOf.get(target.id)?.cell || '', company: r.company || '', polished: !!h.headline, stage, sector: '', value: '', region: r.region || '', parties: { developer: r.company || '' }, play: STAGE_PLAY[stage as Stage] || '', tier: '', score: 0, whyScore: '', call: '' });
     }
   }
-  return items.filter(i => !buyersOnly || (i.cell && i.cell !== 'C')).sort((a, b) => b.date.localeCompare(a.date)).slice(0, limit);
+  return items.sort((a, b) => b.date.localeCompare(a.date)).slice(0, limit);
 }
 
 export async function setHeadline(id: string, key: string, h: { headline: string; why: string }) {
