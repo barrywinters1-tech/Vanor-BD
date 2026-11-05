@@ -2,7 +2,7 @@
 import { listScope, updateEntity, type Entity } from './bd-store';
 import { STAGE_PLAY, type Stage } from './lead-classify';
 import '../public/vanor-classify.js';
-import { PLANNING_FLOOR_M, valueFloor, tidyItem, dedupeItems, triggerFor } from './signals-clean';
+import { PLANNING_FLOOR_M, valueFloor, tidyItem, dedupeItems, triggerFor, laneOfSignal, type Lane } from './signals-clean';
 const iso = (v: any) => ((globalThis as any).VanorClassify?.isoDate?.(v) as string) || String(v || '').slice(0, 10);
 
 const DAY = 864e5;
@@ -24,7 +24,7 @@ function headline(company: string, sg: { type: string; text?: string }) {
 }
 
 
-export type FeedItem = { id: string; key: string; date: string; source: string; headline: string; why: string; text: string; link: string; cell: string; company: string; needsContact?: boolean; hasPerson?: boolean; who?: string; angle?: string; warm?: { id: string; name: string }[]; polished: boolean; stage: string; sector: string; value: string; region: string; parties: Record<string, string>; play: string; tier: string; score: number; whyScore: string; call: string };
+export type FeedItem = { id: string; key: string; date: string; source: string; headline: string; why: string; text: string; link: string; cell: string; company: string; needsContact?: boolean; hasPerson?: boolean; who?: string; angle?: string; warm?: { id: string; name: string }[]; polished: boolean; stage: string; sector: string; value: string; region: string; parties: Record<string, string>; play: string; tier: string; score: number; whyScore: string; call: string; lane?: Lane; lender?: string; candidates?: { name: string; title: string; employer: string }[] };
 const CH_STAGE: Record<string, string> = { property: 'funded', lending: 'funded', planning: 'submitted', new_spv: 'acquired', new_director: 'leadership', distress: 'distress' };
 
 export async function signalFeed({ days = 30, buyersOnly = true, limit = 60 }: { days?: number; buyersOnly?: boolean; limit?: number } = {}): Promise<FeedItem[]> {
@@ -45,7 +45,7 @@ export async function signalFeed({ days = 30, buyersOnly = true, limit = 60 }: {
       const h = r.headlines?.lead || {};
       const src = /gazette/i.test(r.source || '') ? 'The Gazette' : /planning/i.test(r.source || '') ? 'Planning' : /hiring/i.test(r.source || '') ? 'Hiring' : /tender/i.test(r.source || '') ? 'Tender' : 'Press';
       const it = r.intel || {}; const stage = it.stage || (src === 'The Gazette' ? 'distress' : src === 'Planning' ? 'submitted' : 'news');
-      items.push({ id: r.id, key: 'lead', date, source: src, headline: h.headline || r.title || r.company || r.name, why: h.why || '', text: String(r.context || '').split('\n')[0].slice(0, 200), link: r.sourceUrl || '', cell: cellOf.get(r.id)?.cell || '', company: r.company || '', polished: !!h.headline, hasPerson: !!r.email || (!!r.name && !/director|head of|manager|whoever|\bmd\b|principal|team/i.test(r.name)), stage, sector: it.sector || '', value: it.valueBand || '', region: it.region || r.region || '', parties: it.parties || {}, play: it.play || STAGE_PLAY[stage as Stage] || '', tier: it.tier || '', score: Number(it.score || 0), whyScore: it.why || '', call: it.call || '' });
+      items.push({ id: r.id, key: 'lead', date, source: src, headline: h.headline || r.title || r.company || r.name, why: h.why || '', text: String(r.context || '').split('\n')[0].slice(0, 200), link: r.sourceUrl || '', cell: cellOf.get(r.id)?.cell || '', company: r.company || '', polished: !!h.headline, hasPerson: !!r.email || (!!r.name && !/director|head of|manager|whoever|\bmd\b|principal|team/i.test(r.name)), stage, sector: it.sector || '', value: it.valueBand || '', region: it.region || r.region || '', parties: it.parties || {}, play: it.play || STAGE_PLAY[stage as Stage] || '', tier: it.tier || '', score: Number(it.score || 0), whyScore: it.why || '', call: it.call || '', lane: (it.lane as Lane) || laneOfSignal({ headline: h.headline || r.title, text: r.context, stage, sector: it.sector, source: r.source, buyerType: it.buyerType }), lender: it.lender || '', candidates: Array.isArray(r.candidates) ? r.candidates.slice(0, 2).map((c: any) => ({ name: c.name, title: c.title, employer: c.employer })) : undefined });
     }
   }
   const seen = new Set<string>();

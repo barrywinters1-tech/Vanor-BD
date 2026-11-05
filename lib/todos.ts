@@ -8,7 +8,7 @@ export const TODO_TYPES = ['reply', 'meeting', 'followup', 'event', 'action'] as
 import { hasPlaceholder } from './todos-rules';
 export { hasPlaceholder };
 
-export type TodoIn = { type: string; title: string; why?: string; due?: string; owner?: string; link?: string; recordId?: string; pursuitId?: string; draftText?: string; source?: string };
+export type TodoIn = { type: string; title: string; why?: string; due?: string; owner?: string; link?: string; recordId?: string; pursuitId?: string; draftText?: string; source?: string; toEmail?: string; subject?: string; conversationId?: string };
 
 export async function addTodos(items: TodoIn[]) {
   const added: string[] = [], skipped: { title: string; why: string }[] = [];
@@ -19,9 +19,9 @@ export async function addTodos(items: TodoIn[]) {
     const id = 'todo:' + createHash('sha1').update([t.type, t.title, t.recordId || '', t.pursuitId || '', t.link || ''].join('|')).digest('hex').slice(0, 16);
     let fresh = false;
     await updateEntity('work', id, cur => {
-      if (cur.kind === 'todo' && cur.status) return { ...cur, why: t.why || cur.why, link: /^https:\/\//.test(t.link || '') ? t.link : cur.link, due: t.due || cur.due };
+      if (cur.kind === 'todo' && cur.status) return { ...cur, why: t.why || cur.why, link: /^https:\/\//.test(t.link || '') ? t.link : cur.link, due: t.due || cur.due, toEmail: t.toEmail || cur.toEmail || '', subject: t.subject || cur.subject || '', conversationId: t.conversationId || cur.conversationId || '' };
       fresh = true;
-      return { id, kind: 'todo', status: 'open', type: t.type, title: t.title.slice(0, 160), why: (t.why || '').slice(0, 300), due: t.due || today(), owner: t.owner || '', link: /^https:\/\//.test(t.link || '') ? t.link : '', recordId: t.recordId || '', pursuitId: t.pursuitId || '', source: (t.source || '').slice(0, 200), createdAt: new Date().toISOString(), createdBy: 'Claude' };
+      return { id, kind: 'todo', status: 'open', type: t.type, title: t.title.slice(0, 160), why: (t.why || '').slice(0, 300), due: t.due || today(), owner: t.owner || '', link: /^https:\/\//.test(t.link || '') ? t.link : '', recordId: t.recordId || '', pursuitId: t.pursuitId || '', source: (t.source || '').slice(0, 200), toEmail: String(t.toEmail || '').toLowerCase().slice(0, 120), subject: (t.subject || '').slice(0, 200), conversationId: (t.conversationId || '').slice(0, 200), createdAt: new Date().toISOString(), createdBy: 'Claude' };
     }, true);
     (fresh ? added : skipped).push(fresh ? id : ({ title: t.title, why: 'already on the board' } as any));
   }
@@ -30,7 +30,32 @@ export async function addTodos(items: TodoIn[]) {
 
 export async function listTodos({ includeDone = false } = {}) {
   return (await listScope('work')).filter(w => w.kind === 'todo' && (includeDone || w.status === 'open'))
-    .map(w => ({ id: w.id, type: w.type, title: w.title, why: w.why, due: w.due, owner: w.owner, link: w.link, recordId: w.recordId, pursuitId: w.pursuitId, status: w.status }));
+    .map(w => ({ id: w.id, type: w.type, title: w.title, why: w.why, due: w.due, owner: w.owner, link: w.link, recordId: w.recordId, pursuitId: w.pursuitId, status: w.status, toEmail: w.toEmail || '', subject: w.subject || '', conversationId: w.conversationId || '', createdAt: w.createdAt || '', doneBy: w.doneBy || '', sentOn: w.sentOn || '' }));
+}
+
+/** Closing the loop from Sent Items (5 Nov 2026). Claude may close a reply, followup or meeting to-do only when the sent mail
+ *  matches it: same recipient (toEmail) or the same conversation, and sent on or after the to-do was created. Anything else
+ *  stays open; the board shows "Closed by Claude" with a Reopen, so a wrong close is one tap to undo. */
+export async function todoDone(p: { id: string; sentOn: string; toEmail?: string; conversationId?: string; note?: string }) {
+  const all = await listScope('work');
+  const cur = all.find(w => w.id === p.id && w.kind === 'todo');
+  if (!cur) throw new Error('No to-do with id ' + p.id);
+  if (cur.status !== 'open') return { id: p.id, closed: false, why: 'already ' + cur.status };
+  if (!['reply', 'followup', 'meeting', 'action'].includes(String(cur.type))) return { id: p.id, closed: false, why: 'only reply, followup, meeting and action to-dos close from sent mail' };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(p.sentOn)) throw new Error('sentOn must be YYYY-MM-DD');
+  const created = String(cur.createdAt || '').slice(0, 10);
+  if (created && p.sentOn < created) return { id: p.id, closed: false, why: `sent ${p.sentOn} is before the to-do was created (${created})` };
+  const to = String(p.toEmail || '').toLowerCase(); const want = String(cur.toEmail || '').toLowerCase();
+  const byMail = !!(to && want && to === want);
+  const byThread = !!(p.conversationId && cur.conversationId && p.conversationId === cur.conversationId);
+  if (!byMail && !byThread) return { id: p.id, closed: false, why: want || cur.conversationId ? 'recipient and conversation do not match the to-do' : 'the to-do has no recipient or conversation recorded; a founder closes it with "I sent it"' };
+  await updateEntity('work', p.id, c => ({ ...c, status: 'done', doneAt: new Date().toISOString(), doneBy: 'Claude', sentOn: p.sentOn, doneNote: (p.note || '').slice(0, 200), matchedBy: byThread ? 'conversation' : 'recipient' }));
+  return { id: p.id, closed: true, matchedBy: byThread ? 'conversation' : 'recipient' };
+}
+
+export async function todoReopen(id: string) {
+  await updateEntity('work', id, c => ({ ...c, status: 'open', doneAt: '', doneBy: '', sentOn: '', doneNote: '' }));
+  return { id, status: 'open' };
 }
 
 /** Jobs report each run; the board flags any job that stops reporting (expectHours) or fails. */

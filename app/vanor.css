@@ -2418,3 +2418,10 @@ table.people td.stand { color: var(--muted); font-size: 13px; max-width: 420px; 
 .vanor .strip-all{margin:6px 16px 10px;font-weight:600}
 .vanor .money-cells.four{grid-template-columns:repeat(4,1fr)}
 @media (max-width:640px){.vanor .money-cells.four{grid-template-columns:1fr 1fr}}
+/* v8 stage 4: signals by lane */
+.vanor .sig-cover{display:flex;flex-wrap:wrap;gap:6px 14px;margin:8px 0 0;font-size:13px}
+.vanor .sig-cover span{color:var(--ink,#1a1f1e)}.vanor .sig-cover span.quiet{color:#9a6b12}.vanor .sig-cover b{margin-left:3px}
+.vanor .sig-found{display:block;font-size:12.5px;margin-top:3px;color:#1f5f66}
+.vanor table.people tr.late td{background:rgba(178,58,58,.05)}
+.vanor .strip-closed{padding:6px 16px 10px;border-top:1px dashed var(--line,#e3e8e6)}
+.vanor .strip-closed ul{list-style:none;margin:6px 0 0;padding:0}

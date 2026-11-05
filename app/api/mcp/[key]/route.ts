@@ -19,7 +19,7 @@ import { PRICE_LIST, RULES, firstStep, options as feeOptions, offerLines, decisi
 import { signalFeed, setHeadline } from '../../../../lib/signals-feed';
 import { researchCompany, normCompany } from '../../../../lib/company-intel';
 import { bolsterPeople } from '../../../../lib/people-bolster';
-import { addTodos, listTodos, jobRan } from '../../../../lib/todos';
+import { addTodos, listTodos, todoDone, jobRan } from '../../../../lib/todos';
 import { proposePeople } from '../../../../lib/people-tray';
 import { openCaptures, captureDone, captureImages } from '../../../../lib/captures';
 import { researchBatch, saveIntel, signalContacts } from '../../../../lib/company-intel-store';
@@ -248,7 +248,7 @@ function createServer() {
   server.registerTool('todo_add', {
     title: 'Put to-dos on the board strip (replies owed, meetings to arrange, drafts waiting)',
     description: 'Batch. type: reply (someone is waiting for Barry or Graeme), meeting (a meeting to arrange; say which slots were offered), followup, event, action. title names the real person and company; why says what happened and quotes the email or note; link = the Outlook draft webLink if a draft was made; recordId = the board contact id if known; due = YYYY-MM-DD. Items with placeholder text instead of a real name are refused. Re-adding the same item only refreshes it.',
-    inputSchema: { items: z.array(z.object({ type: z.enum(['reply', 'meeting', 'followup', 'event', 'action']), title: z.string().min(3).max(160), why: z.string().max(300).optional(), due: date.optional(), owner: z.enum(['Barry', 'Graeme', 'Both']).optional(), link: z.string().max(600).optional(), recordId: z.string().optional(), pursuitId: z.string().optional(), draftText: z.string().max(4000).optional().describe('The draft body, checked for placeholders; not stored'), source: z.string().max(200).optional() })).min(1).max(50) },
+    inputSchema: { items: z.array(z.object({ type: z.enum(['reply', 'meeting', 'followup', 'event', 'action']), title: z.string().min(3).max(160), why: z.string().max(300).optional(), due: date.optional(), owner: z.enum(['Barry', 'Graeme', 'Both']).optional(), link: z.string().max(600).optional(), recordId: z.string().optional(), pursuitId: z.string().optional(), draftText: z.string().max(4000).optional().describe('The draft body, checked for placeholders; not stored'), source: z.string().max(200).optional(), toEmail: z.string().max(120).optional().describe('The draft recipient; lets the next run close this to-do when the mail is in Sent Items'), subject: z.string().max(200).optional(), conversationId: z.string().max(200).optional().describe('Outlook conversationId of the thread, if replying in-thread') })).min(1).max(50) },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ items }) => out(await addTodos(items), 'To-dos added.'));
   server.registerTool('todos_list', {
@@ -256,6 +256,12 @@ function createServer() {
     inputSchema: { includeDone: z.boolean().optional() },
     annotations: { readOnlyHint: true },
   }, async ({ includeDone }) => out({ items: await listTodos({ includeDone }) }, 'To-dos.'));
+  server.registerTool('todo_done', {
+    title: 'Close a to-do because the mail is in Sent Items (the loop closes itself)',
+    description: 'Call for each open reply/followup/meeting/action to-do whose draft Barry has sent: match a Sent Item by recipient (toEmail) or conversationId, sent on or after the to-do was created. Closes only on a match; otherwise returns closed:false with why. Never guess a match.',
+    inputSchema: { id: z.string(), sentOn: date, toEmail: z.string().max(120).optional(), conversationId: z.string().max(200).optional(), note: z.string().max(200).optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async (p) => { const r = await todoDone(p); return out(r, r.closed ? 'Closed.' : 'Left open: ' + r.why); });
   server.registerTool('job_ran', {
     title: 'Report that a scheduled job ran (call at the end of every scheduled run)',
     description: 'job = short stable name (e.g. morning-sync, distress-watch). ok=false with a note when something failed. expectHours = how often it should run; the board flags it if it goes quiet.',

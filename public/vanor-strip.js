@@ -115,8 +115,10 @@
     for (const e of events) {
       if (e.archived || ['Declined', 'Completed'].includes(e.status) || !e.date) continue;
       const until = days(today, e.date);
-      if (until >= 0 && until <= 14 && ['Booked', 'Attending', 'Interested', 'Qualified', 'Deciding'].includes(e.status)) {
-        const need = !e.targets ? 'name 3-5 targets and send pre-event emails' : ['Interested', 'Qualified', 'Deciding'].includes(e.status) ? 'decide whether to book' : 'pre-event emails out?';
+      // Any event inside 14 days needs a verdict (go or skip), whatever its status; booked ones need targets and pre-event emails.
+      if (until >= 0 && until <= 14) {
+        const booked = ['Booked', 'Attending'].includes(e.status);
+        const need = !booked ? `decide: go or skip (${e.cost || 'cost not recorded'}${e.targets ? ', targets named' : ', no targets yet'})` : !e.targets ? 'name 3-5 targets and send pre-event emails' : 'pre-event emails out?';
         out.push(item('event', { key: 'event:' + e.id + ':pre', ref: e.id, kind: 'event', title: e.title, why: `${e.date}${until === 0 ? ' (today)' : ` (in ${until} day${until > 1 ? 's' : ''})`}: ${need}`, due: e.date, overdue: 0, value: 0, owner: e.owner || '' }));
       } else if (until < 0 && until >= -3 && ['Booked', 'Attending'].includes(e.status) && !captures.some(c => c.eventId === e.id)) {
         out.push(item('event', { key: 'event:' + e.id + ':post', ref: e.id, kind: 'event', title: e.title, why: 'Who did you meet? Capture them and the follow-ups are drafted.', due: e.date, overdue: -until, value: 0, owner: e.owner || '' }));
