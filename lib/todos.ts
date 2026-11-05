@@ -44,6 +44,7 @@ export async function todoDone(p: { id: string; sentOn: string; toEmail?: string
   if (!['reply', 'followup', 'meeting', 'action'].includes(String(cur.type))) return { id: p.id, closed: false, why: 'only reply, followup, meeting and action to-dos close from sent mail' };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(p.sentOn)) throw new Error('sentOn must be YYYY-MM-DD');
   const created = String(cur.createdAt || '').slice(0, 10);
+  if (cur.reopenedAt && String(cur.reopenedAt).slice(0, 10) >= p.sentOn) return { id: p.id, closed: false, why: 'a founder reopened this after that mail was sent' };
   if (created && p.sentOn < created) return { id: p.id, closed: false, why: `sent ${p.sentOn} is before the to-do was created (${created})` };
   const to = String(p.toEmail || '').toLowerCase(); const want = String(cur.toEmail || '').toLowerCase();
   const byMail = !!(to && want && to === want);
@@ -54,7 +55,7 @@ export async function todoDone(p: { id: string; sentOn: string; toEmail?: string
 }
 
 export async function todoReopen(id: string) {
-  await updateEntity('work', id, c => ({ ...c, status: 'open', doneAt: '', doneBy: '', sentOn: '', doneNote: '' }));
+  await updateEntity('work', id, c => ({ ...c, status: 'open', doneAt: '', doneBy: '', sentOn: '', doneNote: '', matchedBy: '', reopenedAt: new Date().toISOString() }));
   return { id, status: 'open' };
 }
 

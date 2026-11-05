@@ -162,7 +162,7 @@
        2 a named client who could hire Vanor (developer, owner, lender, operator, public body; a contractor points to the client behind it);
        3 a trigger inside the last 14 days.
      Value is not a bar; it affects rank. Rank 1 distress, 2 contract let with no PM/EA/monitor named, 3 funding closed, 4 everything else. */
-  var LIVE = { granted: 1, funded: 1, acquired: 1, tender: 1, contractor_appointed: 1, on_site: 1, stalled: 1, distress: 1 };
+  var LIVE = { granted: 1, funded: 1, acquired: 1, tender: 1, contractor_appointed: 1, on_site: 1, stalled: 1, distress: 1, dispute: 1 };
   var RANK_LABEL = { 1: 'Distress', 2: 'Contract let, no PM or EA named', 3: 'Funding closed', 4: 'Live scheme' };
   var PMEA = /\b(project manager|project management|employer'?s agent|development manager|monitoring surveyor|fund monitor|monitor(ing)? (surveyor|agent)|\bpm\b|\bea\b)\b/i;
   var PROPERTY = /\b(homes?|housing|flats?|apartments?|scheme|site|land|plot|building|tower|campus|centre|center|hotel|store|hq|headquarters|offices?|warehouse|estate|park|mall|shopping|units?|beds?|student|pbsa|acres?|hectares?|sq ?ft|sq ?m|regen\w*|development)\b/i;
@@ -181,7 +181,7 @@
     if (!LIVE[stage]) return fail(stage === 'hiring' ? 'Job advert, not a scheme' : /^(submitted|pre_planning|appeal|refused)$/.test(stage) ? 'Planning only, not a live scheme' : 'No live scheme');
     var region = normRegion(i.region || r.region || '') || regionFromText(text);
     if (region === 'International') return fail('Outside the UK and Ireland');
-    var p = i.parties || {}; var buyer = i.buyerType || 'unknown'; var client = p.developer || p.funder || '';
+    var p = i.parties || {}; var buyer = i.buyerType || 'unknown'; var client = p.developer || p.funder || (stage === 'dispute' ? (p.claimant || p.defendant || '') : '');
     if (buyer === 'contractor' && !p.funder) return fail('Contractor named, not the client');
     if (!client) return fail(stage === 'distress' ? 'Distress, but no exposed client named' : 'No client named');
     if (stage === 'acquired' && !PROPERTY.test(text)) return fail('Company deal, not a scheme');

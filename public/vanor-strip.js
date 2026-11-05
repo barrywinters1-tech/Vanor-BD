@@ -113,7 +113,7 @@
       out.push(item('followup', { key: 'reconnect:' + wk, ref: '', kind: 'reconnect', title: `Reconnect with ${pick.length} this week`, why: pick.map(x => x.r.name || x.r.company).join(', ') + ` (${pool.length} people met once, no job yet; a few each week)`, people: pick.map(x => x.r.id), due: wk, overdue: 0, value: 0, owner: '' }));
     }
     for (const e of events) {
-      if (e.archived || ['Declined', 'Completed'].includes(e.status) || !e.date) continue;
+      if (e.archived || ['Declined', 'Completed', 'Watch'].includes(e.status) || !e.date) continue;
       const until = days(today, e.date);
       // Any event inside 14 days needs a verdict (go or skip), whatever its status; booked ones need targets and pre-event emails.
       if (until >= 0 && until <= 14) {

@@ -132,7 +132,7 @@ export function score(s: Signal, today = new Date()): Scored {
   if ((s.source === 'planit' || s.source === 'london_datahub') && ['news', 'leadership'].includes(lead.stage)) lead.stage = 'submitted';
   if (s.source.startsWith('hiring')) lead.stage = 'hiring';
   if (s.source === 'find_a_tender') { lead.stage = 'tender'; if (s.applicant) lead.parties.developer = lead.parties.developer || s.applicant; }
-  if (s.source === 'tcc_judgments') { lead.stage = 'dispute'; const m = s.title.match(/^(.*?)\s+v\.?\s+(.*?)(\s*\(|$)/i); if (m) { lead.parties.claimant = m[1].trim().slice(0, 80); lead.parties.defendant = m[2].trim().slice(0, 80); lead.parties.developer = lead.parties.developer || lead.parties.claimant; } }
+  if (s.source === 'tcc_judgments') { lead.stage = 'dispute'; const m = s.title.match(/^(.*?)\s+v\.?\s+(.*?)(\s*\(|\s*\[|\s+\d{4}\]|$)/i); if (m) { lead.parties.claimant = m[1].trim().slice(0, 80); lead.parties.defendant = m[2].trim().slice(0, 80); } }
   if (s.source.startsWith('gazette')) {
     // The insolvent company is the subject, never the buyer. The buyer is the employer or funder it owes a building to, if the notice names one (it rarely does).
     lead.stage = 'distress';

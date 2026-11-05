@@ -46,3 +46,14 @@ test('lanes and lenders are read from the signal', () => {
   assert.equal(lenderIn('Developer starts 200 homes in Leeds'), '');
   assert.ok(titlesFor('funded', 'funder').includes('Relationship Director'));
 });
+
+test('lenderIn needs lender context and exactly one lender', () => {
+  assert.equal(lenderIn('work together with partners'), '');
+  assert.equal(lenderIn('Downing Street scheme funded by Acme Capital'), '');
+  assert.equal(lenderIn('Elevation Group secures £50m loan from Lloyds Bank'), 'Lloyds');
+  assert.equal(lenderIn('HSBC HQ refit funded by Landsec'), '');
+  assert.equal(lenderIn('Developer agrees £30m NatWest facility for 200 homes'), 'NatWest');
+  assert.equal(lenderIn('OakNorth-backed scheme tops out'), 'OakNorth');
+  assert.equal(lenderIn('Refinanced by HSBC and by Barclays'), '', 'two lenders: no single target');
+  assert.equal(lenderIn('natwest facility'), '', 'case-sensitive');
+});

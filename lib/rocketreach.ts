@@ -73,8 +73,11 @@ export async function searchPeople(input: { company: string; titles?: string[]; 
     if (!res.ok) throw new Error(`RocketReach search returned HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
     const json = await res.json();
     // Employer must match the company name cleanly (all its significant words), not just the first word.
-    const words = input.company.toLowerCase().replace(/\b(ltd|limited|plc|llp|group|holdings|uk|the|&|and)\b/g, ' ').split(/\s+/).filter(w => w.length > 1);
-    const profiles: any[] = (json.profiles || []).filter((p: any) => { const emp = String(p.current_employer || '').toLowerCase(); return p.name && words.length && words.every(w => emp.includes(w)); });
+    // Employer must match the company cleanly: punctuation ignored, "&" kept as part of a name (M&G), stop words dropped;
+    // all significant words, or the first word plus at least half of them (so "Aviva Investors" matches "Aviva").
+    const clean = (v: string) => v.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ').replace(/\b(ltd|limited|plc|llp|group|holdings|uk|the|and)\b/g, ' ').trim();
+    const words = clean(input.company).split(/\s+/).filter(w => w.length > 1 || /^[a-z0-9]$/.test(w));
+    const profiles: any[] = (json.profiles || []).filter((p: any) => { const emp = ' ' + clean(String(p.current_employer || '')) + ' '; if (!p.name || !words.length) return false; const hit = words.filter(w => emp.includes(' ' + w + ' ') || emp.includes(' ' + w)).length; return hit === words.length || (emp.includes(' ' + words[0]) && hit * 2 >= words.length); });
     const seniority = (t: string) => /chief|ceo|managing director|\bmd\b|founder|partner|principal/i.test(t) ? 3 : /director|head of|fund manager/i.test(t) ? 2 : 1;
     profiles.sort((a, b) => seniority(b.current_title || '') - seniority(a.current_title || ''));
     const out: Candidate[] = [];

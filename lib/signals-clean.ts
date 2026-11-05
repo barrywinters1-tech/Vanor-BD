@@ -28,8 +28,8 @@ export function dedupeItems<T extends { id: string; key: string; date: string; c
   const sorted = [...items].sort((a, b) => b.date.localeCompare(a.date));
   const seen = new Set<string>(); const out: T[] = [];
   for (const it of sorted) {
-    const k1 = `${it.id}|${it.key}`; const co = norm(it.company);
-    const k2 = co && co.length > 3 ? `${co}|${it.stage}` : `${norm(it.headline)}|${it.stage}`;
+    const k1 = `${it.id}|${it.key}`; const co = norm(it.company); const bor = norm((it as any).parties?.borrower || '');
+    const k2 = co && co.length > 3 ? `${co}|${bor}|${it.stage}` : `${norm(it.headline)}|${it.stage}`;
     if (seen.has(k1) || seen.has(k2)) continue; seen.add(k1); seen.add(k2); out.push(it);
   }
   return out;
@@ -70,13 +70,18 @@ export function laneOfSignal(s: { headline?: string; text?: string; stage?: stri
   return 'other';
 }
 // Development lenders and debt funds active in UK and Irish real estate (public market knowledge, not contact data).
-// When a funded signal names one of these, the lender is the buyer for monitoring work; the borrower is context.
-export const LENDERS = ['NatWest', 'HSBC', 'Lloyds', 'Barclays', 'Santander', 'OakNorth', 'Shawbrook', 'Aldermore', 'Paragon', 'Hampshire Trust Bank', 'HTB', 'United Trust Bank', 'UTB', 'Secure Trust', 'Close Brothers', 'Atelier', 'Octopus Real Estate', 'Octopus', 'Maslow Capital', 'Puma Property Finance', 'Puma', 'Precise Mortgages', 'Together', 'Cheyne Capital', 'Cheyne', 'Starwood Capital', 'Starwood', 'Ares Management', 'Ares', 'Blackstone', 'Apollo', 'ICG', 'LaSalle', 'Pluto Finance', 'Fiera Real Estate', 'Fiera', 'Invesco', 'Zenzic Capital', 'Zenzic', 'Coutts', 'Investec', 'Allica', 'Cynergy', 'Arbuthnot', 'Bank Leumi', 'Leumi', 'Hilltop Credit Partners', 'Avamore', 'Silbury Finance', 'HBFI', 'Home Building Finance Ireland', 'AIB', 'Bank of Ireland', 'Activate Capital', 'Homes England', 'GB Bank', 'Recognise Bank', 'Pollen Street', 'Castleforge', 'Tristan Capital', 'BlackRock', 'M&G', 'Aviva Investors', 'Legal & General', 'L&G', 'Canada Life', 'PGIM', 'Nuveen', 'Cain International', 'Brookfield', 'Cadogan', 'Greystar', 'Patron Capital', 'Elevation', 'MSP Capital', 'Crowdproperty', 'Blend Network', 'Downing', 'Assetz Capital', 'LendInvest', 'Ultimate Finance', 'Hunter Finance', 'Reward Finance', 'Bluecastle Capital', 'Frogmore', 'Topland', 'Glenhawk', 'Mint Property Finance', 'Octane Capital', 'MT Finance', 'ASK Partners', 'Fortwell Capital', 'Cohort Capital', 'Alpha Property Lending', 'Tuscan Capital', 'Beaufort Capital', 'Metro Bank', 'Virgin Money', 'TSB', 'Nationwide', 'Monzo'];
-const LENDER_RE = new RegExp('\\b(' + LENDERS.map(l => l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).sort((a, b) => b.length - a.length).join('|') + ')\\b', 'i');
-/** The first known lender named in a headline or summary, in its canonical spelling; '' when none. */
+// Names that are also ordinary words or borrower-type firms are left out on purpose: precision beats coverage here.
+export const LENDERS = ['NatWest', 'HSBC', 'Lloyds', 'Barclays', 'Santander', 'OakNorth', 'Shawbrook', 'Aldermore', 'Paragon Bank', 'Hampshire Trust Bank', 'United Trust Bank', 'Secure Trust Bank', 'Close Brothers', 'Atelier Capital Partners', 'Octopus Real Estate', 'Maslow Capital', 'Puma Property Finance', 'Precise Mortgages', 'Cheyne Capital', 'Starwood Capital', 'Ares Management', 'Blackstone', 'Apollo Global', 'ICG Real Estate', 'LaSalle', 'Pluto Finance', 'Fiera Real Estate', 'Zenzic Capital', 'Coutts', 'Investec', 'Allica Bank', 'Cynergy Bank', 'Arbuthnot Latham', 'Bank Leumi', 'Hilltop Credit Partners', 'Avamore Capital', 'Silbury Finance', 'HBFI', 'Home Building Finance Ireland', 'AIB', 'Bank of Ireland', 'Activate Capital', 'Homes England', 'GB Bank', 'Recognise Bank', 'Pollen Street', 'Tristan Capital', 'BlackRock', 'M&G', 'Aviva Investors', 'Legal & General', 'Canada Life', 'PGIM', 'Nuveen', 'Cain International', 'Patron Capital', 'MSP Capital', 'CrowdProperty', 'Blend Network', 'Assetz Capital', 'LendInvest', 'Ultimate Finance', 'Hunter Finance', 'Reward Finance', 'Bluecastle Capital', 'Glenhawk', 'Mint Property Finance', 'Octane Capital', 'MT Finance', 'ASK Partners', 'Fortwell Capital', 'Cohort Capital', 'Alpha Property Lending', 'Tuscan Capital', 'Beaufort Capital', 'Metro Bank', 'Virgin Money', 'Nationwide'];
+const esc = (l: string) => l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const LENDER_ALT = LENDERS.slice().sort((a, b) => b.length - a.length).map(esc).join('|');
+// Case-sensitive, and only in lender context: "from X", "by X", "X facility/loan/debt/funding", "lender X", "X-backed".
+const LENDER_CTX = new RegExp('(?:\\b(?:from|by|with|lender|lenders|backed by|provided by|arranged by|agreed with|secured from)\\s+(' + LENDER_ALT + ')\\b)|(?:\\b(' + LENDER_ALT + ')\\b(?:[\'’]s)?\\s+(?:facility|loan|debt|funding|finance|financing|refinancing|development finance|senior debt|mezzanine|credit|package)\\b)|(?:\\b(' + LENDER_ALT + ')-(?:backed|funded|led))');
+/** The lender named in lender context in a headline or summary; '' when none or when two different lenders are named. */
 export function lenderIn(text = ''): string {
-  const m = String(text).match(LENDER_RE); if (!m) return '';
-  const hit = m[1].toLowerCase(); return LENDERS.find(l => l.toLowerCase() === hit) || m[1];
+  const found = new Set<string>();
+  const re = new RegExp(LENDER_CTX.source, 'g'); let m: RegExpExecArray | null;
+  while ((m = re.exec(String(text)))) { const hit = m[1] || m[2] || m[3]; if (hit) found.add(hit); if (m[0].length === 0) re.lastIndex++; }
+  return found.size === 1 ? [...found][0] : '';
 }
 /** Plain job titles to search for a signal's "who to call" role, by stage and lane (used by the candidate finder). */
 export function titlesFor(stage = '', lane: Lane = 'other'): string[] {
