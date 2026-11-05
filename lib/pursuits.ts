@@ -88,6 +88,9 @@ export async function proposeNext(id: string, p: { nextAction: string; dueBy?: s
   const cur = await getOne('work', id);
   if (!cur || !V.isPursuit(cur)) throw new Error('No pursuit with id ' + id);
   if (p.state && !V.STATE[p.state] && !V.CLOSED.includes(p.state)) throw new Error('Unknown state ' + p.state);
+  // Closing a pursuit and putting a price on the table are founder moves: Claude may propose act, waiting or watch only.
+  if (p.state && (V.CLOSED.includes(p.state) || p.state === 'table')) throw new Error('Claude cannot propose ' + p.state + '; the founders mark won, lost, parked or priced themselves.');
+  if (cur.state === 'table' && p.state && p.state !== 'table') throw new Error('A pursuit with a proposal out stays on the table until a founder marks it won, lost or parked.');
   await updateEntity('work', id, c => ({ ...c, latest: p.latest || c.latest, proposed: { ...p, at: new Date().toISOString() } }));
   return { id, proposed: p };
 }
@@ -159,15 +162,19 @@ export async function setPerson(id: string, p: { rung?: string; lane?: string; l
 
 /** People on a rung or with a meeting on record, with next meeting due. Overdue first. */
 export async function peopleDue({ limit = 20, onlyDue = true }: { limit?: number; onlyDue?: boolean } = {}) {
-  const [records, decisions] = await Promise.all([listScope('source'), listScope('decision')]);
+  const [records, decisions, work] = await Promise.all([listScope('source'), listScope('decision'), listScope('work')]);
   const dm = new Map(decisions.map(d => [d.id, d]));
+  const onPursuit = new Set(work.filter(w => V.isPursuit(w) && V.isOpen(w) && w.recordId).map(w => w.recordId));
   const t = today();
+  // Same rule as the board (followMode): partners, actives, referrers, anyone on a pursuit or met recently get individual
+  // follow-ups; the rest are the pool, paced a few a week, so they never flood the strip or this list.
   const rows = records.map(r => ({ r, d: dm.get(r.id) || {} as Entity })).filter(x => (x.d.rung || x.d.lastMet) && x.d.status !== 'Archive' && !/@vanoradvisory\.co\.uk$/i.test(String(x.r.email || ''))).map(({ r, d }) => {
     const s = V.meetingStatus(d, t);
-    return { id: r.id, name: r.name, company: r.company, email: r.email || '', rung: d.rung || 'contact', lane: d.lane || '', lastMet: d.lastMet || '', metCount: d.metCount || 0, lastNote: d.lastNote || '', buyingStage: d.buyingStage || '', nextMeeting: s.next, overdueDays: s.overdue ? -s.days : 0, due: s.overdue || s.dueSoon };
+    const mode = V.followMode(d, t, onPursuit.has(r.id));
+    return { id: r.id, name: r.name, company: r.company, email: r.email || '', rung: d.rung || 'contact', lane: d.lane || '', lastMet: d.lastMet || '', metCount: d.metCount || 0, lastNote: d.lastNote || '', buyingStage: d.buyingStage || '', nextMeeting: s.next, overdueDays: s.overdue ? -s.days : 0, mode, due: mode === 'individual' && (s.overdue || s.dueSoon) };
   });
   const order = (k: string) => V.RUNGS.findIndex((x: { key: string }) => x.key === k);
   rows.sort((a, b) => b.overdueDays - a.overdueDays || order(a.rung) - order(b.rung) || a.nextMeeting.localeCompare(b.nextMeeting));
   const list = onlyDue ? rows.filter(r => r.due) : rows;
-  return { today: t, total: rows.length, due: rows.filter(r => r.due).length, rows: list.slice(0, limit) };
+  return { today: t, total: rows.length, due: rows.filter(r => r.due).length, pool: rows.filter(r => r.mode === 'pool').length, rows: list.slice(0, limit) };
 }

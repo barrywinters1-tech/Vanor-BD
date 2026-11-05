@@ -148,6 +148,22 @@
     if (!person || !person.lastMet) return today;
     return addDays(person.lastMet, rung.days);
   }
+  /** Who gets an individual follow-up row and who sits in the pool (reconnect a few a week).
+   *  Individual: partner, active, referrer, anyone on an open pursuit, anyone with a next step or a sequence running, anyone met in the last 90 days.
+   *  Pool: everyone else (met once, no job, no referral). The rhythm is unchanged; the pool is just paced. */
+  function followMode(person, today, onPursuit) {
+    const d = person || {};
+    const rung = d.rung || 'contact';
+    if (['partner', 'active', 'referrer', 'target'].includes(rung)) return 'individual';
+    if (onPursuit || d.nextStep || (d.seqStarted && Number(d.seqStep || 0) > 0)) return 'individual';
+    if (d.lastMet && daysBetween(String(d.lastMet).slice(0, 10), today) <= 90) return 'individual';
+    return 'pool';
+  }
+  const POOL_WEEKLY = 5;
+  /** Monday of the week containing today (ISO), used as the key for the weekly reconnect row. */
+  function weekKey(today) { const d = new Date(today + 'T12:00:00Z'); const w = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - w); return d.toISOString().slice(0, 10); }
+  /** Pick this week's reconnect names: lane set first, then most recently met. */
+  function reconnectPick(pool, n = POOL_WEEKLY) { return pool.slice().sort((a, b) => ((b.d.lane ? 1 : 0) - (a.d.lane ? 1 : 0)) || String(b.d.lastMet || '').localeCompare(String(a.d.lastMet || ''))).slice(0, n); }
   function meetingStatus(person, today) {
     const next = nextMeeting(person, today);
     const days = Math.round((Date.parse(next) - Date.parse(today)) / 864e5);
@@ -155,6 +171,6 @@
     return { next, days, overdue: days < 0, dueSoon: days >= 0 && days <= DUE_SOON_DAYS };
   }
 
-  root.VanorPursuits = { late, theirMove, overdueOurs, FUNDER_PROPOSAL_DAYS, lapsedProposal, proposalDays, DUE_SOON_DAYS, TARGET_FIRST_DAYS, touched, TYPES, IN_HOUSE, PROPOSAL_DAYS, STALE_DAYS, value, isMonthly, liveProposal, stale, money, daysBetween, LANES, LANE, STATES, STATE, CLOSED, GATE, RUNGS, RUNG, BUYING, isPursuit, isOpen, laneOf, stateOf, gateMissing, validate, pounds, sortRows, board, nextMeeting, meetingStatus, addDays };
+  root.VanorPursuits = { followMode, POOL_WEEKLY, weekKey, reconnectPick, late, theirMove, overdueOurs, FUNDER_PROPOSAL_DAYS, lapsedProposal, proposalDays, DUE_SOON_DAYS, TARGET_FIRST_DAYS, touched, TYPES, IN_HOUSE, PROPOSAL_DAYS, STALE_DAYS, value, isMonthly, liveProposal, stale, money, daysBetween, LANES, LANE, STATES, STATE, CLOSED, GATE, RUNGS, RUNG, BUYING, isPursuit, isOpen, laneOf, stateOf, gateMissing, validate, pounds, sortRows, board, nextMeeting, meetingStatus, addDays };
   if (typeof module !== 'undefined') module.exports = root.VanorPursuits;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

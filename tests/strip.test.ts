@@ -65,3 +65,30 @@ test('outbound sequence: touch 2 four days after the first email, then 10 and 21
   const g = S.build({ people: [{ r: { id: 'x', name: 'Jo Bloggs', company: 'OakNorth' }, d: { seqStep: 1, seqStarted: '2026-10-29', rung: 'target' }, rung: 'target', s: { overdue: false, dueSoon: false } }], today: T, PV });
   assert.match(g[0].items[0].why, /Touch 2 of 4/);
 });
+
+test('people met once with no job sit in a weekly reconnect row, not one row each', () => {
+  const PV = (globalThis as any).VanorPursuits;
+  const today = '2026-11-05';
+  const mk = (i: number, extra: any = {}) => { const d = { rung: 'contact', lastMet: '2026-03-10', ...extra }; return { r: { id: 'p' + i, name: 'Person ' + i, company: 'Co ' + i }, d, s: PV.meetingStatus(d, today), rung: d.rung, owner: 'Barry', mode: PV.followMode(d, today, extra.onPursuit) }; };
+  const people = [mk(1), mk(2), mk(3), mk(4), mk(5), mk(6), mk(7), mk(8, { rung: 'referrer' }), mk(9, { nextStep: 'send deck' })];
+  const groups = S.build({ pursuits: [], todos: [], people, events: [], jobs: [], captures: [], state: {}, today, PV });
+  const fu: any = groups.find((g: any) => g.key === 'followup');
+  const titles: string[] = fu.items.map((i: any) => String(i.title));
+  assert.equal(fu.items.filter((i: any) => i.kind === 'reconnect').length, 1);
+  assert.ok(titles.some(t => t.startsWith('Reconnect with 5')));
+  assert.ok(titles.some(t => t.startsWith('Person 8')), 'referrer gets a row');
+  assert.ok(titles.some(t => t.startsWith('Person 9')), 'someone with a next step gets a row');
+  assert.equal(fu.items.length, 3);
+});
+
+test('Today is at most five, money and replies before cold follow-ups', () => {
+  const PV = (globalThis as any).VanorPursuits;
+  const today = '2026-11-05';
+  const pursuits = [{ id: 'pursuit:a', kind: 'pursuit', name: 'A', lane: 'funder', state: 'table', amount: 40000, issuedOn: '2026-10-01', decisionDate: '2026-11-01', gate: { asset: 1, problem: 1, capital: 1, route: 1 }, nextAction: 'chase', owner: 'Barry' }];
+  const todos = [{ id: 't1', kind: 'todo', type: 'reply', title: 'Reply to X', due: '2026-11-03', status: 'open' }, ...Array.from({ length: 8 }, (_, i) => ({ id: 'f' + i, kind: 'todo', type: 'followup', title: 'Catch up ' + i, due: '2026-10-01', status: 'open' }))];
+  const groups = S.build({ pursuits, todos, people: [], events: [], jobs: [], captures: [], state: {}, today, PV });
+  const top = S.today5(groups, 5);
+  assert.equal(top.length, 5);
+  assert.equal(top[0].title, 'A');
+  assert.equal(top[1].title, 'Reply to X');
+});

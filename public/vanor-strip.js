@@ -16,6 +16,11 @@
   const DAY = 864e5;
   const days = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / DAY);
   const addDays = (d, n) => new Date(Date.parse(d) + n * DAY).toISOString().slice(0, 10);
+  /** n working days after d (Mon-Fri). */
+  function addWorkingDays(d, n) { let t = Date.parse(d), left = n; while (left > 0) { t += DAY; const w = new Date(t).getUTCDay(); if (w !== 0 && w !== 6) left--; } return new Date(t).toISOString().slice(0, 10); }
+  /** When "Done" is pressed on a pursuit row, the default next date by state (working days). */
+  const DONE_DEFAULT = { table: 5, waiting: 5, act: 2, watch: 10 };
+  const SENT_CHASE_DAYS = 5;
   const CONTRACT = [
     ['scope', 'Scope and fee confirmed in writing'], ['terms', 'Appointment or sub-consultancy terms agreed'],
     ['cap', 'Liability cap and exclusions agreed'], ['pi', 'PI level met and insurer confirmation sent'],
@@ -67,13 +72,19 @@
         out.push(item('money', { key: 'contract:' + p.id + ':' + left.length, ref: p.id, kind: 'pursuit', title: p.name, why: `Won, ${left.length} contract item${left.length > 1 ? 's' : ''} open: ${left[0]}`, due: today, overdue: 0, value: val, owner: p.owner }));
         continue;
       }
-      if (p.proposed && PV && PV.liveProposal(p, today)) out.push(item('proposed', { key: 'proposed:' + p.id + ':' + (p.proposed.at || ''), ref: p.id, kind: 'proposal', title: p.name, why: `Claude proposes: ${p.proposed.nextAction}${p.proposed.why ? ' (' + p.proposed.why + ')' : ''}`, due: today, overdue: 0, value: val, owner: p.owner }));
+      if (p.proposed && PV && PV.liveProposal(p, today)) {
+        // One row per pursuit: the proposal carries the pursuit's own action (before -> after) and the board row is not repeated.
+        const q = p.proposed; const expires = PV.proposalDays(p) - days(String(q.at).slice(0, 10), today);
+        const stateChange = q.state && q.state !== p.state ? { from: p.state, to: q.state } : null;
+        out.push(item('proposed', { key: 'proposed:' + p.id + ':' + (q.at || ''), ref: p.id, kind: 'proposal', title: p.name, why: `Claude proposes: ${q.nextAction}${q.why ? ' (' + q.why + ')' : ''}`, was: p.nextAction || '', wasDue: p.dueBy || '', after: q.nextAction || '', afterDue: q.dueBy || '', stateChange, expiresIn: expires, due: today, overdue: 0, value: val, money: p.state === 'table' && !lapsed(p, today) ? val : 0, owner: p.owner }));
+        continue;
+      }
       if (p.state === 'table') {
         const d = decisionOf(p);
-        if (lapsed(p, today)) { out.push(item('money', { key: 'lapsed:' + p.id + ':' + p.validUntil, ref: p.id, kind: 'pursuit', title: p.name, why: `Proposal validity lapsed ${p.validUntil}: decide, re-issue or close`, due: p.validUntil, overdue: days(p.validUntil, today), value: 0, owner: p.owner })); continue; }
-        if (p.chaseOn && p.chaseOn <= today && (!d.date || p.chaseOn < d.date)) { out.push(item('money', { key: 'chase:' + p.id + ':' + p.chaseOn, ref: p.id, kind: 'pursuit', title: p.name, why: `Chase due ${p.chaseOn}. ${p.nextAction || 'Ask for a yes, no or a date'}`, due: p.chaseOn, overdue: days(p.chaseOn, today), value: val, owner: p.owner })); continue; }
+        if (lapsed(p, today)) { out.push(item('money', { key: 'lapsed:' + p.id + ':' + p.validUntil, ref: p.id, kind: 'pursuit', title: p.name, why: `Proposal validity lapsed ${p.validUntil}: decide, re-issue or close`, due: p.validUntil, overdue: days(p.validUntil, today), value: 0, money: 0, table: true, owner: p.owner })); continue; }
+        if (p.chaseOn && p.chaseOn <= today && (!d.date || p.chaseOn < d.date)) { out.push(item('money', { key: 'chase:' + p.id + ':' + p.chaseOn, ref: p.id, kind: 'pursuit', title: p.name, why: `Chase due ${p.chaseOn}. ${p.nextAction || 'Ask for a yes, no or a date'}`, due: p.chaseOn, overdue: days(p.chaseOn, today), value: val, money: val, table: true, owner: p.owner })); continue; }
         // Red only for a date someone actually set. An assumed date (issue + 14) is amber: "no decision date agreed".
-        if (d.date && d.date <= addDays(today, 2)) out.push(item('money', { key: 'decision:' + p.id + ':' + d.date, ref: p.id, kind: 'pursuit', title: p.name, why: d.assumed ? `No decision date agreed (proposal out ${p.issuedOn || 'date unknown'}). ${p.nextAction || 'Ask for a yes, no or a date'}` : `Decision ${d.date < today ? 'was due' : 'due'} ${d.date}. ${p.nextAction || 'Chase for a yes, no or a date'}`, due: d.date, overdue: d.assumed ? 0 : Math.max(0, days(d.date, today)), amber: d.assumed, value: val, owner: p.owner }));
+        if (d.date && d.date <= addDays(today, 2)) out.push(item('money', { key: 'decision:' + p.id + ':' + d.date, ref: p.id, kind: 'pursuit', title: p.name, why: d.assumed ? `No decision date agreed (proposal out ${p.issuedOn || 'date unknown'}). ${p.nextAction || 'Ask for a yes, no or a date'}` : `Decision ${d.date < today ? 'was due' : 'due'} ${d.date}. ${p.nextAction || 'Chase for a yes, no or a date'}`, due: d.date, overdue: d.assumed ? 0 : Math.max(0, days(d.date, today)), amber: d.assumed, value: val, money: val, table: true, owner: p.owner }));
         continue;
       }
       // Waiting on them: Barry has done his part, so a chase date past is amber ("their move"), not red.
@@ -83,15 +94,22 @@
       if (t.status === 'done' || t.status === 'skipped') continue;
       if (!mine(t.owner)) continue;
       const g = ['reply', 'meeting', 'followup', 'event', 'proposed', 'money', 'system'].includes(t.type) ? t.type : 'action';
-      out.push(item(g, { key: 'todo:' + t.id, ref: t.id, kind: 'todo', title: t.title, why: t.why || '', due: t.due || today, overdue: Math.max(0, days(t.due || today, today)), value: Number(t.value || 0), owner: t.owner, link: t.link || '', person: t.recordId || '' }));
+      out.push(item(g, { key: 'todo:' + t.id, ref: t.id, kind: 'todo', title: t.title, why: t.why || '', due: t.due || today, overdue: Math.max(0, days(t.due || today, today)), value: Number(t.value || 0), owner: t.owner, link: t.link || '', person: t.recordId || '', pursuitId: t.pursuitId || '', meetingToday: t.type === 'meeting' && (t.due || '') === today }));
     }
+    // People: individual rows for those who matter; the pool becomes one row a week ("Reconnect with 5").
+    const pool = [];
     for (const x of people) {
+      if (x.mode === 'pool') { if (x.s && x.s.overdue && mine(x.owner)) pool.push(x); continue; }
       const nx = seqNext(x.d || {});
       if (nx) { if (nx.date <= today) out.push(item('followup', { key: 'seq:' + x.r.id + ':' + nx.step, ref: x.r.id, kind: 'person', title: `${x.r.name || x.r.company}${x.r.company && x.r.name ? ' · ' + x.r.company : ''}`, why: `Touch ${nx.step} of 4 due: ${nx.label}${x.d.seqTrigger ? ' (' + x.d.seqTrigger + ')' : ''}`, due: nx.date, overdue: Math.max(0, days(nx.date, today)), value: 0, owner: x.owner || '' })); continue; }
       if (x.rung === 'target' && !x.d.targetSince && !x.d.lastMet) continue;
       if (!x.s || !(x.s.overdue || x.s.dueSoon)) continue;
       const lastNote = x.d.lastNote ? ` Last: ${String(x.d.lastNote).slice(0, 80)}` : '';
       out.push(item('followup', { key: 'person:' + x.r.id + ':' + x.s.next, ref: x.r.id, kind: 'person', title: `${x.r.name || x.r.company}${x.r.company && x.r.name ? ' · ' + x.r.company : ''}`, why: `${x.s.overdue ? 'Overdue since' : 'Due'} ${x.s.next} (${x.rung}).${lastNote}`, due: x.s.next, overdue: Math.max(0, -x.s.days), value: 0, owner: x.owner || '' }));
+    }
+    if (pool.length && PV && PV.reconnectPick) {
+      const wk = PV.weekKey(today); const pick = PV.reconnectPick(pool, PV.POOL_WEEKLY);
+      out.push(item('followup', { key: 'reconnect:' + wk, ref: '', kind: 'reconnect', title: `Reconnect with ${pick.length} this week`, why: pick.map(x => x.r.name || x.r.company).join(', ') + ` (${pool.length} people met once, no job yet; a few each week)`, people: pick.map(x => x.r.id), due: wk, overdue: 0, value: 0, owner: '' }));
     }
     for (const e of events) {
       if (e.archived || ['Declined', 'Completed'].includes(e.status) || !e.date) continue;
@@ -112,7 +130,13 @@
     shown.sort((a, b) => b.overdue - a.overdue || b.value - a.value || String(a.due).localeCompare(String(b.due)));
     return GROUPS.map(g => ({ ...g, items: shown.filter(i => i.group === g.key) })).filter(g => g.items.length);
   }
+  /** "Today": the few that matter most. Money first, then replies owed, meetings today, then real overdue, then the rest. */
+  function score(i) {
+    const base = i.meetingToday ? 60 : i.group === 'money' ? 50 : i.group === 'reply' ? 45 : i.group === 'proposed' ? 35 : i.group === 'meeting' ? 30 : i.group === 'action' ? 20 : i.group === 'event' ? 15 : i.group === 'system' ? 25 : 5;
+    return base + Math.min(i.overdue || 0, 30) / 3 + Math.min(i.money || 0, 100000) / 10000;
+  }
+  function today5(groups, n = 5) { return groups.flatMap(g => g.items).sort((a, b) => score(b) - score(a)).slice(0, n); }
 
-  root.VanorStrip = { SEQ, SEQ_LABEL, seqNext, TRIGGER, triggerFor, valueFloor, GROUPS, CONTRACT, contractOpen, decisionOf, lapsed, build, addDays };
+  root.VanorStrip = { addWorkingDays, DONE_DEFAULT, SENT_CHASE_DAYS, score, today5, SEQ, SEQ_LABEL, seqNext, TRIGGER, triggerFor, valueFloor, GROUPS, CONTRACT, contractOpen, decisionOf, lapsed, build, addDays };
   if (typeof module !== 'undefined') module.exports = root.VanorStrip;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

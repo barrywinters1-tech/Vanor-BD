@@ -2411,3 +2411,13 @@ table.people td.stand { color: var(--muted); font-size: 13px; max-width: 420px; 
 .vanor .head-menu{position:relative}
 .vanor .head-menu .menu-list{position:absolute;right:0;top:100%;z-index:5;background:var(--paper,#fff);border:1px solid var(--line,#e3e8e6);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.08);display:grid;min-width:200px;padding:6px}
 .vanor .head-menu .menu-list .btn{justify-content:flex-start}
+/* v8 stage 2: Today block, one row per pursuit */
+.vanor .strip-group.today{background:rgba(31,95,102,.04)}
+.vanor .strip-group.today h3{color:var(--accent,#1f5f66)}
+.vanor .strip-money{font-weight:600;color:#2e7d4f;margin-left:8px;font-size:13px}
+.vanor .strip-when{font-weight:500;color:#5f6f74;margin-left:8px;font-size:12px}
+.vanor .strip-when.late{color:#b23a3a}.vanor .strip-when.amber{color:#9a6b12}
+.vanor .prop-diff s{color:#8a9598}
+.vanor .strip-all{margin:6px 16px 10px;font-weight:600}
+.vanor .money-cells.four{grid-template-columns:repeat(4,1fr)}
+@media (max-width:640px){.vanor .money-cells.four{grid-template-columns:1fr 1fr}}
