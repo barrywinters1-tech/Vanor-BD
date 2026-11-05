@@ -2400,7 +2400,7 @@ table.people td.stand { color: var(--muted); font-size: 13px; max-width: 420px; 
 .sig-play b, .sig-warm b { font-weight: 600; }
 .names .sig-play b, .names .sig-warm b { display: inline; font-size: inherit; }
 /* v8 stage 1 (5 Nov 2026): phones never scroll sideways; action rows wrap; signals stack. */
-.vanor .main{min-width:0;overflow-x:hidden}
+.vanor .main{min-width:0;overflow-x:clip}
 .vanor .focus-head.lean .row{flex-wrap:wrap}
 .vanor .focus-row.lean>.row{flex-wrap:wrap;justify-content:flex-end}
 @media (max-width:700px){.vanor .focus-row.lean>.row{grid-column:1;justify-content:flex-start}.vanor .focus-row.lean .names{min-width:0}.vanor .sig-play{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}}
@@ -2408,9 +2408,6 @@ table.people td.stand { color: var(--muted); font-size: 13px; max-width: 420px; 
 .vanor .strip-row.amber{border-left:3px solid #c98a1f}
 .vanor .strip-row.amber .strip-main small{color:#7a5a12}
 .vanor .due.amber{color:#9a6b12}
-.vanor .head-menu{position:relative}
-.vanor .head-menu .menu-list{position:absolute;right:0;top:100%;z-index:5;background:var(--paper,#fff);border:1px solid var(--line,#e3e8e6);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.08);display:grid;min-width:200px;padding:6px}
-.vanor .head-menu .menu-list .btn{justify-content:flex-start}
 /* v8 stage 2: Today block, one row per pursuit */
 .vanor .strip-group.today{background:rgba(31,95,102,.04)}
 .vanor .strip-group.today h3{color:var(--accent,#1f5f66)}

@@ -89,10 +89,14 @@ export async function proposeNext(id: string, p: { nextAction: string; dueBy?: s
   if (!cur || !V.isPursuit(cur)) throw new Error('No pursuit with id ' + id);
   if (p.state && !V.STATE[p.state] && !V.CLOSED.includes(p.state)) throw new Error('Unknown state ' + p.state);
   // Closing a pursuit and putting a price on the table are founder moves: Claude may propose act, waiting or watch only.
-  if (p.state && (V.CLOSED.includes(p.state) || p.state === 'table')) throw new Error('Claude cannot propose ' + p.state + '; the founders mark won, lost, parked or priced themselves.');
-  if (cur.state === 'table' && p.state && p.state !== 'table') throw new Error('A pursuit with a proposal out stays on the table until a founder marks it won, lost or parked.');
-  await updateEntity('work', id, c => ({ ...c, latest: p.latest || c.latest, proposed: { ...p, at: new Date().toISOString() } }));
-  return { id, proposed: p };
+  // A forbidden state is dropped (the action text still lands) and the note says so; the current state is never a change.
+  let note = '';
+  const q = { ...p };
+  if (q.state === cur.state) delete q.state;
+  if (q.state && (V.CLOSED.includes(q.state) || q.state === 'table')) { note = `State ${q.state} dropped: the founders mark won, lost, parked or priced themselves.`; delete q.state; }
+  else if (q.state && cur.state === 'table') { note = 'State change dropped: a pursuit with a proposal out stays on the table until a founder marks it won, lost or parked.'; delete q.state; }
+  await updateEntity('work', id, c => ({ ...c, latest: q.latest || c.latest, proposed: { ...q, at: new Date().toISOString() } }));
+  return { id, proposed: q, note };
 }
 
 // ---------- People ----------

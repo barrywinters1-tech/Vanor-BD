@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { valueFloor, cleanCompany, tidyItem, dedupeItems } from '../lib/signals-clean.ts';
+import { valueFloor, cleanCompany, tidyItem, dedupeItems, laneOfSignal, lenderIn, titlesFor } from '../lib/signals-clean.ts';
 
 test('valueFloor reads the lower bound of a band in £m', () => {
   assert.equal(valueFloor('£5m–£20m'), 5);
@@ -33,4 +33,16 @@ test('dedupe: same id and key once; same company and stage once, newest wins', (
   const a = { id: 'x', key: 'distress:1', date: '2026-10-27', company: 'Property Light Homes Ltd', stage: 'distress', headline: 'h' };
   const out = dedupeItems([a, { ...a }, { ...a, id: 'y', key: 'lead', date: '2026-10-26' }]);
   assert.equal(out.length, 1); assert.equal(out[0].date, '2026-10-27');
+});
+
+test('lanes and lenders are read from the signal', () => {
+  assert.equal(laneOfSignal({ headline: 'Great Places secures £50m NatWest facility for 300 homes', stage: 'funded' }), 'funder');
+  assert.equal(lenderIn('Great Places secures £50m NatWest facility for 300 homes'), 'NatWest');
+  assert.equal(laneOfSignal({ headline: 'Gamuda Land lets £45m Stratford student scheme to Graham', stage: 'contractor_appointed' }), 'other');
+  assert.equal(laneOfSignal({ headline: 'Planning granted for 60MW data centre in Slough', stage: 'granted' }), 'dc');
+  assert.equal(laneOfSignal({ headline: 'Taylor Wimpey UK Limited v Taylor Woodrow Construction', source: 'tcc_judgments' }), 'claims');
+  assert.equal(laneOfSignal({ headline: 'Essendi UK Hotels 2 Limited v London Property Company', stage: 'dispute' }), 'claims');
+  assert.equal(laneOfSignal({ headline: 'Chiltern Firehouse refurbishment to start', stage: 'on_site', sector: 'hotel' }), 'hotel');
+  assert.equal(lenderIn('Developer starts 200 homes in Leeds'), '');
+  assert.ok(titlesFor('funded', 'funder').includes('Relationship Director'));
 });

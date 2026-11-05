@@ -92,3 +92,16 @@ test('Today is at most five, money and replies before cold follow-ups', () => {
   assert.equal(top[0].title, 'A');
   assert.equal(top[1].title, 'Reply to X');
 });
+
+test('a chase date in the future quiets a table row; the Today list never drops money', () => {
+  const PV = (globalThis as any).VanorPursuits;
+  const today = '2026-11-05';
+  const gate = { asset: 1, problem: 1, capital: 1, route: 1 };
+  const p = (id: string, extra: any) => ({ id: 'pursuit:' + id, kind: 'pursuit', name: id, lane: 'funder', state: 'table', gate, nextAction: 'chase', owner: 'Barry', ...extra });
+  const quiet = S.build({ pursuits: [p('a', { amount: 40000, issuedOn: '2026-10-01', chaseOn: '2026-11-12' })], todos: [], people: [], events: [], jobs: [], captures: [], state: {}, today, PV });
+  assert.equal(quiet.length, 0, 'chased: nothing until the chase date');
+  const many = Array.from({ length: 7 }, (_, i) => p('m' + i, { amount: 10000 + i, issuedOn: '2026-10-01', decisionDate: '2026-11-01' }));
+  const todos = Array.from({ length: 6 }, (_, i) => ({ id: 'r' + i, kind: 'todo', type: 'reply', title: 'Reply ' + i, due: '2026-11-04', status: 'open' }));
+  const top = S.today5(S.build({ pursuits: many, todos, people: [], events: [], jobs: [], captures: [], state: {}, today, PV }), 5);
+  assert.equal(top.filter((i: any) => i.money > 0).length, 7, 'every money row stays in Today');
+});

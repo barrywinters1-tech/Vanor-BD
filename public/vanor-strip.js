@@ -65,26 +65,27 @@
     const open = pursuits.filter(p => !p.archived && !['won', 'lost', 'parked'].includes(p.state) || (p.state === 'won' && contractOpen(p).length));
     for (const p of open) {
       if (!mine(p.owner)) continue;
-      const val = Number(PV ? PV.value(p) : p.amount) || 0;
+      const val = Number(PV ? PV.value(p) : p.amount) || 0; const monthly = !!(PV && PV.isMonthly && PV.isMonthly(p));
       if (p.outcome && p.state !== 'won') continue;
       if (p.state === 'won') {
         const left = contractOpen(p);
-        out.push(item('money', { key: 'contract:' + p.id + ':' + left.length, ref: p.id, kind: 'pursuit', title: p.name, why: `Won, ${left.length} contract item${left.length > 1 ? 's' : ''} open: ${left[0]}`, due: today, overdue: 0, value: val, owner: p.owner }));
+        out.push(item('money', { key: 'contract:' + p.id + ':' + left.length, ref: p.id, kind: 'pursuit', title: p.name, why: `Won, ${left.length} contract item${left.length > 1 ? 's' : ''} open: ${left[0]}`, due: today, overdue: 0, value: val, contract: true, owner: p.owner }));
         continue;
       }
       if (p.proposed && PV && PV.liveProposal(p, today)) {
         // One row per pursuit: the proposal carries the pursuit's own action (before -> after) and the board row is not repeated.
         const q = p.proposed; const expires = PV.proposalDays(p) - days(String(q.at).slice(0, 10), today);
         const stateChange = q.state && q.state !== p.state ? { from: p.state, to: q.state } : null;
-        out.push(item('proposed', { key: 'proposed:' + p.id + ':' + (q.at || ''), ref: p.id, kind: 'proposal', title: p.name, why: `Claude proposes: ${q.nextAction}${q.why ? ' (' + q.why + ')' : ''}`, was: p.nextAction || '', wasDue: p.dueBy || '', after: q.nextAction || '', afterDue: q.dueBy || '', stateChange, expiresIn: expires, due: today, overdue: 0, value: val, money: p.state === 'table' && !lapsed(p, today) ? val : 0, owner: p.owner }));
+        out.push(item('proposed', { key: 'proposed:' + p.id + ':' + (q.at || ''), ref: p.id, kind: 'proposal', title: p.name, why: `Claude proposes: ${q.nextAction}${q.why ? ' (' + q.why + ')' : ''}`, was: p.nextAction || '', wasDue: p.dueBy || '', after: q.nextAction || '', afterDue: q.dueBy || '', stateChange, expiresIn: expires, due: today, overdue: 0, value: val, money: p.state === 'table' && !lapsed(p, today) ? val : 0, monthly, table: p.state === 'table', owner: p.owner }));
         continue;
       }
       if (p.state === 'table') {
         const d = decisionOf(p);
+        if (p.chaseOn && p.chaseOn > today) continue; // chased, or sent: quiet until the chase date
         if (lapsed(p, today)) { out.push(item('money', { key: 'lapsed:' + p.id + ':' + p.validUntil, ref: p.id, kind: 'pursuit', title: p.name, why: `Proposal validity lapsed ${p.validUntil}: decide, re-issue or close`, due: p.validUntil, overdue: days(p.validUntil, today), value: 0, money: 0, table: true, owner: p.owner })); continue; }
-        if (p.chaseOn && p.chaseOn <= today && (!d.date || p.chaseOn < d.date)) { out.push(item('money', { key: 'chase:' + p.id + ':' + p.chaseOn, ref: p.id, kind: 'pursuit', title: p.name, why: `Chase due ${p.chaseOn}. ${p.nextAction || 'Ask for a yes, no or a date'}`, due: p.chaseOn, overdue: days(p.chaseOn, today), value: val, money: val, table: true, owner: p.owner })); continue; }
+        if (p.chaseOn && p.chaseOn <= today && (!d.date || p.chaseOn < d.date)) { out.push(item('money', { key: 'chase:' + p.id + ':' + p.chaseOn, ref: p.id, kind: 'pursuit', title: p.name, why: `Chase due ${p.chaseOn}. ${p.nextAction || 'Ask for a yes, no or a date'}`, due: p.chaseOn, overdue: days(p.chaseOn, today), value: val, money: val, monthly, table: true, owner: p.owner })); continue; }
         // Red only for a date someone actually set. An assumed date (issue + 14) is amber: "no decision date agreed".
-        if (d.date && d.date <= addDays(today, 2)) out.push(item('money', { key: 'decision:' + p.id + ':' + d.date, ref: p.id, kind: 'pursuit', title: p.name, why: d.assumed ? `No decision date agreed (proposal out ${p.issuedOn || 'date unknown'}). ${p.nextAction || 'Ask for a yes, no or a date'}` : `Decision ${d.date < today ? 'was due' : 'due'} ${d.date}. ${p.nextAction || 'Chase for a yes, no or a date'}`, due: d.date, overdue: d.assumed ? 0 : Math.max(0, days(d.date, today)), amber: d.assumed, value: val, money: val, table: true, owner: p.owner }));
+        if (d.date && d.date <= addDays(today, 2)) out.push(item('money', { key: 'decision:' + p.id + ':' + d.date, ref: p.id, kind: 'pursuit', title: p.name, why: d.assumed ? `No decision date agreed (proposal out ${p.issuedOn || 'date unknown'}). ${p.nextAction || 'Ask for a yes, no or a date'}` : `Decision ${d.date < today ? 'was due' : 'due'} ${d.date}. ${p.nextAction || 'Chase for a yes, no or a date'}`, due: d.date, overdue: d.assumed ? 0 : Math.max(0, days(d.date, today)), amber: d.assumed, value: val, money: val, monthly, table: true, owner: p.owner }));
         continue;
       }
       // Waiting on them: Barry has done his part, so a chase date past is amber ("their move"), not red.
@@ -132,10 +133,11 @@
   }
   /** "Today": the few that matter most. Money first, then replies owed, meetings today, then real overdue, then the rest. */
   function score(i) {
-    const base = i.meetingToday ? 60 : i.group === 'money' ? 50 : i.group === 'reply' ? 45 : i.group === 'proposed' ? 35 : i.group === 'meeting' ? 30 : i.group === 'action' ? 20 : i.group === 'event' ? 15 : i.group === 'system' ? 25 : 5;
+    const base = i.meetingToday ? 70 : (i.money > 0 || i.table) ? 60 : i.group === 'reply' ? 45 : i.group === 'proposed' ? 35 : i.group === 'meeting' ? 30 : i.group === 'system' ? 25 : i.group === 'action' ? 20 : i.group === 'event' ? 15 : 5;
     return base + Math.min(i.overdue || 0, 30) / 3 + Math.min(i.money || 0, 100000) / 10000;
   }
-  function today5(groups, n = 5) { return groups.flatMap(g => g.items).sort((a, b) => score(b) - score(a)).slice(0, n); }
+  /** Top n by score; a row with money on it is never pushed out, so Today can run past n when several proposals are live. */
+  function today5(groups, n = 5) { const all = groups.flatMap(g => g.items).sort((a, b) => score(b) - score(a)); const top = all.slice(0, n); for (const i of all.slice(n)) if (i.money > 0) top.push(i); return top; }
 
   root.VanorStrip = { addWorkingDays, DONE_DEFAULT, SENT_CHASE_DAYS, score, today5, SEQ, SEQ_LABEL, seqNext, TRIGGER, triggerFor, valueFloor, GROUPS, CONTRACT, contractOpen, decisionOf, lapsed, build, addDays };
   if (typeof module !== 'undefined') module.exports = root.VanorStrip;

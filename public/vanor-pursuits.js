@@ -163,7 +163,8 @@
   /** Monday of the week containing today (ISO), used as the key for the weekly reconnect row. */
   function weekKey(today) { const d = new Date(today + 'T12:00:00Z'); const w = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - w); return d.toISOString().slice(0, 10); }
   /** Pick this week's reconnect names: lane set first, then most recently met. */
-  function reconnectPick(pool, n = POOL_WEEKLY) { return pool.slice().sort((a, b) => ((b.d.lane ? 1 : 0) - (a.d.lane ? 1 : 0)) || String(b.d.lastMet || '').localeCompare(String(a.d.lastMet || ''))).slice(0, n); }
+  /** Rotates: whoever was picked least recently comes first, then lane set, then most recently met. */
+  function reconnectPick(pool, n = POOL_WEEKLY) { return pool.slice().sort((a, b) => String(a.d.lastReconnectAt || '').localeCompare(String(b.d.lastReconnectAt || '')) || ((b.d.lane ? 1 : 0) - (a.d.lane ? 1 : 0)) || String(b.d.lastMet || '').localeCompare(String(a.d.lastMet || ''))).slice(0, n); }
   function meetingStatus(person, today) {
     const next = nextMeeting(person, today);
     const days = Math.round((Date.parse(next) - Date.parse(today)) / 864e5);

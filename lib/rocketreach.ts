@@ -61,7 +61,8 @@ export async function lookupPerson(input: { name: string; company?: string; link
 /** People search by employer and title keywords, then lookups for contact details. Used on demand from the board, never automatically. */
 export type Candidate = { rocketreachId?: number; name: string; title: string; employer: string; linkedin?: string; emails: Enrichment['emails']; phones: Enrichment['phones']; status: Enrichment['status'] };
 export const BUYER_TITLES = ['Development Director', 'Managing Director', 'Chief Executive', 'Head of Development', 'Investment Director', 'Head of Construction', 'Project Director', 'Fund Manager', 'Finance Director', 'Head of Asset Management', 'Director'];
-export async function searchPeople(input: { company: string; titles?: string[]; limit?: number }, options: { fetcher?: typeof fetch; apiKey?: string } = {}): Promise<{ candidates: Candidate[]; message?: string }> {
+/** lookup:false returns names and titles only (a search, no per-person lookup, so no lookup credit is spent). */
+export async function searchPeople(input: { company: string; titles?: string[]; limit?: number; lookup?: boolean }, options: { fetcher?: typeof fetch; apiKey?: string } = {}): Promise<{ candidates: Candidate[]; message?: string }> {
   const apiKey = options.apiKey ?? process.env.ROCKETREACH_API_KEY ?? '';
   if (!apiKey) return { candidates: [], message: 'ROCKETREACH_API_KEY is not set in Vercel.' };
   const fetcher = options.fetcher || fetch;
@@ -71,11 +72,14 @@ export async function searchPeople(input: { company: string; titles?: string[]; 
       body: JSON.stringify({ query: { current_employer: [input.company], current_title: input.titles?.length ? input.titles : BUYER_TITLES }, start: 1, page_size: 10 }) });
     if (!res.ok) throw new Error(`RocketReach search returned HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
     const json = await res.json();
-    const profiles: any[] = (json.profiles || []).filter((p: any) => p.name && String(p.current_employer || '').toLowerCase().includes(input.company.toLowerCase().split(' ')[0]));
+    // Employer must match the company name cleanly (all its significant words), not just the first word.
+    const words = input.company.toLowerCase().replace(/\b(ltd|limited|plc|llp|group|holdings|uk|the|&|and)\b/g, ' ').split(/\s+/).filter(w => w.length > 1);
+    const profiles: any[] = (json.profiles || []).filter((p: any) => { const emp = String(p.current_employer || '').toLowerCase(); return p.name && words.length && words.every(w => emp.includes(w)); });
     const seniority = (t: string) => /chief|ceo|managing director|\bmd\b|founder|partner|principal/i.test(t) ? 3 : /director|head of|fund manager/i.test(t) ? 2 : 1;
     profiles.sort((a, b) => seniority(b.current_title || '') - seniority(a.current_title || ''));
     const out: Candidate[] = [];
     for (const p of profiles.slice(0, limit)) {
+      if (input.lookup === false) { out.push({ rocketreachId: p.id, name: p.name, title: p.current_title || '', employer: p.current_employer || '', linkedin: p.linkedin_url, emails: [], phones: [], status: 'pending' }); continue; }
       let detail: Person | null = null;
       try { detail = await call(`/person/lookup?id=${p.id}`, fetcher, apiKey) as Person | null;
         for (let i = 0; detail && detail.status && detail.status !== 'complete' && detail.status !== 'failed' && i < 4; i++) { await new Promise(r => setTimeout(r, 2500)); const list = await call(`/person/checkStatus?ids=${p.id}`, fetcher, apiKey) as Person[] | null; detail = { ...detail, ...(Array.isArray(list) ? list[0] : list || {}) }; }

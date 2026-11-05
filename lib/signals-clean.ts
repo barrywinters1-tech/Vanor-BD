@@ -48,3 +48,43 @@ export const TRIGGER: Record<string, { who: string; angle: string }> = {
   on_site: { who: "The client's development director or the funder", angle: 'Independent monitoring or a mid-build position check.' },
 };
 export const triggerFor = (stage = '') => TRIGGER[stage] || { who: 'Whoever loses money if the date moves', angle: 'A short, specific observation and a 20-minute call.' };
+
+// ---- Lanes (5 Nov 2026, v8). Every signal gets the lane it would be sold in, so the page can say which lanes are quiet. ----
+export type Lane = 'funder' | 'claims' | 'dc' | 'hotel' | 'offices' | 'other';
+export const LANE_LABEL: Record<Lane, string> = { funder: 'Funders', claims: 'Claims & disputes', dc: 'Data centres', hotel: 'Hotels', offices: 'Offices', other: 'Other project work' };
+const DC = /\bdata ?cent(re|er)s?\b|hyperscale|colocation|\bcolo\b|\b\d{2,4}\s?mw\b|\bai campus\b|\bgpu\b/i;
+const HOTEL = /\bhotels?\b|hospitality|\bresorts?\b|aparthotel|serviced apartments?|\bhostel|\binn\b|\bpip\b/i;
+const OFFICES = /\boffices?\b|\bhq\b|headquarters|workspace|\bcat ?[ab]\b|lease (end|expiry|event)|refit|fit[- ]?out|relocat/i;
+const CLAIMS = /adjudicat|arbitrat|\bdispute|\bclaims?\b|delay (claim|analysis)|extension of time|\beot\b|\btcc\b|technology and construction court|judgment|\bv\.? [A-Z]|litigat|final account|termination|liquidated damages/i;
+const FUNDER = /\bfacility\b|\bloan\b|\blender|\bdebt\b|refinanc|\bfunding\b|\bfunded\b|\bfinanc(e|ing)\b|credit (fund|committee)|drawdown|\bmonitoring\b|administrat|receiver|insolven|liquidat|wind(ing)?[- ]up|\bworkout\b|recover/i;
+/** The lane a signal belongs to. Stage first (distress, funded and tenders for monitoring are funder work; disputes are claims), then the asset type. */
+export function laneOfSignal(s: { headline?: string; text?: string; stage?: string; sector?: string; source?: string; buyerType?: string }): Lane {
+  const t = `${s.headline || ''} ${s.text || ''} ${s.sector || ''}`;
+  if (s.source === 'tcc_judgments' || s.stage === 'dispute') return 'claims';
+  if (DC.test(t)) return 'dc';
+  if (['distress', 'funded'].includes(s.stage || '') || s.buyerType === 'lender' || s.buyerType === 'fund') return 'funder';
+  if (CLAIMS.test(t) && !/claims? (team|handler|manager)/i.test(t)) return 'claims';
+  if (HOTEL.test(t)) return 'hotel';
+  if (OFFICES.test(t) && !/office(s)? (block|to resi|conversion)/i.test(t)) return 'offices';
+  if (FUNDER.test(t)) return 'funder';
+  return 'other';
+}
+// Development lenders and debt funds active in UK and Irish real estate (public market knowledge, not contact data).
+// When a funded signal names one of these, the lender is the buyer for monitoring work; the borrower is context.
+export const LENDERS = ['NatWest', 'HSBC', 'Lloyds', 'Barclays', 'Santander', 'OakNorth', 'Shawbrook', 'Aldermore', 'Paragon', 'Hampshire Trust Bank', 'HTB', 'United Trust Bank', 'UTB', 'Secure Trust', 'Close Brothers', 'Atelier', 'Octopus Real Estate', 'Octopus', 'Maslow Capital', 'Puma Property Finance', 'Puma', 'Precise Mortgages', 'Together', 'Cheyne Capital', 'Cheyne', 'Starwood Capital', 'Starwood', 'Ares Management', 'Ares', 'Blackstone', 'Apollo', 'ICG', 'LaSalle', 'Pluto Finance', 'Fiera Real Estate', 'Fiera', 'Invesco', 'Zenzic Capital', 'Zenzic', 'Coutts', 'Investec', 'Allica', 'Cynergy', 'Arbuthnot', 'Bank Leumi', 'Leumi', 'Hilltop Credit Partners', 'Avamore', 'Silbury Finance', 'HBFI', 'Home Building Finance Ireland', 'AIB', 'Bank of Ireland', 'Activate Capital', 'Homes England', 'GB Bank', 'Recognise Bank', 'Pollen Street', 'Castleforge', 'Tristan Capital', 'BlackRock', 'M&G', 'Aviva Investors', 'Legal & General', 'L&G', 'Canada Life', 'PGIM', 'Nuveen', 'Cain International', 'Brookfield', 'Cadogan', 'Greystar', 'Patron Capital', 'Elevation', 'MSP Capital', 'Crowdproperty', 'Blend Network', 'Downing', 'Assetz Capital', 'LendInvest', 'Ultimate Finance', 'Hunter Finance', 'Reward Finance', 'Bluecastle Capital', 'Frogmore', 'Topland', 'Glenhawk', 'Mint Property Finance', 'Octane Capital', 'MT Finance', 'ASK Partners', 'Fortwell Capital', 'Cohort Capital', 'Alpha Property Lending', 'Tuscan Capital', 'Beaufort Capital', 'Metro Bank', 'Virgin Money', 'TSB', 'Nationwide', 'Monzo'];
+const LENDER_RE = new RegExp('\\b(' + LENDERS.map(l => l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).sort((a, b) => b.length - a.length).join('|') + ')\\b', 'i');
+/** The first known lender named in a headline or summary, in its canonical spelling; '' when none. */
+export function lenderIn(text = ''): string {
+  const m = String(text).match(LENDER_RE); if (!m) return '';
+  const hit = m[1].toLowerCase(); return LENDERS.find(l => l.toLowerCase() === hit) || m[1];
+}
+/** Plain job titles to search for a signal's "who to call" role, by stage and lane (used by the candidate finder). */
+export function titlesFor(stage = '', lane: Lane = 'other'): string[] {
+  if (lane === 'funder' && (stage === 'funded' || stage === 'distress')) return ['Head of Real Estate Finance', 'Relationship Director', 'Portfolio Manager', 'Head of Asset Management', 'Credit Director'];
+  if (lane === 'claims') return ['Commercial Director', 'Development Director', 'Managing Director', 'General Counsel'];
+  if (lane === 'dc') return ['Head of Construction', 'Development Director', 'Programme Director', 'Chief Development Officer'];
+  if (lane === 'hotel') return ['Head of Development', 'Asset Manager', 'Director of Projects', 'Chief Operating Officer'];
+  if (lane === 'offices') return ['Head of Property', 'Head of Workplace', 'Facilities Director', 'Chief Operating Officer'];
+  if (stage === 'acquired') return ['Head of Asset Management', 'Development Director', 'Investment Director'];
+  return ['Development Director', 'Head of Development', 'Managing Director', 'Project Director'];
+}

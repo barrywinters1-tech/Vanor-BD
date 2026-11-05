@@ -223,10 +223,10 @@ function createServer() {
   }, async ({ items }) => out(await savePursuits(items, 'Claude'), 'Pursuits saved.'));
   server.registerTool('pursuit_propose', {
     title: 'Propose the next move on a pursuit from new evidence (mail, calendar, transcript)',
-    description: 'The board shows it as "Proposed" with an Accept button; the founder\'s current next action stays until accepted. why = the evidence, e.g. "Matthew replied 30 Oct: board meets 5 Nov". latest = one line on what just happened.',
-    inputSchema: { id: z.string(), nextAction: z.string().min(3).max(200), dueBy: date.optional(), state: z.enum(['table', 'act', 'waiting', 'watch', 'won', 'lost', 'parked']).optional(), latest: z.string().max(300).optional(), why: z.string().min(3).max(300) },
+    description: 'The board shows it as "Proposed" with an Accept button; the founder\'s current next action stays until accepted. States you may propose: act, waiting, watch (never table, won, lost or parked, and never off the table). why = the evidence, e.g. "Matthew replied 30 Oct: board meets 5 Nov". latest = one line on what just happened.',
+    inputSchema: { id: z.string(), nextAction: z.string().min(3).max(200), dueBy: date.optional(), state: z.enum(['act', 'waiting', 'watch']).optional(), latest: z.string().max(300).optional(), why: z.string().min(3).max(300) },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ id, ...p }) => out(await proposeNext(id, p), 'Proposed.'));
+  }, async ({ id, ...p }) => { const r = await proposeNext(id, p); return out(r, r.note ? 'Proposed. ' + r.note : 'Proposed.'); });
   server.registerTool('people_met', {
     title: 'People: record meetings from the calendar (batch)',
     description: 'One item per external person per meeting that actually happened. Matches by exact email only; a name alone is never auto-recorded. Pass eventId (the calendar event id) so a meeting is never counted twice. Future dates are refused. Returns toConfirm (names with no email, bad dates) and unmatched emails for the founders. Sets last met, counts meetings, and optionally the one-line note from the meeting, the rung (target/contact/referrer/active/partner), lane and the McMakin buying stage reached (Aware, Understands, Interested, Respects, Trusts, Able, Ready). Returns the unmatched so they can be added.',

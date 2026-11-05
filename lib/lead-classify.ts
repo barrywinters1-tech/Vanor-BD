@@ -2,24 +2,24 @@
 // stage in the project life, sector, development type, size and value, parties, region. Plain regex, no AI.
 // Thresholds follow Glenigan's "large project" rule as described to the ONS: 10+ homes or £250k+ non-residential.
 
-export type Stage = 'pre_planning' | 'submitted' | 'granted' | 'refused' | 'appeal' | 'funded' | 'acquired' | 'tender' | 'contractor_appointed' | 'on_site' | 'completed' | 'stalled' | 'distress' | 'leadership' | 'news' | 'hiring';
+export type Stage = 'pre_planning' | 'submitted' | 'granted' | 'refused' | 'appeal' | 'funded' | 'acquired' | 'tender' | 'contractor_appointed' | 'on_site' | 'completed' | 'stalled' | 'distress' | 'leadership' | 'news' | 'hiring' | 'dispute';
 export const STAGE_LABEL: Record<Stage, string> = {
   pre_planning: 'Pre-planning', submitted: 'Plans submitted', granted: 'Plans granted', refused: 'Plans refused', appeal: 'At appeal', funded: 'Funding secured', acquired: 'Site acquired',
-  tender: 'Out to tender', contractor_appointed: 'Contractor appointed', on_site: 'On site', completed: 'Completed', stalled: 'Stalled', distress: 'Distress', leadership: 'People move', news: 'News', hiring: 'Hiring senior staff',
+  tender: 'Out to tender', contractor_appointed: 'Contractor appointed', on_site: 'On site', completed: 'Completed', stalled: 'Stalled', distress: 'Distress', leadership: 'People move', news: 'News', dispute: 'In dispute', hiring: 'Hiring senior staff',
 };
 /** What Vanor offers at each stage, in the founders' words. */
 export const STAGE_PLAY: Record<Stage, string> = {
   pre_planning: 'Early: offer a delivery-risk view before the scheme is fixed', submitted: 'Pre-construction: peer review of programme and cost plan before tender', granted: 'Consent in: offer the pre-tender Stress Test, the window is now',
   refused: 'Watch: re-submission likely, keep warm', appeal: 'Watch: decision pending', funded: 'Funder has a monitoring need and the developer has a start date: call both', acquired: 'New owner, new scheme: get in before the team is appointed',
   tender: 'Tender stage: independent review of contractor programmes and bids', contractor_appointed: 'Contract let: offer monitoring or an early-warning review for the client or funder', on_site: 'On site: position finding if it has drifted; monitoring for the funder',
-  completed: 'Closing out: final account and claims support', stalled: 'Stalled: position finding and recovery plan', distress: 'Distress: call the employer or funder exposed, not the insolvent party', leadership: 'New decision-maker: introduce Vanor in their first 90 days', news: 'Context only', hiring: 'More work than people: offer Barry and Graeme as senior capacity while they recruit',
+  completed: 'Closing out: final account and claims support', stalled: 'Stalled: position finding and recovery plan', distress: 'Distress: call the employer or funder exposed, not the insolvent party', dispute: 'Dispute: the employer side needs an independent delay and cost view; offer sub-consulting to their claims advisers', leadership: 'New decision-maker: introduce Vanor in their first 90 days', news: 'Context only', hiring: 'More work than people: offer Barry and Graeme as senior capacity while they recruit',
 };
 export type DevType = 'new_build' | 'refurbishment' | 'conversion' | 'extension' | 'demolition' | 'infrastructure' | 'unknown';
 export type Sector = 'residential' | 'btr' | 'pbsa' | 'later_living' | 'hotel' | 'leisure' | 'office' | 'retail' | 'mixed_use' | 'industrial' | 'data_centre' | 'life_sciences' | 'education' | 'health' | 'public' | 'infrastructure' | 'heritage' | 'unknown';
 export const SECTOR_LABEL: Record<Sector, string> = { residential: 'Residential', btr: 'Build to rent', pbsa: 'Student', later_living: 'Later living', hotel: 'Hotel', leisure: 'Leisure', office: 'Office', retail: 'Retail', mixed_use: 'Mixed use', industrial: 'Industrial & logistics', data_centre: 'Data centre', life_sciences: 'Life sciences', education: 'Education', health: 'Health', public: 'Public', infrastructure: 'Infrastructure', heritage: 'Heritage', unknown: 'Unclassified' };
 
 export type Size = { units?: number; keys?: number; beds?: number; sqft?: number; sqm?: number; storeys?: number; valueM?: number };
-export type Parties = { developer?: string; funder?: string; contractor?: string; architect?: string; agent?: string; authority?: string };
+export type Parties = { developer?: string; funder?: string; borrower?: string; contractor?: string; architect?: string; agent?: string; authority?: string; claimant?: string; defendant?: string };
 export type Lead = { stage: Stage; devType: DevType; sector: Sector; size: Size; valueBand: string; region: string; parties: Parties; isLarge: boolean; tags: string[] };
 
 const STAGES: [Stage, RegExp][] = [
@@ -133,7 +133,7 @@ export function isLeadWorthy(l: Lead) {
 
 // ---- Sellability: can Vanor sell something off this signal, to whom, for how much, how soon? ----
 export type Sellability = { score: number; tier: 'Hot' | 'Warm' | 'Watch'; parts: { moment: number; buyer: number; size: number; access: number; fresh: number; sector: number; complexity: number }; play: string; call: string; why: string };
-const MOMENT: Record<Stage, number> = { funded: 1, granted: 0.95, tender: 0.9, stalled: 0.9, contractor_appointed: 0.7, acquired: 0.65, submitted: 0.6, on_site: 0.5, pre_planning: 0.35, distress: 0.3, appeal: 0.3, refused: 0.2, leadership: 0.3, completed: 0.15, news: 0.1, hiring: 0.65 };
+const MOMENT: Record<Stage, number> = { dispute: 0.8, funded: 1, granted: 0.95, tender: 0.9, stalled: 0.9, contractor_appointed: 0.7, acquired: 0.65, submitted: 0.6, on_site: 0.5, pre_planning: 0.35, distress: 0.3, appeal: 0.3, refused: 0.2, leadership: 0.3, completed: 0.15, news: 0.1, hiring: 0.65 };
 const BUYER: Record<string, number> = { developer: 1, hotel_group: 1, owner_occupier: 1, fund: 0.95, family_office: 0.95, lender: 0.95, consultancy: 0.85, public_body: 0.6, contractor: 0.3, unknown: 0.35 };
 const SIZE_BAND: Record<string, number> = { '£100m+': 1, '£50m–£100m': 0.9, '£20m–£50m': 0.8, '£5m–£20m': 0.6, '£1m–£5m': 0.35, 'Under £1m': 0.15, 'Value unknown': 0.4 };
 const OFF_SECTOR: Sector[] = ['infrastructure', 'public', 'industrial', 'retail'];

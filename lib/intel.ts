@@ -41,6 +41,9 @@ export const FEEDS: Record<string, string> = {
   // Data-centre press (feed URLs not yet confirmed from here; a failing feed is reported by name on the board).
   dcd: 'https://www.datacenterdynamics.com/en/rss/',
   datacentre_review: 'https://datacentrereview.com/feed/',
+  // Claims lane (5 Nov 2026): Technology and Construction Court judgments name both parties. Feed URL read from the court's
+  // "Subscribe to these results" link on caselaw.nationalarchives.gov.uk/ewhc/tcc.
+  tcc_judgments: 'https://caselaw.nationalarchives.gov.uk/atom.xml?court=ewhc%2Ftcc',
 };
 
 // ---- buyer map (lib/buyers.py) ----
@@ -111,6 +114,8 @@ export function isSignal(s: Signal) {
   if (s.source === 'planit' || s.source === 'planning_data_gov' || s.source === 'london_datahub')
     return !t.includes('size: small') && !PLANNING_NOISE.test(t) && CONFIG.sectors.some(k => t.includes(k));
   if (s.source.startsWith('gazette') || s.source.startsWith('hiring') || s.source === 'find_a_tender') return true;
+  // A TCC judgment is a dispute between named parties; the employer side is the claims-lane buyer. Skip procedural-only titles.
+  if (s.source === 'tcc_judgments') return /\bv\.?\s/i.test(s.title) && !/costs only|anonymi[sz]ed/i.test(t);
   // Press: a stage we act on, a sector we serve, and a size or a named party (Glenigan's 10 homes / £250k rule).
   return isLeadWorthy(classifyLead(`${s.title}. ${s.summary}`, s.hint));
 }
@@ -127,6 +132,7 @@ export function score(s: Signal, today = new Date()): Scored {
   if ((s.source === 'planit' || s.source === 'london_datahub') && ['news', 'leadership'].includes(lead.stage)) lead.stage = 'submitted';
   if (s.source.startsWith('hiring')) lead.stage = 'hiring';
   if (s.source === 'find_a_tender') { lead.stage = 'tender'; if (s.applicant) lead.parties.developer = lead.parties.developer || s.applicant; }
+  if (s.source === 'tcc_judgments') { lead.stage = 'dispute'; const m = s.title.match(/^(.*?)\s+v\.?\s+(.*?)(\s*\(|$)/i); if (m) { lead.parties.claimant = m[1].trim().slice(0, 80); lead.parties.defendant = m[2].trim().slice(0, 80); lead.parties.developer = lead.parties.developer || lead.parties.claimant; } }
   if (s.source.startsWith('gazette')) {
     // The insolvent company is the subject, never the buyer. The buyer is the employer or funder it owes a building to, if the notice names one (it rarely does).
     lead.stage = 'distress';
@@ -387,7 +393,11 @@ export async function scan(today = new Date()) {
   const seen = new Set<string>();
   const scored = all.filter(isSignal).filter(s => s.link && !seen.has(s.link) && seen.add(s.link)).map(s => score(s, today))
     .sort((a, b) => b.score - a.score);
-  return { fetched: all.length, signals: scored.length, scored, errors };
+  const bySource: Record<string, { fetched: number; signals: number }> = {};
+  for (const name of [...Object.keys(FEEDS), 'gazette', 'planit', 'london_datahub', 'planning_data_gov', 'hiring_reed', 'hiring_adzuna', 'find_a_tender']) bySource[name] = { fetched: 0, signals: 0 };
+  for (const s of all) { const k = s.source.startsWith('gazette') ? 'gazette' : s.source; (bySource[k] ||= { fetched: 0, signals: 0 }).fetched++; }
+  for (const s of scored) { const k = s.source.startsWith('gazette') ? 'gazette' : s.source; (bySource[k] ||= { fetched: 0, signals: 0 }).signals++; }
+  return { fetched: all.length, signals: scored.length, scored, errors, bySource };
 }
 
 export function leadContext(s: Scored, directors: string[], known: string[]) {
