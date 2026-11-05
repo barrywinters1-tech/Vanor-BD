@@ -101,6 +101,9 @@
   const touched = p => p && (p.founderTouchedAt || p.createdAt || p.updatedAt);
   const stale = (p, today) => isOpen(p) && !!touched(p) && daysBetween(String(touched(p)).slice(0, 10), today) > STALE_DAYS;
   const late = (p, today) => !!(p.dueBy && p.dueBy < today);
+  // Red only when the move is ours. In 'waiting' the ball is with them: a past chase date is amber, not overdue.
+  const theirMove = (p, today) => late(p, today) && stateOf(p) === 'waiting';
+  const overdueOurs = (p, today) => late(p, today) && !theirMove(p, today);
   function sortRows(list, today) {
     return list.slice().sort((a, b) =>
       (late(b, today) - late(a, today)) ||
@@ -120,9 +123,10 @@
     const counted = by.table.filter(p => !lapsedProposal(p, today));
     const onTable = counted.filter(p => !isMonthly(p)).reduce((t, p) => t + value(p), 0);
     const onTableMonthly = counted.filter(isMonthly).reduce((t, p) => t + value(p), 0);
-    const overdue = open.filter(p => late(p, today)).length;
+    const overdue = open.filter(p => overdueOurs(p, today)).length;
+    const theirs = open.filter(p => theirMove(p, today)).length;
     const staleCount = open.filter(p => stale(p, today)).length;
-    return { by, counts, total: open.length, onTable, onTableMonthly, overdue, stale: staleCount, proposalsOut: counted.length };
+    return { by, counts, total: open.length, onTable, onTableMonthly, overdue, theirs, stale: staleCount, proposalsOut: counted.length };
   }
 
   // The only numbers that matter first: proposals out, fees invoiced, days since the last invoice.
@@ -151,6 +155,6 @@
     return { next, days, overdue: days < 0, dueSoon: days >= 0 && days <= DUE_SOON_DAYS };
   }
 
-  root.VanorPursuits = { FUNDER_PROPOSAL_DAYS, lapsedProposal, proposalDays, DUE_SOON_DAYS, TARGET_FIRST_DAYS, touched, TYPES, IN_HOUSE, PROPOSAL_DAYS, STALE_DAYS, value, isMonthly, liveProposal, stale, money, daysBetween, LANES, LANE, STATES, STATE, CLOSED, GATE, RUNGS, RUNG, BUYING, isPursuit, isOpen, laneOf, stateOf, gateMissing, validate, pounds, sortRows, board, nextMeeting, meetingStatus, addDays };
+  root.VanorPursuits = { late, theirMove, overdueOurs, FUNDER_PROPOSAL_DAYS, lapsedProposal, proposalDays, DUE_SOON_DAYS, TARGET_FIRST_DAYS, touched, TYPES, IN_HOUSE, PROPOSAL_DAYS, STALE_DAYS, value, isMonthly, liveProposal, stale, money, daysBetween, LANES, LANE, STATES, STATE, CLOSED, GATE, RUNGS, RUNG, BUYING, isPursuit, isOpen, laneOf, stateOf, gateMissing, validate, pounds, sortRows, board, nextMeeting, meetingStatus, addDays };
   if (typeof module !== 'undefined') module.exports = root.VanorPursuits;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

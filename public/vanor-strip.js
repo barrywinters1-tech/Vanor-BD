@@ -28,7 +28,7 @@
   function decisionOf(p) {
     if (p.decisionDate) return { date: p.decisionDate, assumed: false };
     if (p.issuedOn) return { date: addDays(p.issuedOn, 14), assumed: true };
-    return { date: p.dueBy || '', assumed: !p.dueBy ? false : true };
+    return { date: p.dueBy || '', assumed: false }; // dueBy is a date a person set
   }
   /** A proposal leaves the £ figure once its validity has lapsed. */
   const lapsed = (p, today) => !!(p.validUntil && p.validUntil < today);
@@ -72,10 +72,12 @@
         const d = decisionOf(p);
         if (lapsed(p, today)) { out.push(item('money', { key: 'lapsed:' + p.id + ':' + p.validUntil, ref: p.id, kind: 'pursuit', title: p.name, why: `Proposal validity lapsed ${p.validUntil}: decide, re-issue or close`, due: p.validUntil, overdue: days(p.validUntil, today), value: 0, owner: p.owner })); continue; }
         if (p.chaseOn && p.chaseOn <= today && (!d.date || p.chaseOn < d.date)) { out.push(item('money', { key: 'chase:' + p.id + ':' + p.chaseOn, ref: p.id, kind: 'pursuit', title: p.name, why: `Chase due ${p.chaseOn}. ${p.nextAction || 'Ask for a yes, no or a date'}`, due: p.chaseOn, overdue: days(p.chaseOn, today), value: val, owner: p.owner })); continue; }
-        if (d.date && d.date <= addDays(today, 2)) out.push(item('money', { key: 'decision:' + p.id + ':' + d.date, ref: p.id, kind: 'pursuit', title: p.name, why: `Decision ${d.date < today ? 'was due' : 'due'} ${d.date}${d.assumed ? ' (assumed)' : ''}. ${p.nextAction || 'Chase for a yes, no or a date'}`, due: d.date, overdue: Math.max(0, days(d.date, today)), value: val, owner: p.owner }));
+        // Red only for a date someone actually set. An assumed date (issue + 14) is amber: "no decision date agreed".
+        if (d.date && d.date <= addDays(today, 2)) out.push(item('money', { key: 'decision:' + p.id + ':' + d.date, ref: p.id, kind: 'pursuit', title: p.name, why: d.assumed ? `No decision date agreed (proposal out ${p.issuedOn || 'date unknown'}). ${p.nextAction || 'Ask for a yes, no or a date'}` : `Decision ${d.date < today ? 'was due' : 'due'} ${d.date}. ${p.nextAction || 'Chase for a yes, no or a date'}`, due: d.date, overdue: d.assumed ? 0 : Math.max(0, days(d.date, today)), amber: d.assumed, value: val, owner: p.owner }));
         continue;
       }
-      if (p.dueBy && p.dueBy <= today) out.push(item('action', { key: 'action:' + p.id + ':' + p.dueBy, ref: p.id, kind: 'pursuit', title: p.name, why: p.nextAction || 'Next action due', due: p.dueBy, overdue: days(p.dueBy, today), value: val, owner: p.owner }));
+      // Waiting on them: Barry has done his part, so a chase date past is amber ("their move"), not red.
+      if (p.dueBy && p.dueBy <= today) { const theirs = p.state === 'waiting'; out.push(item('action', { key: 'action:' + p.id + ':' + p.dueBy, ref: p.id, kind: 'pursuit', title: p.name, why: (theirs ? `Their move; chase due ${p.dueBy}. ` : '') + (p.nextAction || 'Next action due'), due: p.dueBy, overdue: theirs ? 0 : days(p.dueBy, today), amber: theirs, value: val, owner: p.owner })); }
     }
     for (const t of todos) {
       if (t.status === 'done' || t.status === 'skipped') continue;
