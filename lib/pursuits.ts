@@ -2,7 +2,7 @@
 // Pursuits are stored in the 'work' scope with kind 'pursuit' so no migration is needed;
 // the older engine ignores them (see listWork in bd-store).
 import '../public/vanor-pursuits.js';
-import { findByEmail, getOne, listScope, updateEntity, type Entity } from './bd-store';
+import { findByEmail, getOne, listScope, updateEntity, logEvent, type Entity } from './bd-store';
 import { today } from './bd-logic';
 
 const V = (globalThis as any).VanorPursuits;
@@ -97,6 +97,29 @@ export async function proposeNext(id: string, p: { nextAction: string; dueBy?: s
   else if (q.state && cur.state === 'table') { note = 'State change dropped: a pursuit with a proposal out stays on the table until a founder marks it won, lost or parked.'; delete q.state; }
   await updateEntity('work', id, c => ({ ...c, latest: q.latest || c.latest, proposed: { ...q, at: new Date().toISOString() } }));
   return { id, proposed: q, note };
+}
+
+/** Park a pursuit on a founder's instruction (10 Nov 2026). Only Watch or Waiting with no proposal issued; table, act, won
+ *  and lost are refused with the reason. History is kept (parkedFrom, parkedAt, the instruction); the board shows Unpark. */
+export type ParkResult = { id: string; parked: boolean; from?: string; why?: string };
+export async function parkPursuit(p: { id: string; instructedBy: 'Barry' | 'Graeme'; instruction: string; reason: string }): Promise<ParkResult> {
+  const cur = await getOne('work', p.id);
+  if (!cur || !V.isPursuit(cur)) throw new Error('No pursuit with id ' + p.id);
+  if (!['Barry', 'Graeme'].includes(p.instructedBy)) throw new Error('instructedBy must be Barry or Graeme');
+  const instruction = String(p.instruction || '').trim(), reason = String(p.reason || '').trim();
+  if (instruction.length < 10) throw new Error('instruction must quote the founder\'s words (at least 10 characters)');
+  if (reason.length < 5) throw new Error('reason is required');
+  const state = V.stateOf(cur);
+  const refuse = (why: string) => ({ id: p.id, parked: false, why });
+  if (state === 'table') return refuse('a pursuit with a proposal out stays on the table until a founder marks it won, lost or parked on the board');
+  if (state === 'act') return refuse('Act now pursuits are the founders\' live work; park it on the board if that is the decision');
+  if (V.CLOSED.includes(state)) return refuse(`already ${state}; nothing to park`);
+  if (state !== 'watch' && state !== 'waiting') return refuse(`only Watch or Waiting pursuits can be parked from here (this one is ${state})`);
+  if (cur.issuedOn || cur.decisionDate || cur.validUntil) return refuse('a proposal has been issued on this pursuit; only a founder parks it, on the board');
+  const at = new Date().toISOString();
+  await updateEntity('work', p.id, c => ({ ...c, state: 'parked', parkedAt: at, parkedFrom: state, parkedBy: p.instructedBy, parkedVia: 'Claude', parkedInstruction: instruction.slice(0, 300), parkedReason: reason.slice(0, 200), proposed: null, latest: `${at.slice(0, 10)}: parked on ${p.instructedBy}'s instruction (${reason.slice(0, 120)})`, archived: true, updatedAt: at, updatedBy: 'Claude', history: [{ at, by: 'Claude', change: `parked from ${state} on ${p.instructedBy}'s instruction: "${instruction.slice(0, 120)}"` }, ...((c.history as unknown[]) || [])].slice(0, 30) }));
+  await logEvent({ entityId: p.id, recordId: String(cur.recordId || ''), type: 'Pursuit parked', note: `${p.instructedBy}: "${instruction.slice(0, 160)}" (${reason.slice(0, 80)})`, actor: 'Claude' });
+  return { id: p.id, parked: true, from: state };
 }
 
 // ---------- People ----------
