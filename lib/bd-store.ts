@@ -6,6 +6,13 @@ export type Entity = { id: string; _rev?: number; [key: string]: any };
 export type Scope = 'source' | 'decision' | 'work' | 'event' | 'planned_event';
 
 const db = () => serviceClient();
+
+// In-memory backend for tests only (VANOR_STORE=memory). Same optimistic-revision rules as the database.
+const MEM = process.env.VANOR_STORE === 'memory' && process.env.NODE_ENV !== 'production';
+if (MEM) console.warn('[bd-store] in-memory store active: nothing is persisted (tests only)');
+const mem = new Map<string, { payload: Entity; revision: number; updated_at: string }>();
+const memKey = (scope: Scope, id: string) => scope + '\u0000' + id;
+export function _memReset() { mem.clear(); }
 const fail = (error: { message?: string; details?: string }): never => {
   const keyHint = /api key|jwt|unauthori/i.test(error.message || '') ? ` [keys found: ${serviceKey()?.checked || 'none'}]` : '';
   throw new Error(`Database error: ${error.message || 'unknown'}${error.details ? ' (' + error.details + ')' : ''}${keyHint}`);
@@ -13,6 +20,7 @@ const fail = (error: { message?: string; details?: string }): never => {
 let cachedTenant = '';
 
 export async function tenantId() {
+  if (MEM) return 'memory';
   if (process.env.VANOR_TENANT_ID) return process.env.VANOR_TENANT_ID;
   if (cachedTenant) return cachedTenant;
   const { data, error } = await db().from('tenants').select('id').order('created_at').limit(1).maybeSingle();
@@ -24,6 +32,7 @@ export async function tenantId() {
 const strip = (entity: Entity) => { const copy = { ...entity }; delete copy._rev; return copy; };
 
 export async function listScope(scope: Scope): Promise<Entity[]> {
+  if (MEM) return [...mem.entries()].filter(([k]) => k.startsWith(scope + '\u0000')).map(([, v]) => ({ ...v.payload, _rev: v.revision })).sort((a, b) => String(a.id).localeCompare(String(b.id)));
   const tenant = await tenantId();
   const rows: Entity[] = [];
   for (let start = 0; ; start += 1000) {
@@ -37,6 +46,7 @@ export async function listScope(scope: Scope): Promise<Entity[]> {
 }
 
 export async function getOne(scope: Scope, id: string): Promise<Entity | null> {
+  if (MEM) { const v = mem.get(memKey(scope, id)); return v ? { ...v.payload, _rev: v.revision } : null; }
   const { data, error } = await db().from('entities').select('payload,revision')
     .eq('tenant_id', await tenantId()).eq('scope', scope).eq('id', id).maybeSingle();
   if (error) fail(error);
@@ -48,6 +58,12 @@ export async function saveEntity(scope: Scope, entity: Entity, expectedRev: numb
   const tenant = await tenantId();
   const now = new Date().toISOString();
   const payload = scope === 'source' ? strip(entity) : { ...strip(entity), updatedAt: now };
+  if (MEM) {
+    const k = memKey(scope, entity.id); const cur = mem.get(k);
+    if (!expectedRev) { if (cur) return null; mem.set(k, { payload, revision: 1, updated_at: now }); return { ...payload, _rev: 1 }; }
+    if (!cur || cur.revision !== expectedRev) return null;
+    mem.set(k, { payload, revision: expectedRev + 1, updated_at: now }); return { ...payload, _rev: expectedRev + 1 };
+  }
   if (!expectedRev) {
     const { data, error } = await db().from('entities')
       .upsert({ tenant_id: tenant, scope, id: entity.id, payload, revision: 1, updated_at: now },

@@ -45,3 +45,14 @@ These are the prompts for Claude's scheduled tasks. They need the **Vanor BD** c
 ## C. Enrichment (Stage 4, weekly)
 
 > Use `list_contacts` with `missingEmailOnly: true`. For contacts with fit 2, or a chase score of 40+ in `get_contact`, call `enrich_contact`, up to 25 per run. Report what you found.
+
+## D. Closing the loop and parking (10 Nov 2026)
+
+The live morning sync (scheduled task "Morning sync (08:10 weekdays)", prompt v9) closes to-dos two ways:
+
+- `todo_done(id, reason "sent", sentOn, toEmail | conversationId)`: only on a clean Sent Items match (recipient or conversation, sent on or after the to-do was created).
+- `todo_done(id, reason "superseded" | "meeting_held" | "no_longer_needed", note)`: no Sent Item needed, but `note` must carry at least 20 characters of evidence Claude actually read (a reply date and line, the calendar event, the offered slots that passed). A to-do a founder reopened is never closed by reason again.
+
+Every close records doneBy Claude, the reason and the note. The board lists them under "Closed by Claude" for 14 days with one-tap Undo. `todo_add` with the same type and title updates the open row (adds toEmail, link, conversationId) instead of duplicating; a different conversationId, recordId or pursuitId is a different item, and a closed row is never resurrected.
+
+`pursuit_park(id, instructedBy Barry|Graeme, instruction, reason)` parks a Watch or Waiting pursuit with no proposal issued, only on a founder's explicit instruction quoted in `instruction`. Table, Act now, won, lost and already-parked are refused with the reason. Nothing is deleted; the record keeps its history and the board shows Unpark. Claude still cannot set won, lost or invoiced, move a priced pursuit off the table, send mail or delete anything.

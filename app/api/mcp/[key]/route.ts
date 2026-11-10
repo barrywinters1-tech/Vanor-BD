@@ -23,7 +23,7 @@ import { addTodos, listTodos, todoDone, jobRan } from '../../../../lib/todos';
 import { proposePeople } from '../../../../lib/people-tray';
 import { openCaptures, captureDone, captureImages } from '../../../../lib/captures';
 import { researchBatch, saveIntel, signalContacts } from '../../../../lib/company-intel-store';
-import { listPursuits, savePursuits, proposeNext, recordMeetings, setPerson, peopleDue } from '../../../../lib/pursuits';
+import { listPursuits, savePursuits, proposeNext, parkPursuit, recordMeetings, setPerson, peopleDue } from '../../../../lib/pursuits';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -227,6 +227,12 @@ function createServer() {
     inputSchema: { id: z.string(), nextAction: z.string().min(3).max(200), dueBy: date.optional(), state: z.enum(['act', 'waiting', 'watch']).optional(), latest: z.string().max(300).optional(), why: z.string().min(3).max(300) },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ id, ...p }) => { const r = await proposeNext(id, p); return out(r, r.note ? 'Proposed. ' + r.note : 'Proposed.'); });
+  server.registerTool('pursuit_park', {
+    title: 'Park a pursuit on a founder\'s explicit instruction',
+    description: 'Only when Barry or Graeme has told you, in this conversation, to park a named pursuit. Allowed only for a pursuit in Watch or Waiting with no proposal issued (no issuedOn, decisionDate or validUntil). Refused, with the reason, for table (a priced pursuit stays on the table until a founder marks it won or lost), act, won, lost or already parked. instructedBy = who said it; instruction = their words, quoted; reason = the short why in plain words. Keeps the whole record and history, sets state parked, and the board shows one-tap Unpark. Never sets won, lost or invoiced; nothing is deleted.',
+    inputSchema: { id: z.string(), instructedBy: z.enum(['Barry', 'Graeme']), instruction: z.string().min(10).max(300).describe('The founder\'s words, quoted'), reason: z.string().min(5).max(200) },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async (p) => { const r = await parkPursuit(p); return out(r, r.parked ? 'Parked (was ' + r.from + ').' : 'Not parked: ' + r.why); });
   server.registerTool('people_met', {
     title: 'People: record meetings from the calendar (batch)',
     description: 'One item per external person per meeting that actually happened. Matches by exact email only; a name alone is never auto-recorded. Pass eventId (the calendar event id) so a meeting is never counted twice. Future dates are refused. Returns toConfirm (names with no email, bad dates) and unmatched emails for the founders. Sets last met, counts meetings, and optionally the one-line note from the meeting, the rung (target/contact/referrer/active/partner), lane and the McMakin buying stage reached (Aware, Understands, Interested, Respects, Trusts, Able, Ready). Returns the unmatched so they can be added.',
@@ -247,7 +253,7 @@ function createServer() {
   }, async ({ apply, limit }) => out(await bolsterPeople({ apply: !!apply, limit: limit || 150 }), apply ? 'People bolstered.' : 'Dry run.'));
   server.registerTool('todo_add', {
     title: 'Put to-dos on the board strip (replies owed, meetings to arrange, drafts waiting)',
-    description: 'Batch. type: reply (someone is waiting for Barry or Graeme), meeting (a meeting to arrange; say which slots were offered), followup, event, action. title names the real person and company; why says what happened and quotes the email or note; link = the Outlook draft webLink if a draft was made; recordId = the board contact id if known; due = YYYY-MM-DD. Items with placeholder text instead of a real name are refused. Re-adding the same item only refreshes it.',
+    description: 'Batch. type: reply (someone is waiting for Barry or Graeme), meeting (a meeting to arrange; say which slots were offered), followup, event, action. title names the real person and company; why says what happened and quotes the email or note; link = the Outlook draft webLink if a draft was made; recordId = the board contact id if known; due = YYYY-MM-DD. Items with placeholder text instead of a real name are refused. Re-adding an item with the same type and title updates the existing open row (e.g. to add toEmail, link or conversationId) instead of creating a duplicate.',
     inputSchema: { items: z.array(z.object({ type: z.enum(['reply', 'meeting', 'followup', 'event', 'action']), title: z.string().min(3).max(160), why: z.string().max(300).optional(), due: date.optional(), owner: z.enum(['Barry', 'Graeme', 'Both']).optional(), link: z.string().max(600).optional(), recordId: z.string().optional(), pursuitId: z.string().optional(), draftText: z.string().max(4000).optional().describe('The draft body, checked for placeholders; not stored'), source: z.string().max(200).optional(), toEmail: z.string().max(120).optional().describe('The draft recipient; lets the next run close this to-do when the mail is in Sent Items'), subject: z.string().max(200).optional(), conversationId: z.string().max(200).optional().describe('Outlook conversationId of the thread, if replying in-thread') })).min(1).max(50) },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ items }) => out(await addTodos(items), 'To-dos added.'));
@@ -257,9 +263,9 @@ function createServer() {
     annotations: { readOnlyHint: true },
   }, async ({ includeDone }) => out({ items: await listTodos({ includeDone }) }, 'To-dos.'));
   server.registerTool('todo_done', {
-    title: 'Close a to-do because the mail is in Sent Items (the loop closes itself)',
-    description: 'Call for each open reply/followup/meeting/action to-do whose draft Barry has sent: match a Sent Item by recipient (toEmail) or conversationId, sent on or after the to-do was created. Closes only on a match; otherwise returns closed:false with why. Never guess a match.',
-    inputSchema: { id: z.string(), sentOn: date, toEmail: z.string().max(120).optional(), conversationId: z.string().max(200).optional(), note: z.string().max(200).optional() },
+    title: 'Close a to-do: because the mail is in Sent Items, or with a reason and evidence',
+    description: 'reason sent (default): the loop closes itself. Match a Sent Item by recipient (toEmail) or conversationId, sent on or after the to-do was created; closes only on a clean match, otherwise returns closed:false with why. Never guess a match. reason superseded (events overtook it: they replied, the meeting is booked another way, a cleaner version arrived), meeting_held (the meeting is in the calendar as accepted or has happened) or no_longer_needed (e.g. every offered slot has passed): no Sent Item needed, but note is required (at least 20 characters of evidence: what happened and the date). Closed rows show on the board under "Closed by Claude" for 14 days with one-tap Undo; a to-do a founder reopened cannot be closed by reason again. Never deletes anything.',
+    inputSchema: { id: z.string(), reason: z.enum(['sent', 'superseded', 'meeting_held', 'no_longer_needed']).optional(), sentOn: date.optional().describe('Required for reason sent'), toEmail: z.string().max(120).optional(), conversationId: z.string().max(200).optional(), note: z.string().max(300).optional().describe('Evidence; required (20+ chars) for every reason except sent') },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async (p) => { const r = await todoDone(p); return out(r, r.closed ? 'Closed.' : 'Left open: ' + r.why); });
   server.registerTool('job_ran', {
