@@ -8,7 +8,8 @@ export type Scope = 'source' | 'decision' | 'work' | 'event' | 'planned_event';
 const db = () => serviceClient();
 
 // In-memory backend for tests only (VANOR_STORE=memory). Same optimistic-revision rules as the database.
-const MEM = process.env.VANOR_STORE === 'memory';
+const MEM = process.env.VANOR_STORE === 'memory' && process.env.NODE_ENV !== 'production';
+if (MEM) console.warn('[bd-store] in-memory store active: nothing is persisted (tests only)');
 const mem = new Map<string, { payload: Entity; revision: number; updated_at: string }>();
 const memKey = (scope: Scope, id: string) => scope + '\u0000' + id;
 export function _memReset() { mem.clear(); }

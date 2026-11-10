@@ -21,15 +21,17 @@ export async function addTodos(items: TodoIn[]) {
     if (!TODO_TYPES.includes(t.type as any)) { skipped.push({ title: t.title, why: 'unknown type' }); continue; }
     if (hasPlaceholder(t.title) || hasPlaceholder(t.why) || hasPlaceholder(t.draftText)) { skipped.push({ title: t.title, why: 'contains placeholder text instead of a real name' }); continue; }
     if (t.due && !/^\d{4}-\d{2}-\d{2}$/.test(t.due)) { skipped.push({ title: t.title, why: 'due must be YYYY-MM-DD' }); continue; }
-    const same = open.find(w => w.type === t.type && norm(w.title) === norm(t.title));
-    const id = same ? String(same.id) : 'todo:' + createHash('sha1').update([t.type, t.title, t.recordId || '', t.pursuitId || '', t.link || ''].join('|')).digest('hex').slice(0, 16);
-    let fresh = false;
+    const differs = (a: unknown, b: unknown) => !!(a && b && String(a) !== String(b));
+    const same = open.find(w => w.type === t.type && norm(w.title) === norm(t.title) && !differs(w.conversationId, t.conversationId) && !differs(w.recordId, t.recordId) && !differs(w.pursuitId, t.pursuitId));
+    const id = same ? String(same.id) : 'todo:' + createHash('sha1').update([t.type, t.title, t.recordId || '', t.pursuitId || '', t.link || '', t.conversationId || ''].join('|')).digest('hex').slice(0, 16);
+    let fresh = false, closed = '';
     await updateEntity('work', id, cur => {
+      if (cur.kind === 'todo' && cur.status === 'done') { closed = String(cur.doneAt || '').slice(0, 10); return cur; }
       if (cur.kind === 'todo' && cur.status) return { ...cur, why: t.why || cur.why, link: /^https:\/\//.test(t.link || '') ? t.link : cur.link, due: t.due || cur.due, owner: t.owner || cur.owner || '', recordId: t.recordId || cur.recordId || '', pursuitId: t.pursuitId || cur.pursuitId || '', toEmail: String(t.toEmail || cur.toEmail || '').toLowerCase().slice(0, 120), subject: (t.subject || cur.subject || '').slice(0, 200), conversationId: (t.conversationId || cur.conversationId || '').slice(0, 200) };
       fresh = true;
       return { id, kind: 'todo', status: 'open', type: t.type, title: t.title.slice(0, 160), why: (t.why || '').slice(0, 300), due: t.due || today(), owner: t.owner || '', link: /^https:\/\//.test(t.link || '') ? t.link : '', recordId: t.recordId || '', pursuitId: t.pursuitId || '', source: (t.source || '').slice(0, 200), toEmail: String(t.toEmail || '').toLowerCase().slice(0, 120), subject: (t.subject || '').slice(0, 200), conversationId: (t.conversationId || '').slice(0, 200), createdAt: new Date().toISOString(), createdBy: 'Claude' };
     }, true);
-    (fresh ? added : skipped).push(fresh ? id : ({ title: t.title, why: 'already on the board' } as any));
+    if (fresh) added.push(id); else skipped.push({ title: t.title, why: closed ? `already closed on ${closed}; reopen it on the board if it is still needed` : 'already on the board, updated' });
   }
   return { added: added.length, skipped };
 }
@@ -60,7 +62,7 @@ export async function todoDone(p: { id: string; sentOn?: string; toEmail?: strin
   const note = String(p.note || '').trim();
   if (reason !== 'sent') {
     if (note.length < 20) return { id: p.id, closed: false, why: `reason ${reason} needs a note with the evidence (at least 20 characters)` };
-    if (cur.reopenedAt) return { id: p.id, closed: false, why: 'a founder reopened this; only a founder closes it now' };
+    if (cur.reopenedAt) return { id: p.id, closed: false, why: 'a founder reopened this; only a founder closes it now' }; // deliberate: no date rule, a reopen is a founder decision
     await updateEntity('work', p.id, c => ({ ...c, status: 'done', doneAt: new Date().toISOString(), doneBy: 'Claude', doneReason: reason, doneNote: note.slice(0, 300), matchedBy: '' }));
     return { id: p.id, closed: true, reason };
   }

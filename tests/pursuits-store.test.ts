@@ -48,3 +48,19 @@ test('park: needs a founder, the quoted instruction and a reason; unknown id thr
   await assert.rejects(parkPursuit({ id: 'pursuit:x', ...ok, reason: '' }), /reason/);
   await assert.rejects(parkPursuit({ id: 'pursuit:nope', ...ok }), /No pursuit/);
 });
+
+test('park: already parked, and Waiting with only a decisionDate or validUntil, are refused', async () => {
+  await seed('p', { state: 'parked', parkedAt: '2026-11-01' });
+  await seed('dd', { state: 'waiting', gate, nextAction: 'x', decisionDate: '2026-11-30' });
+  await seed('vu', { state: 'waiting', gate, nextAction: 'x', validUntil: '2026-12-31' });
+  const a = await parkPursuit({ id: 'pursuit:p', ...ok }); assert.equal(a.parked, false); assert.match(String(a.why), /already parked/);
+  for (const id of ['dd', 'vu']) { const r = await parkPursuit({ id: 'pursuit:' + id, ...ok }); assert.equal(r.parked, false, id); assert.match(String(r.why), /proposal has been issued/); }
+  const d = await getOne('work', 'pursuit:dd'); assert.equal(d!.state, 'waiting');
+});
+
+test('park: keeps the last real status line so Unpark can restore it', async () => {
+  await seed('k', { state: 'watch', latest: '3 Nov: Niren offered an intro' });
+  await parkPursuit({ id: 'pursuit:k', ...ok });
+  const k = await getOne('work', 'pursuit:k');
+  assert.equal(k!.parkedLatest, '3 Nov: Niren offered an intro'); assert.match(String(k!.latest), /parked on Barry/);
+});
