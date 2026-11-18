@@ -12,6 +12,18 @@
   ];
   const LANE = Object.fromEntries(LANES.map(l => [l.key, l]));
 
+  // People only: who someone is, beyond the five work lanes. Pursuits keep LANES; a person can also be one of these.
+  // OWNER SETTING (Barry, 18 Nov 2026): developers, contractors, consultants and public bodies are not "other".
+  const PEOPLE_LANES = [
+    ...LANES.filter(l => l.key !== 'other'),
+    { key: 'developer', label: 'Developers', long: 'Developers and development managers: owner-side PM/EA, peer review and recovery' },
+    { key: 'contractor', label: 'Contractors', long: 'Main contractors, subcontractors and suppliers: intel on stressed schemes, introductions, associates' },
+    { key: 'consultant', label: 'Consultants', long: 'QS, PM, architects, engineers and agents: referrers, associates and day-rate work' },
+    { key: 'public', label: 'Public sector', long: 'Councils and public bodies: housing, regeneration and stalled sites' },
+    LANE.other,
+  ];
+  const PEOPLE_LANE = Object.fromEntries(PEOPLE_LANES.map(l => [l.key, l]));
+
   // Open states, in the order they are worked. Closed states drop off the board.
   const STATES = [
     { key: 'table', label: 'Money on the table', hint: 'A price is with them. The only job is a decision by its date.' },
@@ -172,6 +184,6 @@
     return { next, days, overdue: days < 0, dueSoon: days >= 0 && days <= DUE_SOON_DAYS };
   }
 
-  root.VanorPursuits = { followMode, POOL_WEEKLY, weekKey, reconnectPick, late, theirMove, overdueOurs, FUNDER_PROPOSAL_DAYS, lapsedProposal, proposalDays, DUE_SOON_DAYS, TARGET_FIRST_DAYS, touched, TYPES, IN_HOUSE, PROPOSAL_DAYS, STALE_DAYS, value, isMonthly, liveProposal, stale, money, daysBetween, LANES, LANE, STATES, STATE, CLOSED, GATE, RUNGS, RUNG, BUYING, isPursuit, isOpen, laneOf, stateOf, gateMissing, validate, pounds, sortRows, board, nextMeeting, meetingStatus, addDays };
+  root.VanorPursuits = { PEOPLE_LANES, PEOPLE_LANE, followMode, POOL_WEEKLY, weekKey, reconnectPick, late, theirMove, overdueOurs, FUNDER_PROPOSAL_DAYS, lapsedProposal, proposalDays, DUE_SOON_DAYS, TARGET_FIRST_DAYS, touched, TYPES, IN_HOUSE, PROPOSAL_DAYS, STALE_DAYS, value, isMonthly, liveProposal, stale, money, daysBetween, LANES, LANE, STATES, STATE, CLOSED, GATE, RUNGS, RUNG, BUYING, isPursuit, isOpen, laneOf, stateOf, gateMissing, validate, pounds, sortRows, board, nextMeeting, meetingStatus, addDays };
   if (typeof module !== 'undefined') module.exports = root.VanorPursuits;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

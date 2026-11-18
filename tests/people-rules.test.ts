@@ -10,7 +10,11 @@ test('lane is read from company, title and notes', () => {
   assert.equal(inferLane('Triple Point lender recoveries'), 'funder');
   assert.equal(inferLane('Thylander Data Centers CEO'), 'dc');
   assert.equal(inferLane('Boutique hotel operator'), 'hotel');
-  assert.equal(inferLane('QS practice'), 'other');
+  assert.equal(inferLane('QS practice'), 'consultant');
+  assert.equal(inferLane('Glencar Construction Managing Director'), 'contractor');
+  assert.equal(inferLane('Abodus Student Living Director of Development'), 'developer');
+  assert.equal(inferLane('Croydon Council Senior Regeneration Manager'), 'public');
+  assert.equal(inferLane('Acme Ltd'), 'other');
 });
 test('placeholders are not people', () => {
   assert.equal(isPlaceholder('Head of Development, Homes for Wandsworth'), true);

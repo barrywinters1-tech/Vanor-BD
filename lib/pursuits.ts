@@ -155,7 +155,7 @@ export async function recordMeetings(meetings: Met[]) {
       if (m.eventId) next.metEvents = [...seen, m.eventId].slice(-30);
       if (m.note && m.date >= String(d.lastNoteDate || '')) { next.lastNote = m.note; next.lastNoteDate = m.date; }
       if (m.rung && V.RUNG[m.rung]) next.rung = m.rung;
-      if (m.lane && V.LANE[m.lane]) next.lane = m.lane;
+      if (m.lane && V.PEOPLE_LANE[m.lane]) next.lane = m.lane;
       return next;
     }, true);
     if (dup) skipped.push(who); else matched.push(r.id);
@@ -169,7 +169,7 @@ export async function setPerson(id: string, p: { rung?: string; lane?: string; l
   if (p.lastMet && (!/^\d{4}-\d{2}-\d{2}$/.test(p.lastMet) || p.lastMet > today())) throw new Error('lastMet cannot be in the future');
   if (p.inHousePM && !V.IN_HOUSE.includes(p.inHousePM)) throw new Error('inHousePM must be yes, no or unknown');
   if (p.rung && !V.RUNG[p.rung]) throw new Error('Unknown rung ' + p.rung);
-  if (p.lane && !V.LANE[p.lane]) throw new Error('Unknown lane ' + p.lane);
+  if (p.lane && !V.PEOPLE_LANE[p.lane]) throw new Error('Unknown lane ' + p.lane);
   if (p.buyingStage && !V.BUYING.includes(p.buyingStage)) throw new Error('Unknown buying stage ' + p.buyingStage);
   await updateEntity('decision', id, d => {
     const next: Entity = { ...d };
