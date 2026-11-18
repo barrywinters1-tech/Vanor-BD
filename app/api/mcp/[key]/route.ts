@@ -60,8 +60,8 @@ function createServer() {
     { instructions: [
       'Vanor BD is the business development board for Vanor Advisory (Barry and Graeme).',
       'Always search before adding a lead, and log every interaction you process against the right contact.',
-      'Score the seven conditions 0 (no evidence), 1 (partial), 2 (evidenced), and only from evidence you can quote.',
-      'Your scores are suggestions. Founders confirm evidence, move stages, review and archive in the board.',
+      'Work runs through pursuits (named, payable pieces of work) and to-dos; keep both short and current.',
+      'The partners decide prices, wins, losses and parking; Claude asks, with the evidence, and never sends email.',
       'Never invent projects, fees, problems or contact details.',
     ].join(' ') },
   );
@@ -224,11 +224,11 @@ function createServer() {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ items }) => out(await savePursuits(items, 'Claude'), 'Pursuits saved.'));
   server.registerTool('pursuit_propose', {
-    title: 'Propose the next move on a pursuit from new evidence (mail, calendar, transcript)',
-    description: 'The board shows it as "Proposed" with an Accept button; the founder\'s current next action stays until accepted. States you may propose: act, waiting, watch (never table, won, lost or parked, and never off the table). why = the evidence, e.g. "Matthew replied 30 Oct: board meets 5 Nov". latest = one line on what just happened.',
-    inputSchema: { id: z.string(), nextAction: z.string().min(3).max(200), dueBy: date.optional(), state: z.enum(['act', 'waiting', 'watch']).optional(), latest: z.string().max(300).optional(), why: z.string().min(3).max(300) },
+    title: 'Update the next move on a pursuit from new evidence (mail, calendar, transcript)',
+    description: 'why = the evidence, e.g. "Matthew replied 30 Oct: board meets 5 Nov"; evidenceOn = the date of that evidence; latest = one line on what just happened. If the partners have switched on direct updates, a narrow update (next action, date, latest; moves watch->act, act->waiting, waiting->act) is applied at once with Undo on the board, except on priced or closed pursuits or ones a partner edited after the evidence, which stay as a proposal. Otherwise it waits as a proposal. state table, won, lost or parked is never applied: it becomes a Decide question for the partners (use it when the evidence says a price went out, the work was won or paid, it was lost, or it is dead). The result says mode: applied, proposed or ask.',
+    inputSchema: { id: z.string(), nextAction: z.string().min(3).max(200), dueBy: date.optional(), state: z.enum(['act', 'waiting', 'watch', 'table', 'won', 'lost', 'parked']).optional(), latest: z.string().max(300).optional(), why: z.string().min(3).max(300), evidenceOn: date.optional().describe('Date of the evidence (YYYY-MM-DD)') },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ id, ...p }) => { const r = await proposeNext(id, p); return out(r, r.note ? 'Proposed. ' + r.note : 'Proposed.'); });
+  }, async ({ id, ...p }) => { const r = await proposeNext(id, p); return out(r, `${r.mode === 'applied' ? 'Applied' : r.mode === 'ask' ? 'Asked the partners' : 'Proposed'}.${r.note ? ' ' + r.note : ''}`); });
   server.registerTool('pursuit_park', {
     title: 'Park a pursuit on a founder\'s explicit instruction',
     description: 'Only when Barry or Graeme has told you, in this conversation, to park a named pursuit. Allowed only for a pursuit in Watch or Waiting with no proposal issued (no issuedOn, decisionDate or validUntil). Refused, with the reason, for table (a priced pursuit stays on the table until a founder marks it won or lost), act, won, lost or already parked. instructedBy = who said it; instruction = their words, quoted; reason = the short why in plain words. Keeps the whole record and history, sets state parked, and the board shows one-tap Unpark. Never sets won, lost or invoiced; nothing is deleted.',

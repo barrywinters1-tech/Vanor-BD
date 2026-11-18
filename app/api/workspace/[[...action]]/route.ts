@@ -12,6 +12,19 @@ import { runIntel } from '../../../../lib/intel-ingest';
 import { lookupPerson, searchPeople } from '../../../../lib/rocketreach';
 import { logEvent, saveEntity as storeSave, updateEntity as storeUpdate } from '../../../../lib/bd-store';
 import { runBackup } from '../../../../lib/backup-job';
+import { undoClaudeUpdate } from '../../../../lib/pursuits';
+import '../../../../public/vanor-pursuits.js';
+
+const PV = (globalThis as any).VanorPursuits;
+// Fields the new screens may change, per kind (18 Nov 2026). Anything else is refused, so a partial screen never
+// overwrites fields it does not show; the server merges onto the current record.
+const PATCHABLE: Record<string, string[]> = {
+  pursuit: ['nextAction', 'dueBy', 'chaseOn', 'decisionDate', 'state', 'amount', 'type', 'owner', 'latest', 'notes', 'snoozedUntil', 'ask', 'proposed', 'outcome', 'lostReason', 'wonOn', 'parkedAt', 'parkedBy', 'parkedFrom', 'parkedReason', 'issuedOn'],
+  todo: ['status', 'doneAt', 'doneBy', 'doneReason', 'doneNote', 'snoozedUntil', 'reopenedAt', 'sentOn'],
+  setting: ['on'],
+};
+const PATCHABLE_SCOPE: Record<string, string[]> = { decision: ['lastMet', 'lastNote', 'rung', 'snoozedUntil', 'owner'], planned_event: ['status', 'owner', 'targets', 'notes'] };
+const actorOf = async (access: Access) => { const { data } = await access.db.auth.getUser(); const e = data.user?.email || ''; return /graeme/i.test(e) ? 'Graeme' : /barry/i.test(e) ? 'Barry' : e || 'Unassigned'; };
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -183,6 +196,27 @@ export async function GET(request: NextRequest, context: Context) {
       const row = await one(access, scope, id);
       return row ? reply(row) : reply({ error: 'Record not found.' }, 404);
     }
+    if (action === 'today') {
+      // Light load for the new screens: no contact list, no history log.
+      const [records, decisions, work, plannedEvents] = await Promise.all([list(access, 'source'), list(access, 'decision'), list(access, 'work'), list(access, 'planned_event')]);
+      const cutoff = new Date(Date.now() - 45 * 864e5).toISOString();
+      const keep = (w: Entity) => w.kind === 'pursuit' || w.kind === 'job' || w.kind === 'setting' || (w.kind === 'capture' && w.status === 'open')
+        || (w.kind === 'todo' && (w.status === 'open' || String(w.doneAt || '') >= cutoff));
+      const dm = new Map(decisions.map(d => [d.id, d]));
+      const people = records.map(r => ({ r, d: dm.get(r.id) || {} as Entity })).filter(x => (x.d.rung || x.d.lastMet) && x.d.status !== 'Archive' && !x.d.mergedInto && !/@vanoradvisory\.co\.uk$/i.test(String(x.r.email || '')))
+        .map(({ r, d }) => ({ id: r.id, name: r.name || '', company: r.company || '', jobTitle: r.jobTitle || '', email: r.email || '', rung: d.rung || 'contact', lastMet: d.lastMet || '', lastNote: d.lastNote || '', owner: r.sourceOwner || '', snoozedUntil: d.snoozedUntil || '', _rev: d._rev || 0 }));
+      const since = new Date(Date.now() - 14 * 864e5).toISOString().slice(0, 10);
+      return reply({ work: work.filter(keep), events: plannedEvents.filter(e => !e.archived && String(e.date || '') >= since), people, contacts: records.length });
+    }
+    if (action === 'people') {
+      const q = String(request.nextUrl.searchParams.get('q') || '').trim().toLowerCase();
+      if (q.length < 2) return reply({ items: [] });
+      const [records, decisions] = await Promise.all([list(access, 'source'), list(access, 'decision')]);
+      const dm = new Map(decisions.map(d => [d.id, d]));
+      const items = records.filter(r => !dm.get(r.id)?.mergedInto && dm.get(r.id)?.status !== 'Archive' && [r.name, r.company, r.email, r.jobTitle].join(' ').toLowerCase().includes(q)).slice(0, 60)
+        .map(r => { const d = dm.get(r.id) || {} as Entity; return { id: r.id, name: r.name || '', company: r.company || '', jobTitle: r.jobTitle || '', email: r.email || '', phone: r.phone || '', linkedin: r.linkedin || '', rung: d.rung || '', lastMet: d.lastMet || '', lastNote: d.lastNote || '', notes: String(r.notes || r.context || '').slice(0, 400) }; });
+      return reply({ items });
+    }
     const [records, decisions, work, events, plannedEvents, meta] = await Promise.all([
       list(access, 'source'), list(access, 'decision'), list(access, 'work'),
       list(access, 'event'), list(access, 'planned_event'), metadata(access),
@@ -242,6 +276,46 @@ export async function POST(request: NextRequest, context: Context) {
       const ids = (await list(access, 'source')).filter(r => normCompany(r.company) === normCompany(name)).map(r => r.id);
       if (ids.length && body?.save !== false) await saveIntel(ids, intel);
       return reply({ ...intel, savedOn: body?.save === false ? 0 : ids.length });
+    }
+    if (action === 'patch') {
+      // Server-side merge of only the fields a partner tapped (new screens). Retries once on a revision clash.
+      const { scope, id, fields, note } = body as { scope: string; id: string; fields: Record<string, unknown>; note?: string };
+      if (!id || !fields || typeof fields !== 'object') return reply({ error: 'Invalid change.' }, 400);
+      const actor = await actorOf(access);
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const cur = await one(access, scope, id);
+        const kind = scope === 'work' ? String(cur?.kind || (id.startsWith('setting:') ? 'setting' : '')) : scope;
+        const allowed = scope === 'work' ? PATCHABLE[kind] : PATCHABLE_SCOPE[scope];
+        if (!allowed) return reply({ error: 'That record cannot be changed here.' }, 400);
+        const bad = Object.keys(fields).filter(k => !allowed.includes(k));
+        if (bad.length) return reply({ error: 'Not changeable here: ' + bad.join(', ') }, 400);
+        if (!cur && kind !== 'setting') return reply({ error: 'Record not found.' }, 404);
+        const now = new Date().toISOString();
+        let next: Entity = { ...(cur || { id, kind: 'setting' }), ...fields, id };
+        if (kind === 'pursuit') {
+          // A partner moving a pursuit forward asserts the four conditions themselves; the screens no longer ask them one by one.
+          if ('state' in fields && !['watch', ...PV.CLOSED].includes(String(next.state))) next.gate = { asset: true, problem: true, capital: true, route: true };
+          const why = PV.validate(next); if (why) return reply({ error: why }, 400);
+          next.archived = PV.CLOSED.includes(next.state);
+          const changes = Object.keys(fields).map(k => `${k}: ${String((fields as any)[k] ?? '').slice(0, 60)}`).join('; ');
+          next.history = [{ at: now, by: actor, change: note || changes }, ...((cur?.history as unknown[]) || [])].slice(0, 30);
+          next.founderTouchedAt = now; next.updatedBy = actor;
+          if (('nextAction' in fields || 'dueBy' in fields || 'state' in fields) && !('proposed' in fields)) next.proposed = null;
+        }
+        if (kind === 'setting') { next = { ...next, kind: 'setting', updatedBy: actor }; }
+        try { return reply(await save(access, scope, next, cur?._rev || 0, { type: note || 'Changed on the board', actor, recordId: next.recordId || '', note: String(next.title || next.name || id).slice(0, 120) })); }
+        catch (e: any) { if (e?.status !== 409 || attempt === 1) throw e; }
+      }
+    }
+    if (action === 'undo-claude') {
+      const id = String(body?.id || ''); if (!id.startsWith('pursuit:')) return reply({ error: 'Invalid pursuit.' }, 400);
+      return reply(await undoClaudeUpdate(id, await actorOf(access)));
+    }
+    if (action === 'opened') {
+      // One line a day per partner, so the usage tests (opened 4 of 5 weekdays) can be measured.
+      const actor = await actorOf(access); const day = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
+      try { await save(access, 'event', { id: `opened:${actor}:${day}`, type: 'Opened', actor, at: new Date().toISOString(), entityId: 'board' }, 0); } catch { /* already logged today */ }
+      return reply({ ok: true });
     }
     if (action === 'bootstrap') return reply({ error: 'Import a fresh backup to initialise this workspace.' }, 409);
     if (action === 'import') return reply(await importSource(access, body));

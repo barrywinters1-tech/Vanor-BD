@@ -66,7 +66,8 @@ export async function savePursuits(items: PursuitInput[], actor = 'Claude') {
     // Claude may create pursuits and refresh facts, but on an existing pursuit the founder owns
     // state, next action, date and owner: Claude's view of those goes through proposeNext.
     if (prior && actor === 'Claude') for (const k of ['state', 'nextAction', 'dueBy', 'owner'] as const) delete patch[k];
-    if (!prior && actor === 'Claude') { patch.state = 'watch'; delete patch.nextAction; }
+    // A new Claude pursuit starts in Watch; it keeps the next step Claude found (18 Nov 2026: an empty next step helped no one).
+    if (!prior && actor === 'Claude') patch.state = 'watch';
     const merged: Entity = { ...(prior || {}), ...patch, kind: 'pursuit' };
     const why = V.validate(merged);
     if (why) { rejected.push({ name: item.name || id, reason: why }); continue; }
@@ -83,20 +84,71 @@ export async function savePursuits(items: PursuitInput[], actor = 'Claude') {
   return { saved, rejected };
 }
 
-/** Claude proposes the next move; the board shows it with an Accept button. It never overwrites the founder's action. */
-export async function proposeNext(id: string, p: { nextAction: string; dueBy?: string; state?: string; latest?: string; why: string }) {
-  const cur = await getOne('work', id);
-  if (!cur || !V.isPursuit(cur)) throw new Error('No pursuit with id ' + id);
+/** Claude's view of the next move (18 Nov 2026).
+ *  Always: a requested change to table, won, lost or parked is never applied; it is kept as an ask that the board shows as
+ *  a "Decide" row, and only a partner's Yes applies it.
+ *  Propose mode (default): the update waits as a proposal, as before.
+ *  Direct mode (a partner switches it on from the board; setting:apply-direct): a narrow, reversible update is applied at
+ *  once: only nextAction, dueBy, latest and the moves watch->act, act->waiting, waiting->act. Every check runs inside the
+ *  write on the current revision. Refused (falls back to a proposal) for a pursuit on the table, closed or priced
+ *  (issuedOn, decisionDate, validUntil or amount), when a partner edited it after the evidence date, and beyond
+ *  DIRECT_PER_DAY a day. The previous values are kept in claudePrev for Undo, with a history line and a log event. */
+export const DIRECT_PER_DAY = 10;
+const ALLOWED_MOVES: Record<string, string[]> = { watch: ['act'], act: ['waiting'], waiting: ['act'] };
+const priced = (c: Entity) => !!(c.issuedOn || c.decisionDate || c.validUntil || (c.amount !== undefined && c.amount !== null && c.amount !== ''));
+export async function directMode() { const s = await getOne('work', 'setting:apply-direct'); return !!(s && s.on === true); }
+const londonDay = (iso: unknown) => iso ? new Date(String(iso)).toLocaleDateString('en-CA', { timeZone: 'Europe/London' }) : '';
+
+export async function proposeNext(id: string, p: { nextAction: string; dueBy?: string; state?: string; latest?: string; why: string; evidenceOn?: string }) {
+  const first = await getOne('work', id);
+  if (!first || !V.isPursuit(first)) throw new Error('No pursuit with id ' + id);
   if (p.state && !V.STATE[p.state] && !V.CLOSED.includes(p.state)) throw new Error('Unknown state ' + p.state);
-  // Closing a pursuit and putting a price on the table are founder moves: Claude may propose act, waiting or watch only.
-  // A forbidden state is dropped (the action text still lands) and the note says so; the current state is never a change.
-  let note = '';
-  const q = { ...p };
-  if (q.state === cur.state) delete q.state;
-  if (q.state && (V.CLOSED.includes(q.state) || q.state === 'table')) { note = `State ${q.state} dropped: the founders mark won, lost, parked or priced themselves.`; delete q.state; }
-  else if (q.state && cur.state === 'table') { note = 'State change dropped: a pursuit with a proposal out stays on the table until a founder marks it won, lost or parked.'; delete q.state; }
-  await updateEntity('work', id, c => ({ ...c, latest: q.latest || c.latest, proposed: { ...q, at: new Date().toISOString() } }));
-  return { id, proposed: q, note };
+  if (p.evidenceOn && !/^\d{4}-\d{2}-\d{2}/.test(p.evidenceOn)) throw new Error('evidenceOn must be a date');
+  const now = new Date().toISOString();
+  const direct = await directMode();
+  const doneToday = direct ? (await listScope('work')).filter(w => V.isPursuit(w) && w.claudePrev && londonDay(w.claudePrev.at) === today()).length : 0;
+  let outcome: { mode: 'ask' | 'proposed' | 'applied'; note: string } = { mode: 'proposed', note: '' };
+  await updateEntity('work', id, c => {
+    const cur = V.stateOf(c);
+    const q: Record<string, any> = { ...p }; delete q.evidenceOn;
+    if (q.state === cur) delete q.state;
+    // Founder-only states become an ask: shown as a Decide row, applied only by a partner's Yes.
+    let ask: Record<string, unknown> | null = null;
+    if (q.state && (V.CLOSED.includes(q.state) || q.state === 'table')) { ask = { state: q.state, why: p.why, at: now }; delete q.state; }
+    else if (q.state && cur === 'table') { delete q.state; outcome.note = 'State change dropped: a pursuit with a proposal out stays on the table until a partner decides.'; }
+    if (ask) outcome = { mode: 'ask', note: `Asked the partners to decide: ${ask.state}.` };
+    const evidence = p.evidenceOn || now.slice(0, 10);
+    const founderNewer = !!(c.founderTouchedAt && String(c.founderTouchedAt).slice(0, 10) > evidence);
+    const moveOk = !q.state || (ALLOWED_MOVES[cur] || []).includes(q.state);
+    const canApply = direct && !ask && !V.CLOSED.includes(cur) && cur !== 'table' && !priced(c) && !founderNewer && moveOk && doneToday < DIRECT_PER_DAY;
+    if (!canApply) {
+      if (!ask && direct) outcome.note = outcome.note || (founderNewer ? 'Kept as a proposal: a partner edited this after the evidence.' : priced(c) || cur === 'table' ? 'Kept as a proposal: priced pursuits are the partners\' to move.' : !moveOk ? `Kept as a proposal: ${cur} to ${q.state} is the partners' move.` : doneToday >= DIRECT_PER_DAY ? 'Kept as a proposal: daily limit for direct updates reached.' : '');
+      const hasAction = !!(q.nextAction || q.dueBy || q.state);
+      return { ...c, latest: q.latest || c.latest, proposed: hasAction ? { ...q, at: now } : c.proposed || null, ...(ask ? { ask } : {}) };
+    }
+    outcome = { mode: 'applied', note: 'Applied (Claude). Undo on the board for 14 days.' };
+    const prev = { nextAction: c.nextAction || '', dueBy: c.dueBy || '', latest: c.latest || '', state: cur };
+    const next = { nextAction: q.nextAction || c.nextAction || '', dueBy: q.dueBy || c.dueBy || '', latest: q.latest || c.latest || '', state: q.state || cur };
+    const history = [{ at: now, by: 'Claude', change: `updated: ${next.nextAction}${q.dueBy ? ' by ' + q.dueBy : ''}${q.state ? '; ' + cur + ' -> ' + q.state : ''} (${String(p.why).slice(0, 120)})` }, ...((c.history as unknown[]) || [])].slice(0, 30);
+    return { ...c, ...next, proposed: null, claudePrev: { fields: prev, set: next, at: now, why: p.why }, history, updatedAt: now, updatedBy: 'Claude' };
+  });
+  if (outcome.mode === 'applied') await logEvent({ entityId: id, type: 'Claude updated pursuit', note: `${p.nextAction} (${String(p.why).slice(0, 160)})` });
+  return { id, mode: outcome.mode, note: outcome.note };
+}
+
+/** Undo Claude's last direct update. Only fields still holding Claude's values are restored, so a partner's later edit stays. */
+export async function undoClaudeUpdate(id: string, actor: string) {
+  let restored: string[] = [];
+  await updateEntity('work', id, c => {
+    const cp = c.claudePrev; if (!cp) return c;
+    const back: Record<string, unknown> = {};
+    for (const k of ['nextAction', 'dueBy', 'latest', 'state'] as const) if (String(V.stateOf && k === 'state' ? V.stateOf(c) : c[k] || '') === String(cp.set[k] || '')) back[k] = cp.fields[k];
+    restored = Object.keys(back);
+    const history = [{ at: new Date().toISOString(), by: actor, change: `undid Claude's update (${restored.join(', ') || 'nothing left to undo'})` }, ...((c.history as unknown[]) || [])].slice(0, 30);
+    return { ...c, ...back, claudePrev: null, history, founderTouchedAt: new Date().toISOString(), updatedBy: actor };
+  });
+  await logEvent({ entityId: id, type: 'Claude update undone', actor, note: restored.join(', ') });
+  return { id, restored };
 }
 
 /** Park a pursuit on a founder's instruction (10 Nov 2026). Only Watch or Waiting with no proposal issued; table, act, won

@@ -51,3 +51,10 @@ test('todo_add stores meetingAt and refuses a bad one', async () => {
   assert.equal(r.added, 1); assert.match(r.skipped[0].why, /meetingAt/);
   assert.equal((await listTodos())[0].meetingAt, '2026-11-25T12:30:00.000Z');
 });
+
+test('a chase tied to a priced pursuit never expires', async () => {
+  await saveEntity('work', { id: 'pursuit:k', kind: 'pursuit', name: 'k', state: 'table', amount: 42500 }, 0);
+  await saveEntity('work', T('chase', { type: 'followup', pursuitId: 'pursuit:k', link: 'https://outlook.office365.com/x', createdAt: '2026-10-01T08:00:00Z' }), 0);
+  const r = await expireTodos({ apply: true, now: NOW });
+  assert.equal(r.closed, 0); assert.equal((await getOne('work', 'todo:chase'))!.status, 'open');
+});
