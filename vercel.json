@@ -11,6 +11,10 @@
     {
       "path": "/api/jobs/people",
       "schedule": "10 6 * * 1-5"
+    },
+    {
+      "path": "/api/jobs/tidy",
+      "schedule": "30 6 * * *"
     }
   ]
 }

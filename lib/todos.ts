@@ -8,7 +8,7 @@ export const TODO_TYPES = ['reply', 'meeting', 'followup', 'event', 'action'] as
 import { hasPlaceholder } from './todos-rules';
 export { hasPlaceholder };
 
-export type TodoIn = { type: string; title: string; why?: string; due?: string; owner?: string; link?: string; recordId?: string; pursuitId?: string; draftText?: string; source?: string; toEmail?: string; subject?: string; conversationId?: string };
+export type TodoIn = { type: string; title: string; why?: string; due?: string; owner?: string; link?: string; recordId?: string; pursuitId?: string; draftText?: string; source?: string; toEmail?: string; subject?: string; conversationId?: string; meetingAt?: string };
 
 const norm = (v: unknown) => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
@@ -21,15 +21,17 @@ export async function addTodos(items: TodoIn[]) {
     if (!TODO_TYPES.includes(t.type as any)) { skipped.push({ title: t.title, why: 'unknown type' }); continue; }
     if (hasPlaceholder(t.title) || hasPlaceholder(t.why) || hasPlaceholder(t.draftText)) { skipped.push({ title: t.title, why: 'contains placeholder text instead of a real name' }); continue; }
     if (t.due && !/^\d{4}-\d{2}-\d{2}$/.test(t.due)) { skipped.push({ title: t.title, why: 'due must be YYYY-MM-DD' }); continue; }
+    if (t.meetingAt && Number.isNaN(Date.parse(t.meetingAt))) { skipped.push({ title: t.title, why: 'meetingAt must be a date-time' }); continue; }
+    const meetingAt = t.meetingAt ? new Date(t.meetingAt).toISOString() : '';
     const differs = (a: unknown, b: unknown) => !!(a && b && String(a) !== String(b));
     const same = open.find(w => w.type === t.type && norm(w.title) === norm(t.title) && !differs(w.conversationId, t.conversationId) && !differs(w.recordId, t.recordId) && !differs(w.pursuitId, t.pursuitId));
     const id = same ? String(same.id) : 'todo:' + createHash('sha1').update([t.type, t.title, t.recordId || '', t.pursuitId || '', t.link || '', t.conversationId || ''].join('|')).digest('hex').slice(0, 16);
     let fresh = false, closed = '';
     await updateEntity('work', id, cur => {
       if (cur.kind === 'todo' && cur.status === 'done') { closed = String(cur.doneAt || '').slice(0, 10); return cur; }
-      if (cur.kind === 'todo' && cur.status) return { ...cur, why: t.why || cur.why, link: /^https:\/\//.test(t.link || '') ? t.link : cur.link, due: t.due || cur.due, owner: t.owner || cur.owner || '', recordId: t.recordId || cur.recordId || '', pursuitId: t.pursuitId || cur.pursuitId || '', toEmail: String(t.toEmail || cur.toEmail || '').toLowerCase().slice(0, 120), subject: (t.subject || cur.subject || '').slice(0, 200), conversationId: (t.conversationId || cur.conversationId || '').slice(0, 200) };
+      if (cur.kind === 'todo' && cur.status) return { ...cur, why: t.why || cur.why, link: /^https:\/\//.test(t.link || '') ? t.link : cur.link, due: t.due || cur.due, owner: t.owner || cur.owner || '', recordId: t.recordId || cur.recordId || '', pursuitId: t.pursuitId || cur.pursuitId || '', toEmail: String(t.toEmail || cur.toEmail || '').toLowerCase().slice(0, 120), subject: (t.subject || cur.subject || '').slice(0, 200), conversationId: (t.conversationId || cur.conversationId || '').slice(0, 200), meetingAt: meetingAt || cur.meetingAt || '' };
       fresh = true;
-      return { id, kind: 'todo', status: 'open', type: t.type, title: t.title.slice(0, 160), why: (t.why || '').slice(0, 300), due: t.due || today(), owner: t.owner || '', link: /^https:\/\//.test(t.link || '') ? t.link : '', recordId: t.recordId || '', pursuitId: t.pursuitId || '', source: (t.source || '').slice(0, 200), toEmail: String(t.toEmail || '').toLowerCase().slice(0, 120), subject: (t.subject || '').slice(0, 200), conversationId: (t.conversationId || '').slice(0, 200), createdAt: new Date().toISOString(), createdBy: 'Claude' };
+      return { id, kind: 'todo', status: 'open', type: t.type, title: t.title.slice(0, 160), why: (t.why || '').slice(0, 300), due: t.due || today(), owner: t.owner || '', link: /^https:\/\//.test(t.link || '') ? t.link : '', recordId: t.recordId || '', pursuitId: t.pursuitId || '', source: (t.source || '').slice(0, 200), toEmail: String(t.toEmail || '').toLowerCase().slice(0, 120), subject: (t.subject || '').slice(0, 200), conversationId: (t.conversationId || '').slice(0, 200), meetingAt, createdAt: new Date().toISOString(), createdBy: 'Claude' };
     }, true);
     if (fresh) added.push(id); else skipped.push({ title: t.title, why: closed ? `already closed on ${closed}; reopen it on the board if it is still needed` : 'already on the board, updated' });
   }
@@ -38,10 +40,10 @@ export async function addTodos(items: TodoIn[]) {
 
 export async function listTodos({ includeDone = false } = {}) {
   return (await listScope('work')).filter(w => w.kind === 'todo' && (includeDone || w.status === 'open'))
-    .map(w => ({ id: w.id, type: w.type, title: w.title, why: w.why, due: w.due, owner: w.owner, link: w.link, recordId: w.recordId, pursuitId: w.pursuitId, status: w.status, toEmail: w.toEmail || '', subject: w.subject || '', conversationId: w.conversationId || '', createdAt: w.createdAt || '', doneBy: w.doneBy || '', doneReason: w.doneReason || '', doneNote: w.doneNote || '', sentOn: w.sentOn || '' }));
+    .map(w => ({ id: w.id, type: w.type, title: w.title, why: w.why, due: w.due, owner: w.owner, link: w.link, recordId: w.recordId, pursuitId: w.pursuitId, status: w.status, toEmail: w.toEmail || '', subject: w.subject || '', conversationId: w.conversationId || '', meetingAt: w.meetingAt || '', createdAt: w.createdAt || '', doneBy: w.doneBy || '', doneReason: w.doneReason || '', doneNote: w.doneNote || '', sentOn: w.sentOn || '' }));
 }
 
-export const DONE_REASONS = ['sent', 'superseded', 'meeting_held', 'no_longer_needed'] as const;
+export const DONE_REASONS = ['sent', 'superseded', 'meeting_held', 'no_longer_needed', 'expired'] as const;
 export type DoneReason = typeof DONE_REASONS[number];
 export const CLOSED_BY_CLAUDE_DAYS = 14;
 
@@ -89,4 +91,46 @@ export async function jobRan(p: { job: string; ok: boolean; note?: string; expec
   const at = new Date().toISOString();
   await updateEntity('work', id, (cur: Entity) => ({ ...cur, id, kind: 'job', name: p.name || cur.name || p.job, lastRan: at, ok: p.ok, note: (p.note || '').slice(0, 300), expectHours: p.expectHours || cur.expectHours || 24, runs: [{ at, ok: p.ok, note: (p.note || '').slice(0, 120) }, ...((cur.runs as any[]) || [])].slice(0, 20) }), true);
   return { id, at };
+}
+
+
+/** Self-tidy (18 Nov 2026). The board clears what is dead so the partners never have to:
+ *  - a meeting brief or arrangement whose meeting time has passed (meetingAt, or a "brief for <date>" title on older rows);
+ *  - a meeting request whose offered slots have all passed;
+ *  - a draft that has not been sent after DRAFT_DAYS days (the Outlook draft itself is never touched);
+ *  - a to-do that asks a partner for a fact and is over a week old.
+ *  Never: a to-do a founder reopened, an event to-do, anything a founder created. At most `limit` per run. Each close records
+ *  doneBy Claude, reason "expired" and the rule, so it shows under "Closed by Claude" with Undo. */
+export const DRAFT_DAYS = 10;
+const MONTHS: Record<string, number> = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+export function datesIn(text: string, todayIso: string): string[] {
+  const out: string[] = []; const re = /\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*/gi;
+  const now = Date.parse(todayIso); const y = Number(todayIso.slice(0, 4)); let m: RegExpExecArray | null;
+  while ((m = re.exec(String(text || '')))) {
+    const d = Number(m[1]); if (d < 1 || d > 31) continue; const mo = MONTHS[m[2].toLowerCase()];
+    const best = [y - 1, y, y + 1].map(yy => Date.UTC(yy, mo, d)).sort((a, b) => Math.abs(a - now) - Math.abs(b - now))[0];
+    out.push(new Date(best).toISOString().slice(0, 10));
+  }
+  return out;
+}
+export function expiryReason(t: Entity, nowIso: string): string {
+  const todayIso = nowIso.slice(0, 10);
+  if (t.kind !== 'todo' || t.status !== 'open' || t.reopenedAt || t.type === 'event' || (t.createdBy && t.createdBy !== 'Claude')) return '';
+  if (t.meetingAt) return Date.parse(t.meetingAt) < Date.parse(nowIso) ? `meeting time ${String(t.meetingAt).slice(0, 16).replace('T', ' ')} has passed` : '';
+  const title = String(t.title || ''); const i = title.toLowerCase().indexOf('brief for');
+  if (i >= 0) { const d = datesIn(title.slice(i), todayIso)[0]; return d && d < todayIso ? `meeting on ${d} has passed` : ''; }
+  const why = String(t.why || ''); const o = why.toLowerCase().indexOf('offered');
+  if (t.type === 'meeting' && o >= 0) { const ds = datesIn(why.slice(o), todayIso); if (ds.length && ds.every(d => d < todayIso)) return 'every offered slot has passed'; }
+  const age = t.createdAt ? Math.floor((Date.parse(nowIso) - Date.parse(t.createdAt)) / 864e5) : 0;
+  if (/^https:\/\//.test(t.link || '') && age >= DRAFT_DAYS) return `draft not sent after ${age} days`;
+  if (/tell me what you promised|i need the|: tell me|pick slots/i.test(title) && age >= 7) return `question to a partner unanswered after ${age} days`;
+  return '';
+}
+export async function expireTodos({ apply = true, limit = 40, now = new Date().toISOString() } = {}) {
+  const all = (await listScope('work')).filter(w => w.kind === 'todo' && w.status === 'open');
+  const due = all.map(t => ({ t, why: expiryReason(t, now) })).filter(x => x.why).slice(0, limit);
+  if (apply) for (const { t, why } of due) {
+    await updateEntity('work', t.id, c => (c.status !== 'open' || c.reopenedAt) ? c : ({ ...c, status: 'done', doneAt: now, doneBy: 'Claude', doneReason: 'expired', doneNote: why, matchedBy: '' }));
+  }
+  return { checked: all.length, closed: due.length, applied: apply, items: due.map(x => ({ id: x.t.id, title: x.t.title, why: x.why })) };
 }
