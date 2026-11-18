@@ -101,31 +101,8 @@ export async function jobRan(p: { job: string; ok: boolean; note?: string; expec
  *  - a to-do that asks a partner for a fact and is over a week old.
  *  Never: a to-do a founder reopened, an event to-do, anything a founder created. At most `limit` per run. Each close records
  *  doneBy Claude, reason "expired" and the rule, so it shows under "Closed by Claude" with Undo. */
-export const DRAFT_DAYS = 10;
-const MONTHS: Record<string, number> = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
-export function datesIn(text: string, todayIso: string): string[] {
-  const out: string[] = []; const re = /\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*/gi;
-  const now = Date.parse(todayIso); const y = Number(todayIso.slice(0, 4)); let m: RegExpExecArray | null;
-  while ((m = re.exec(String(text || '')))) {
-    const d = Number(m[1]); if (d < 1 || d > 31) continue; const mo = MONTHS[m[2].toLowerCase()];
-    const best = [y - 1, y, y + 1].map(yy => Date.UTC(yy, mo, d)).sort((a, b) => Math.abs(a - now) - Math.abs(b - now))[0];
-    out.push(new Date(best).toISOString().slice(0, 10));
-  }
-  return out;
-}
-export function expiryReason(t: Entity, nowIso: string): string {
-  const todayIso = nowIso.slice(0, 10);
-  if (t.kind !== 'todo' || t.status !== 'open' || t.reopenedAt || t.type === 'event' || (t.createdBy && t.createdBy !== 'Claude')) return '';
-  if (t.meetingAt) return Date.parse(t.meetingAt) < Date.parse(nowIso) ? `meeting time ${String(t.meetingAt).slice(0, 16).replace('T', ' ')} has passed` : '';
-  const title = String(t.title || ''); const i = title.toLowerCase().indexOf('brief for');
-  if (i >= 0) { const d = datesIn(title.slice(i), todayIso)[0]; return d && d < todayIso ? `meeting on ${d} has passed` : ''; }
-  const why = String(t.why || ''); const o = why.toLowerCase().indexOf('offered');
-  if (t.type === 'meeting' && o >= 0) { const ds = datesIn(why.slice(o), todayIso); if (ds.length && ds.every(d => d < todayIso)) return 'every offered slot has passed'; }
-  const age = t.createdAt ? Math.floor((Date.parse(nowIso) - Date.parse(t.createdAt)) / 864e5) : 0;
-  if (/^https:\/\//.test(t.link || '') && age >= DRAFT_DAYS) return `draft not sent after ${age} days`;
-  if (/tell me what you promised|i need the|: tell me|pick slots/i.test(title) && age >= 7) return `question to a partner unanswered after ${age} days`;
-  return '';
-}
+export { DRAFT_DAYS, datesIn, expiryReason } from './today-rules';
+import { expiryReason } from './today-rules';
 export async function expireTodos({ apply = true, limit = 40, now = new Date().toISOString() } = {}) {
   const work = await listScope('work');
   // A chase tied to a priced pursuit never expires by itself: money is the partners' call.

@@ -13,13 +13,40 @@ export const daysBetween = (a: string, b: string) => Math.round((Date.parse(b.sl
 export const stateOf = (p: Item) => String(p.state || 'watch');
 export const isOpenPursuit = (p: Item) => p.kind === 'pursuit' && !p.archived && !CLOSED.includes(stateOf(p)) && !p.outcome;
 export const isPriced = (p: Item) => stateOf(p) === 'table';
-export const valueOf = (p: Item) => Number(p.amount) || 0;
-export const isMonthly = (p: Item) => p.type === 'monthly';
+// Fee: the amount a partner set, else the first £ figure in the "at stake" line (older pursuits hold the fee only there).
+const stakeFee = (p: Item) => { const m = /£\s?([\d,]+(?:\.\d+)?)\s*(k)?\s*((?:\/|a |per )\s*month)?/i.exec(String(p.atStake || '')); if (!m) return null; return { n: Number(m[1].replace(/,/g, '')) * (m[2] ? 1000 : 1), monthly: !!m[3] }; };
+const hasAmount = (p: Item) => p.amount !== undefined && p.amount !== null && p.amount !== '' && Number(p.amount) > 0;
+export const valueOf = (p: Item) => hasAmount(p) ? Number(p.amount) : (stakeFee(p)?.n || 0);
+export const isMonthly = (p: Item) => hasAmount(p) ? p.type === 'monthly' : (p.type === 'monthly' || !!stakeFee(p)?.monthly);
 export const nextTouch = (p: Item) => String(p.chaseOn || p.dueBy || '');
 const snoozed = (x: Item, today: string) => !!(x.snoozedUntil && String(x.snoozedUntil) > today);
 const mine = (owner: Owner, o: unknown) => owner === 'Both' || !o || o === owner || o === 'Both';
 
 const MONTHS: Record<string, number> = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+export const DRAFT_DAYS = 10;
+export function datesIn(text: string, todayIso: string): string[] {
+  const out: string[] = []; const re = /\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*/gi;
+  const now = Date.parse(todayIso); const y = Number(todayIso.slice(0, 4)); let m: RegExpExecArray | null;
+  while ((m = re.exec(String(text || '')))) {
+    const d = Number(m[1]); if (d < 1 || d > 31) continue; const mo = MONTHS[m[2].toLowerCase()];
+    const best = [y - 1, y, y + 1].map(yy => Date.UTC(yy, mo, d)).sort((a, b) => Math.abs(a - now) - Math.abs(b - now))[0];
+    out.push(new Date(best).toISOString().slice(0, 10));
+  }
+  return out;
+}
+export function expiryReason(t: Item, nowIso: string): string {
+  const todayIso = nowIso.slice(0, 10);
+  if (t.kind !== 'todo' || t.status !== 'open' || t.reopenedAt || t.type === 'event' || (t.createdBy && t.createdBy !== 'Claude')) return '';
+  if (t.meetingAt) return Date.parse(t.meetingAt) < Date.parse(nowIso) ? `meeting time ${String(t.meetingAt).slice(0, 16).replace('T', ' ')} has passed` : '';
+  const title = String(t.title || ''); const i = title.toLowerCase().indexOf('brief for');
+  if (i >= 0) { const d = datesIn(title.slice(i), todayIso)[0]; return d && d < todayIso ? `meeting on ${d} has passed` : ''; }
+  const why = String(t.why || ''); const o = why.toLowerCase().indexOf('offered');
+  if (t.type === 'meeting' && o >= 0) { const ds = datesIn(why.slice(o), todayIso); if (ds.length && ds.every(d => d < todayIso)) return 'every offered slot has passed'; }
+  const age = t.createdAt ? Math.floor((Date.parse(nowIso) - Date.parse(t.createdAt)) / 864e5) : 0;
+  if (/^https:\/\//.test(t.link || '') && age >= DRAFT_DAYS) return `draft not sent after ${age} days`;
+  if (/tell me what you promised|i need the|: tell me|pick slots/i.test(title) && age >= 7) return `question to a partner unanswered after ${age} days`;
+  return '';
+}
 /** The meeting a to-do is about: meetingAt if set, else the "brief for <day date time>" in the title (older rows). */
 export function meetingOf(t: Item, today: string): { date: string; time: string; who: string } | null {
   const title = String(t.title || '');
@@ -40,7 +67,8 @@ export function buildToday({ work, events = [], owner = 'Both', now = new Date()
   const pursuits = work.filter(w => w.kind === 'pursuit');
   const open = pursuits.filter(isOpenPursuit);
   const todos = work.filter(w => w.kind === 'todo');
-  const openTodos = todos.filter(t => t.status === 'open');
+  // Dead items never show, whether or not the 06:10 tidy has closed them yet.
+  const openTodos = todos.filter(t => t.status === 'open' && !expiryReason(t, now.toISOString()));
   const draftFor = (pid: string) => openTodos.find(t => t.pursuitId === pid && /^https:\/\//.test(t.link || ''));
 
   // 1. Decide: questions only a partner can answer (price, won, lost, park), asked by Claude with the evidence.
