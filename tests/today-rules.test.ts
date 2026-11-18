@@ -73,3 +73,15 @@ test('seeThisWeek: five, partners/active/referrers only, longest since met, none
 });
 
 test('addWorkingDays skips weekends', () => { assert.equal(addWorkingDays('2026-11-20', 1), '2026-11-23'); });
+
+test('fee is read from the "at stake" line when no amount is set; monthly detected', () => {
+  const work = [P('v', { state: 'table', atStake: '£62,000 initial (then £25,000 a month)' }), P('a', { state: 'table', atStake: '£6,500/month monitoring' }), P('k', { state: 'table', atStake: '£42,500 (stages 1 and 2)' }), P('b', { state: 'table', amount: 11550, atStake: '£17,600 stages 1-2' })];
+  const d = buildToday({ work, now: NOW });
+  assert.equal(d.pricedTotal, 62000 + 42500 + 11550); assert.equal(d.pricedMonthly, 6500);
+  assert.equal(d.priced[0].name, 'a');
+});
+
+test('dead to-dos never reach Today even before the tidy has run', () => {
+  const work = [T('old', { type: 'followup', createdBy: 'Claude', link: 'https://outlook.office365.com/x', createdAt: '2026-11-03T08:00:00Z', due: '2026-11-03' }), T('live', { type: 'reply', createdBy: 'Claude', createdAt: '2026-11-17T08:00:00Z' })];
+  assert.deepEqual(buildToday({ work, now: NOW }).rows.map(r => r.title), ['live']);
+});

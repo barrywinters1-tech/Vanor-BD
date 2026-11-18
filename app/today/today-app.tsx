@@ -129,6 +129,8 @@ export default function TodayApp({ api = liveApi, initialTab = 'today' as Tab }:
       const fields: Record<string, unknown> = { nextAction: q.nextAction, proposed: null, ...(q.dueBy ? { dueBy: q.dueBy } : {}), ...(q.latest ? { latest: q.latest } : {}), ...(q.state && q.state !== p.state && p.state !== 'table' && ['act', 'waiting', 'watch'].includes(q.state) ? { state: q.state } : {}) };
       const prev = { nextAction: p.nextAction || '', dueBy: p.dueBy || '', latest: p.latest || '', state: p.state || 'watch', proposed: q };
       return act(() => api.patch('work', id, fields, 'Accepted suggestion'), `${p.name}: updated.`, async () => { await api.patch('work', id, prev, 'Undid accept'); }); }}
+    onAllSuggestions={() => act(async () => { for (const sg of view.suggestions) { const p = byId(sg.id); if (!p || !p.proposed) continue; const q = p.proposed;
+      await api.patch('work', p.id, { nextAction: q.nextAction, proposed: null, ...(q.dueBy ? { dueBy: q.dueBy } : {}), ...(q.latest ? { latest: q.latest } : {}), ...(q.state && q.state !== p.state && p.state !== 'table' && ['act', 'waiting', 'watch'].includes(q.state) ? { state: q.state } : {}) }, 'Accepted suggestion').catch(() => api.patch('work', p.id, { nextAction: q.nextAction, proposed: null, ...(q.dueBy ? { dueBy: q.dueBy } : {}) }, 'Accepted suggestion')); } }, `${view.suggestions.length} next steps updated.`)}
     onUndo={(c) => c.kind === 'pursuit' ? act(() => api.undoClaude(c.id), 'Claude\'s change undone.') : act(() => api.patch('work', c.id, { status: 'open', doneAt: '', doneBy: '', doneReason: '', doneNote: '', reopenedAt: new Date().toISOString() }, 'Reopened'), 'Back on the list.')}
     onUnpark={id => { const p = byId(id)!; return act(() => api.patch('work', id, { state: ['watch', 'waiting', 'act'].includes(p.parkedFrom) ? p.parkedFrom : 'watch', parkedAt: '', parkedBy: '', parkedReason: '', nextAction: p.nextAction || 'Decide the next step' }, 'Unparked'), `${p.name} is back.`); }} />;
 
@@ -167,9 +169,9 @@ export default function TodayApp({ api = liveApi, initialTab = 'today' as Tab }:
 
 type View = ReturnType<typeof buildToday>;
 
-function MoneyTab({ view, today, open, setOpen, onPursuit, onDirect, onSuggestion, onUndo, onUnpark }: {
+function MoneyTab({ view, today, open, setOpen, onPursuit, onDirect, onSuggestion, onAllSuggestions, onUndo, onUnpark }: {
   view: View; today: string; open: Record<string, boolean>; setOpen: (f: (o: Record<string, boolean>) => Record<string, boolean>) => void;
-  onPursuit(id: string): void; onDirect(on: boolean): void; onSuggestion(id: string, yes: boolean): void;
+  onPursuit(id: string): void; onDirect(on: boolean): void; onSuggestion(id: string, yes: boolean): void; onAllSuggestions(): void;
   onUndo(c: View['changed'][number]): void; onUnpark(id: string): void;
 }) {
   const toggle = (k: string) => setOpen(o => ({ ...o, [k]: !o[k] }));
@@ -192,9 +194,10 @@ function MoneyTab({ view, today, open, setOpen, onPursuit, onDirect, onSuggestio
 
     <h2 className="vt-h">Claude's updates</h2>
     <label className="vt-switch"><input type="checkbox" checked={view.directOn} onChange={e => onDirect(e.target.checked)} /> <span>Let Claude update next steps directly (never prices, wins, losses or parking; Undo below for 14 days)</span></label>
-    {view.suggestions.length ? <><p className="vt-muted">Waiting for your OK ({view.suggestions.length})</p><ul className="vt-list">{view.suggestions.map(s => <li key={s.id} className="vt-sugg">
+    {view.suggestions.length ? <><div className="vt-sugg"><button className="vt-fold" onClick={() => toggle('sugg')}>Suggested next steps <span>{view.suggestions.length}</span> {open.sugg ? '▴' : '▾'}</button><button className="vt-btn primary" onClick={() => onAllSuggestions()}>Yes to all</button></div>
+    {open.sugg ? <ul className="vt-list">{view.suggestions.map(s => <li key={s.id} className="vt-sugg">
       <div><b>{s.name}</b><p><s>{s.now || '(none)'}</s> → {s.next}{s.due ? ` · ${short(s.due)}` : ''}</p><p className="vt-muted">{s.why}</p></div>
-      <div className="vt-row-acts"><button className="vt-btn primary" onClick={() => onSuggestion(s.id, true)}>Yes</button><button className="vt-btn" onClick={() => onSuggestion(s.id, false)}>No</button></div></li>)}</ul></> : null}
+      <div className="vt-row-acts"><button className="vt-btn primary" onClick={() => onSuggestion(s.id, true)}>Yes</button><button className="vt-btn" onClick={() => onSuggestion(s.id, false)}>No</button></div></li>)}</ul> : null}</> : null}
     <button className="vt-fold" onClick={() => toggle('changed')}>Changed by Claude, last 14 days <span>{view.changed.length}</span> {open.changed ? '▴' : '▾'}</button>
     {open.changed ? <ul className="vt-list">{view.changed.map(c => <li key={c.kind + c.id} className="vt-sugg"><div><b>{c.title}</b><p>{c.what}</p><p className="vt-muted">{short(c.at)} · {c.why}</p></div><button className="vt-btn quiet" onClick={() => onUndo(c)}>Undo</button></li>)}</ul> : null}
 
