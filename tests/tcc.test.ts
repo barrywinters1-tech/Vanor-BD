@@ -5,11 +5,13 @@ import { parseFeed, isSignal, score } from '../lib/intel.ts';
 import '../public/vanor-classify.js';
 
 test('a TCC judgment entry survives parse, signal, score and the bar', () => {
-  const atom = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><entry><title>Acme Developments Limited v Bolt Construction Ltd [2026] EWHC 1234 (TCC)</title><link rel="alternate" href="https://caselaw.nationalarchives.gov.uk/ewhc/tcc/2026/1234"/><updated>2026-11-03T10:00:00+00:00</updated><summary>Adjudication enforcement; extension of time dispute on a hotel refurbishment.</summary></entry></feed>`;
+  // Dates are relative to today so the recency bar does not drift with the calendar.
+  const day = new Date(Date.now() - 2 * 864e5).toISOString().slice(0, 10);
+  const atom = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><entry><title>Acme Developments Limited v Bolt Construction Ltd [2026] EWHC 1234 (TCC)</title><link rel="alternate" href="https://caselaw.nationalarchives.gov.uk/ewhc/tcc/2026/1234"/><updated>${day}T10:00:00+00:00</updated><summary>Adjudication enforcement; extension of time dispute on a hotel refurbishment.</summary></entry></feed>`;
   const items = parseFeed(atom, 'tcc_judgments');
   assert.equal(items.length, 1);
   assert.ok(isSignal(items[0]));
-  const sc = score(items[0], new Date('2026-11-05T00:00:00Z'));
+  const sc = score(items[0], new Date(Date.now()));
   assert.equal(sc.lead.stage, 'dispute');
   assert.equal(sc.lead.parties.claimant, 'Acme Developments Limited');
   assert.equal(sc.lead.parties.defendant, 'Bolt Construction Ltd');
