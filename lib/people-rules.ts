@@ -8,6 +8,11 @@ const LANE_WORDS: [string, RegExp][] = [
   ['hotel', /\b(hotel|hotels|hospitality|resort|inn|boutique)\b/i],
   ['claims', /\b(claims?|dispute|delay|disputes|quantum|expert witness|adjudicat\w*|arbitrat\w*)\b/i],
   ['offices', /\b(workplace|occupier|lease|tenant rep|office agent|corporate real estate|occupational)\b/i],
+  // Who someone is, when no work lane fits (Barry, 18 Nov 2026: these are not "other").
+  ['public', /\b(council|borough|city of london|corporation|homes england|government|authority|nhs|ministry)\b/i],
+  ['consultant', /\b(architects?|architecture|design studio|engineer(s|ing)?|structural|mep|m ?& ?e|building services|quantity survey\w*|qs|cost (consultan\w*|management)|surveyors?|surveying|consultan(t|cy|ts)|project management|programme management|partnership|capital markets|planning)\b/i],
+  ['contractor', /\b(construction|contractors?|contracting|contracts|builders?|building ltd|fit[- ]?out|interiors|facades?|roofing|cladding|drylining|scaffolding|civils|groundworks|joinery|flooring|windows|fencing|crane)\b/i],
+  ['developer', /\b(developments?|developer|homes|living|property|properties|real estate|estates|regeneration|land)\b/i],
 ];
 // Introducers: firms that could send us work but would not buy it themselves (audit 31 Oct: rungs defaulted to contact).
 export const INTRODUCER = /\b(architects?|architecture|design studio|studio|engineer(s|ing)?|structures|structural|m ?& ?e|mep|building services|quantity survey\w*|qs|cost (consultan\w*|management)|surveyors?|agents?|agency|estate agents|property consultants|lawyers?|solicitors?|llp law|legal|recruit\w*|planning consultan\w*|project managers|project management)\b/i;

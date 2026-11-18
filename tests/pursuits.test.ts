@@ -120,3 +120,10 @@ test('lapsed proposals leave the pounds out; funder proposals stand 21 days', ()
   assert.equal(V.liveProposal({ lane: 'hotel', proposed: prop }, T), false);
   assert.ok(V.validate({ kind: 'pursuit', name: 'Z', state: 'watch', decisionDate: '31/10/2026' }));
 });
+
+test('people lanes add developer, contractor, consultant and public; pursuits keep five work lanes', () => {
+  const PV = (globalThis as any).VanorPursuits;
+  for (const k of ['developer', 'contractor', 'consultant', 'public', 'funder', 'other']) assert.ok(PV.PEOPLE_LANE[k], k);
+  assert.equal(PV.LANE.developer, undefined);
+  assert.equal(PV.PEOPLE_LANES[PV.PEOPLE_LANES.length - 1].key, 'other');
+});
