@@ -16,6 +16,6 @@ export async function GET(request: Request) {
   const dry = new URL(request.url).searchParams.get('dry') === '1';
   let result: Awaited<ReturnType<typeof expireTodos>> | null = null, error = '';
   try { result = await expireTodos({ apply: !dry }); } catch (e) { error = e instanceof Error ? e.message : String(e); }
-  if (!dry) await jobRan({ job: 'board-tidy', name: 'Board tidy (06:30 daily)', ok: !error, note: error || `${result?.closed ?? 0} dead to-dos closed of ${result?.checked ?? 0} open`, expectHours: 50 }).catch(() => {});
+  if (!dry) await jobRan({ job: 'board-tidy', name: 'Board tidy (06:10 daily)', ok: !error, note: error || `${result?.closed ?? 0} dead to-dos closed of ${result?.checked ?? 0} open`, expectHours: 50 }).catch(() => {});
   return Response.json(error ? { error } : result);
 }

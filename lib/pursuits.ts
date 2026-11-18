@@ -119,15 +119,20 @@ export async function proposeNext(id: string, p: { nextAction: string; dueBy?: s
     if (ask) outcome = { mode: 'ask', note: `Asked the partners to decide: ${ask.state}.` };
     const evidence = p.evidenceOn || now.slice(0, 10);
     const founderNewer = !!(c.founderTouchedAt && String(c.founderTouchedAt).slice(0, 10) > evidence);
+    const nextState = q.state || cur;
+    const valid = !V.validate({ ...c, state: nextState, nextAction: q.nextAction || c.nextAction });
     const moveOk = !q.state || (ALLOWED_MOVES[cur] || []).includes(q.state);
-    const canApply = direct && !ask && !V.CLOSED.includes(cur) && cur !== 'table' && !priced(c) && !founderNewer && moveOk && doneToday < DIRECT_PER_DAY;
+    // Direct needs the date of the evidence (so a partner's later edit always wins) and a record that stays valid.
+    const canApply = direct && !!p.evidenceOn && !ask && !V.CLOSED.includes(cur) && cur !== 'table' && !priced(c) && !founderNewer && moveOk && valid && doneToday < DIRECT_PER_DAY;
     if (!canApply) {
-      if (!ask && direct) outcome.note = outcome.note || (founderNewer ? 'Kept as a proposal: a partner edited this after the evidence.' : priced(c) || cur === 'table' ? 'Kept as a proposal: priced pursuits are the partners\' to move.' : !moveOk ? `Kept as a proposal: ${cur} to ${q.state} is the partners' move.` : doneToday >= DIRECT_PER_DAY ? 'Kept as a proposal: daily limit for direct updates reached.' : '');
+      if (!ask && direct) outcome.note = outcome.note || (!p.evidenceOn ? 'Kept as a proposal: no evidence date given.' : founderNewer ? 'Kept as a proposal: a partner edited this after the evidence.' : !valid ? 'Kept as a proposal: that move needs a partner (the pursuit is not qualified for it).' : priced(c) || cur === 'table' ? 'Kept as a proposal: priced pursuits are the partners\' to move.' : !moveOk ? `Kept as a proposal: ${cur} to ${q.state} is the partners' move.` : doneToday >= DIRECT_PER_DAY ? 'Kept as a proposal: daily limit for direct updates reached.' : '');
       const hasAction = !!(q.nextAction || q.dueBy || q.state);
       return { ...c, latest: q.latest || c.latest, proposed: hasAction ? { ...q, at: now } : c.proposed || null, ...(ask ? { ask } : {}) };
     }
     outcome = { mode: 'applied', note: 'Applied (Claude). Undo on the board for 14 days.' };
-    const prev = { nextAction: c.nextAction || '', dueBy: c.dueBy || '', latest: c.latest || '', state: cur };
+    // A second update on top of Claude's first keeps the partner's original values for Undo.
+    const stillClaude = c.claudePrev && ['nextAction', 'dueBy', 'latest'].every(k => String(c[k] || '') === String(c.claudePrev.set?.[k] || '')) && cur === c.claudePrev.set?.state;
+    const prev = stillClaude ? c.claudePrev.fields : { nextAction: c.nextAction || '', dueBy: c.dueBy || '', latest: c.latest || '', state: cur };
     const next = { nextAction: q.nextAction || c.nextAction || '', dueBy: q.dueBy || c.dueBy || '', latest: q.latest || c.latest || '', state: q.state || cur };
     const history = [{ at: now, by: 'Claude', change: `updated: ${next.nextAction}${q.dueBy ? ' by ' + q.dueBy : ''}${q.state ? '; ' + cur + ' -> ' + q.state : ''} (${String(p.why).slice(0, 120)})` }, ...((c.history as unknown[]) || [])].slice(0, 30);
     return { ...c, ...next, proposed: null, claudePrev: { fields: prev, set: next, at: now, why: p.why }, history, updatedAt: now, updatedBy: 'Claude' };
@@ -147,7 +152,7 @@ export async function undoClaudeUpdate(id: string, actor: string) {
     const history = [{ at: new Date().toISOString(), by: actor, change: `undid Claude's update (${restored.join(', ') || 'nothing left to undo'})` }, ...((c.history as unknown[]) || [])].slice(0, 30);
     return { ...c, ...back, claudePrev: null, history, founderTouchedAt: new Date().toISOString(), updatedBy: actor };
   });
-  await logEvent({ entityId: id, type: 'Claude update undone', actor, note: restored.join(', ') });
+  if (restored.length) await logEvent({ entityId: id, type: 'Claude update undone', actor, note: restored.join(', ') });
   return { id, restored };
 }
 

@@ -129,9 +129,11 @@ export function expiryReason(t: Entity, nowIso: string): string {
 export async function expireTodos({ apply = true, limit = 40, now = new Date().toISOString() } = {}) {
   const work = await listScope('work');
   // A chase tied to a priced pursuit never expires by itself: money is the partners' call.
-  const pricedIds = new Set(work.filter(w => w.kind === 'pursuit' && (w.state === 'table' || w.issuedOn || w.decisionDate || w.validUntil || (w.amount !== undefined && w.amount !== null && w.amount !== ''))).map(w => w.id));
+  const pricedP = work.filter(w => w.kind === 'pursuit' && !['won', 'lost', 'parked'].includes(w.state) && (w.state === 'table' || w.issuedOn || w.decisionDate || w.validUntil || (w.amount !== undefined && w.amount !== null && w.amount !== '')));
+  const pricedIds = new Set(pricedP.map(w => w.id)), pricedRecs = new Set(pricedP.map(w => w.recordId).filter(Boolean)), pricedMail = new Set(pricedP.map(w => String(w.email || '').toLowerCase()).filter(Boolean));
   const all = work.filter(w => w.kind === 'todo' && w.status === 'open');
-  const due = all.filter(t => !(t.pursuitId && pricedIds.has(t.pursuitId))).map(t => ({ t, why: expiryReason(t, now) })).filter(x => x.why).slice(0, limit);
+  const tiedToMoney = (t: Entity) => (t.pursuitId && pricedIds.has(t.pursuitId)) || (t.recordId && pricedRecs.has(t.recordId)) || (t.toEmail && pricedMail.has(String(t.toEmail).toLowerCase()));
+  const due = all.filter(t => !tiedToMoney(t)).map(t => ({ t, why: expiryReason(t, now) })).filter(x => x.why).slice(0, limit);
   if (apply) for (const { t, why } of due) {
     await updateEntity('work', t.id, c => (c.status !== 'open' || c.reopenedAt) ? c : ({ ...c, status: 'done', doneAt: now, doneBy: 'Claude', doneReason: 'expired', doneNote: why, matchedBy: '' }));
   }

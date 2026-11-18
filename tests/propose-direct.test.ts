@@ -7,7 +7,7 @@ import { proposeNext, undoClaudeUpdate, DIRECT_PER_DAY } from '../lib/pursuits.t
 const gate = { asset: true, problem: true, capital: true, route: true };
 const seed = (id: string, x: any) => saveEntity('work', { id: 'pursuit:' + id, kind: 'pursuit', name: id, lane: 'other', gate, nextAction: 'old step', dueBy: '2026-11-10', latest: 'old', owner: 'Barry', ...x }, 0);
 const on = () => saveEntity('work', { id: 'setting:apply-direct', kind: 'setting', on: true }, 0);
-const P = (x: any = {}) => ({ nextAction: 'Chase Dovile for feedback', dueBy: '2026-11-20', latest: '17 Nov: chased', why: 'Sent Item 17 Nov', ...x });
+const P = (x: any = {}) => ({ nextAction: 'Chase Dovile for feedback', dueBy: '2026-11-20', latest: '17 Nov: chased', why: 'Sent Item 17 Nov', evidenceOn: new Date().toISOString().slice(0, 10), ...x });
 beforeEach(() => _memReset());
 
 test('propose mode (default): nothing applied, proposal stored', async () => {
@@ -70,4 +70,21 @@ test('daily cap on direct updates', async () => {
   for (let i = 0; i <= DIRECT_PER_DAY; i++) modes.push((await proposeNext('pursuit:c' + i, P())).mode);
   assert.equal(modes.filter(m => m === 'applied').length, DIRECT_PER_DAY);
   assert.equal(modes[DIRECT_PER_DAY], 'proposed');
+});
+
+test('direct mode keeps a proposal when the evidence date is missing or the move would make the record invalid', async () => {
+  await on();
+  await seed('noev', { state: 'waiting' });
+  assert.equal((await proposeNext('pursuit:noev', P({ evidenceOn: undefined }))).mode, 'proposed');
+  await seed('ungated', { state: 'watch', gate: { asset: true } });
+  const r = await proposeNext('pursuit:ungated', P({ state: 'act' }));
+  assert.equal(r.mode, 'proposed'); assert.equal((await getOne('work', 'pursuit:ungated'))!.state, 'watch');
+});
+
+test('two Claude updates in a row: Undo goes back to the partner\'s original', async () => {
+  await on(); await seed('a', { state: 'waiting' });
+  await proposeNext('pursuit:a', P());
+  await proposeNext('pursuit:a', P({ nextAction: 'Second step' }));
+  await undoClaudeUpdate('pursuit:a', 'Barry');
+  assert.equal((await getOne('work', 'pursuit:a'))!.nextAction, 'old step');
 });

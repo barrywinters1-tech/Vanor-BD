@@ -22,7 +22,7 @@ test('Today: decisions first, then money, replies, others; never more than seven
   assert.ok(!d.rows.some(r => r.ref === 'todo:chase-big'), 'the chase is folded into the money row');
   assert.ok(!d.rows.some(r => r.ref === 'pursuit:small'), 'not yet due');
   assert.equal(d.rows[2].title, 'r1', 'replies before actions');
-  // 1 ask + 1 money + 9 to-dos = 11 rows due; 7 shown.
+  // 1 ask + 1 money + 9 to-dos = 11 rows due; MAX_ROWS shown.
   assert.equal(d.more, 11 - MAX_ROWS);
   const keys = d.rows.map(r => r.ref); assert.equal(new Set(keys).size, keys.length);
 });

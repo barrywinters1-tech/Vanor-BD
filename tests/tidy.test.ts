@@ -58,3 +58,9 @@ test('a chase tied to a priced pursuit never expires', async () => {
   const r = await expireTodos({ apply: true, now: NOW });
   assert.equal(r.closed, 0); assert.equal((await getOne('work', 'todo:chase'))!.status, 'open');
 });
+
+test('a draft to a priced client is kept even when tied only by email', async () => {
+  await saveEntity('work', { id: 'pursuit:m', kind: 'pursuit', name: 'm', state: 'table', amount: 6500, email: 'client@example.com' }, 0);
+  await saveEntity('work', T('mail', { type: 'followup', toEmail: 'Client@Example.com', link: 'https://outlook.office365.com/x', createdAt: '2026-10-01T08:00:00Z' }), 0);
+  assert.equal((await expireTodos({ apply: true, now: NOW })).closed, 0);
+});

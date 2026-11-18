@@ -3,7 +3,7 @@
 
 export type Item = { id: string; [k: string]: any };
 export type Owner = 'Both' | 'Barry' | 'Graeme';
-export const MAX_ROWS = 7;
+export const MAX_ROWS = 5;
 const DAY = 864e5;
 const CLOSED = ['won', 'lost', 'parked'];
 export const londonDate = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
@@ -44,7 +44,7 @@ export function buildToday({ work, events = [], owner = 'Both', now = new Date()
   const draftFor = (pid: string) => openTodos.find(t => t.pursuitId === pid && /^https:\/\//.test(t.link || ''));
 
   // 1. Decide: questions only a partner can answer (price, won, lost, park), asked by Claude with the evidence.
-  const decide: Row[] = pursuits.filter(p => p.ask && p.ask.state && !snoozed(p, today) && p.ask.state !== stateOf(p) && !(CLOSED.includes(stateOf(p)) && CLOSED.includes(p.ask.state)))
+  const decide: Row[] = pursuits.filter(p => p.ask && p.ask.state && mine(owner, p.owner) && !snoozed(p, today) && p.ask.state !== stateOf(p) && !(CLOSED.includes(stateOf(p)) && CLOSED.includes(p.ask.state)))
     .map(p => ({ key: 'ask:' + p.id, kind: 'decide', title: p.name, ask: p.ask.state, why: p.ask.why || '', ref: p.id, money: valueOf(p), owner: p.owner }));
   // 2. Money: a priced proposal whose next touch or decision date has come.
   const asked = new Set(decide.map(r => r.ref));
@@ -74,14 +74,14 @@ export function buildToday({ work, events = [], owner = 'Both', now = new Date()
     .map(p => ({ id: p.id, name: p.name, who: [p.person, p.org].filter(Boolean).join(' · '), amount: valueOf(p), monthly: isMonthly(p), atStake: p.atStake || '', next: p.nextAction || '', touch: nextTouch(p), decision: p.decisionDate || '', out: p.issuedOn ? daysBetween(p.issuedOn, today) : null, latest: p.latest || '', owner: p.owner || '', late: !!(nextTouch(p) && nextTouch(p) < today) }));
   const talking = open.filter(p => !isPriced(p) && mine(owner, p.owner)).sort((a, b) => String(a.dueBy || '9').localeCompare(String(b.dueBy || '9')))
     .map(p => ({ id: p.id, name: p.name, who: [p.person, p.org].filter(Boolean).join(' · '), state: stateOf(p), next: p.nextAction || '', due: p.dueBy || '', theirs: stateOf(p) === 'waiting', latest: p.latest || '', proposal: p.proposed && p.proposed.nextAction ? p.proposed : null }));
-  const suggestions = open.filter(p => p.proposed && p.proposed.nextAction).map(p => ({ id: p.id, name: p.name, now: p.nextAction || '', next: p.proposed.nextAction, due: p.proposed.dueBy || '', state: p.proposed.state || '', why: p.proposed.why || '', at: String(p.proposed.at || '').slice(0, 10) }));
+  const suggestions = open.filter(p => p.proposed && p.proposed.nextAction && !p.ask).map(p => ({ id: p.id, name: p.name, now: p.nextAction || '', next: p.proposed.nextAction, due: p.proposed.dueBy || '', state: p.proposed.state || '', why: p.proposed.why || '', at: String(p.proposed.at || '').slice(0, 10) }));
   const since = addDays(today, -14);
   const changed = [
     ...pursuits.filter(p => p.claudePrev && String(p.claudePrev.at).slice(0, 10) >= since).map(p => ({ kind: 'pursuit' as const, id: p.id, title: p.name, what: `Next: ${p.claudePrev.set?.nextAction || ''}`, why: p.claudePrev.why || '', at: String(p.claudePrev.at).slice(0, 10) })),
     ...todos.filter(t => t.status === 'done' && t.doneBy === 'Claude' && String(t.doneAt || '').slice(0, 10) >= since).map(t => ({ kind: 'todo' as const, id: t.id, title: t.title, what: ({ sent: 'Closed: your sent mail found', superseded: 'Closed: overtaken', meeting_held: 'Closed: meeting held', no_longer_needed: 'Closed: no longer needed', expired: 'Closed: out of date' } as Record<string, string>)[t.doneReason] || 'Closed', why: t.doneNote || '', at: String(t.doneAt).slice(0, 10) })),
   ].sort((a, b) => b.at.localeCompare(a.at));
   const monthStart = today.slice(0, 8) + '01';
-  const closed = pursuits.filter(p => CLOSED.includes(stateOf(p)) && String(p.updatedAt || p.parkedAt || '').slice(0, 10) >= monthStart).map(p => ({ id: p.id, name: p.name, state: stateOf(p), amount: valueOf(p) }));
+  const closed = pursuits.filter(p => CLOSED.includes(stateOf(p)) && String(p.closedAt || p.updatedAt || p.parkedAt || '').slice(0, 10) >= monthStart).map(p => ({ id: p.id, name: p.name, state: stateOf(p), amount: valueOf(p) }));
 
   // Events: last 7 days to 4 weeks ahead.
   const evs = events.filter(e => !e.archived && e.date && e.date >= addDays(today, -7) && e.date <= addDays(today, 28) && !['Declined', 'Watch'].includes(e.status))

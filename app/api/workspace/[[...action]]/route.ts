@@ -200,7 +200,7 @@ export async function GET(request: NextRequest, context: Context) {
       // Light load for the new screens: no contact list, no history log.
       const [records, decisions, work, plannedEvents] = await Promise.all([list(access, 'source'), list(access, 'decision'), list(access, 'work'), list(access, 'planned_event')]);
       const cutoff = new Date(Date.now() - 45 * 864e5).toISOString();
-      const keep = (w: Entity) => w.kind === 'pursuit' || w.kind === 'job' || w.kind === 'setting' || (w.kind === 'capture' && w.status === 'open')
+      const keep = (w: Entity) => (w.kind === 'pursuit' && (!['won', 'lost', 'parked'].includes(w.state) || String(w.closedAt || w.updatedAt || w.parkedAt || '') >= cutoff)) || w.kind === 'job' || w.kind === 'setting' || (w.kind === 'capture' && w.status === 'open')
         || (w.kind === 'todo' && (w.status === 'open' || String(w.doneAt || '') >= cutoff));
       const dm = new Map(decisions.map(d => [d.id, d]));
       const people = records.map(r => ({ r, d: dm.get(r.id) || {} as Entity })).filter(x => (x.d.rung || x.d.lastMet) && x.d.status !== 'Archive' && !x.d.mergedInto && !/@vanoradvisory\.co\.uk$/i.test(String(x.r.email || '')))
@@ -294,12 +294,13 @@ export async function POST(request: NextRequest, context: Context) {
         let next: Entity = { ...(cur || { id, kind: 'setting' }), ...fields, id };
         if (kind === 'pursuit') {
           // A partner moving a pursuit forward asserts the four conditions themselves; the screens no longer ask them one by one.
-          if ('state' in fields && !['watch', ...PV.CLOSED].includes(String(next.state))) next.gate = { asset: true, problem: true, capital: true, route: true };
+          if ('state' in fields && !['watch', ...PV.CLOSED].includes(String(next.state))) next.gate = { asset: true, problem: true, capital: true, route: true, ...Object.fromEntries(Object.entries(cur?.gate || {}).filter(([, v]) => v === true)) };
           const why = PV.validate(next); if (why) return reply({ error: why }, 400);
           next.archived = PV.CLOSED.includes(next.state);
           const changes = Object.keys(fields).map(k => `${k}: ${String((fields as any)[k] ?? '').slice(0, 60)}`).join('; ');
           next.history = [{ at: now, by: actor, change: note || changes }, ...((cur?.history as unknown[]) || [])].slice(0, 30);
-          next.founderTouchedAt = now; next.updatedBy = actor;
+          next.founderTouchedAt = now; next.updatedBy = actor; next.updatedAt = now;
+          if ('state' in fields) next.closedAt = PV.CLOSED.includes(next.state) ? (cur?.closedAt && PV.CLOSED.includes(cur?.state) ? cur.closedAt : now) : '';
           if (('nextAction' in fields || 'dueBy' in fields || 'state' in fields) && !('proposed' in fields)) next.proposed = null;
         }
         if (kind === 'setting') { next = { ...next, kind: 'setting', updatedBy: actor }; }

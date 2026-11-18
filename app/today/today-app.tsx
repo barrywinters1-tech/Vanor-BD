@@ -37,7 +37,7 @@ const nice = (iso: string) => { if (!iso) return ''; const d = new Date(iso.slic
 const short = (iso: string) => iso ? new Date(iso.slice(0, 10) + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
 const ASK: Record<string, string> = { table: 'Priced: a proposal is out', won: 'Won', lost: 'Lost', parked: 'Park it' };
 type Tab = 'today' | 'money' | 'people' | 'events';
-type Sheet = { kind: 'pursuit'; id: string } | { kind: 'todo'; id: string } | { kind: 'person'; person: Item } | { kind: 'note'; about?: { label: string; pursuitId?: string; recordId?: string; eventId?: string; eventTitle?: string } } | { kind: 'step'; id: string; chased: boolean } | { kind: 'lost'; id: string; fromAsk?: boolean } | { kind: 'list'; title: string; rows: Row[] } | null;
+type Sheet = { kind: 'pursuit'; id: string } | { kind: 'todo'; id: string } | { kind: 'person'; person: Item } | { kind: 'note'; about?: { label: string; pursuitId?: string; recordId?: string; eventId?: string; eventTitle?: string } } | { kind: 'step'; id: string; chased: boolean } | { kind: 'lost'; id: string; fromAsk?: boolean } | { kind: 'priced'; id: string } | { kind: 'list'; title: string; rows: Row[] } | null;
 
 export default function TodayApp({ api = liveApi, initialTab = 'today' as Tab }: { api?: Api; initialTab?: Tab }) {
   const [data, setData] = useState<{ work: Item[]; events: Item[]; people: Item[]; contacts: number } | null>(null);
@@ -81,10 +81,10 @@ export default function TodayApp({ api = liveApi, initialTab = 'today' as Tab }:
     if (!yes) return act(() => api.patch('work', p.id, { ask: null }, `No to Claude's question (${p.ask?.state})`), 'Noted. Claude will not ask again.');
     const s = p.ask.state; const prev = { state: p.state || 'watch', ask: p.ask };
     if (s === 'lost') return setSheet({ kind: 'lost', id: p.id, fromAsk: true });
+    if (s === 'table') return setSheet({ kind: 'priced', id: p.id });
     const fields: Record<string, unknown> = { state: s, ask: null };
     if (s === 'won') Object.assign(fields, { outcome: 'Won', wonOn: today });
     if (s === 'parked') Object.assign(fields, { parkedAt: new Date().toISOString(), parkedBy: actor, parkedFrom: p.state || 'watch', parkedReason: p.ask.why || '' });
-    if (s === 'table') Object.assign(fields, { issuedOn: p.issuedOn || today, nextAction: p.nextAction || 'Ask for a yes, a no or a date', dueBy: addWorkingDays(today, 5) });
     return act(() => api.patch('work', p.id, fields, `Decided: ${ASK[s]}`), `${p.name}: ${ASK[s].toLowerCase()}.`, async () => { await api.patch('work', p.id, { ...prev, ...(s === 'won' ? { outcome: '', wonOn: '' } : {}) }, 'Undid decision'); });
   }
 
@@ -146,8 +146,8 @@ export default function TodayApp({ api = liveApi, initialTab = 'today' as Tab }:
         {e.going && e.targets ? <p className="vt-muted">Want to meet: {e.targets}</p> : null}
         <div className="vt-row-acts">
           {e.past ? <button className="vt-btn primary" onClick={() => setSheet({ kind: 'note', about: { label: e.title, eventId: e.id, eventTitle: e.title } })}>Who did you meet?</button>
-            : e.going ? <><span className="vt-pill">Going</span><button className="vt-btn quiet" onClick={() => act(() => api.patch('planned_event', e.id, { status: 'Research' }, 'Not going'), 'Taken off.')}>Not going</button></>
-            : <><button className="vt-btn primary" onClick={() => act(() => api.patch('planned_event', e.id, { status: 'Booked', owner: actor || 'Barry' }, 'Going'), 'Going. Book your place on the event page.')}>Go</button><button className="vt-btn" onClick={() => act(() => api.patch('planned_event', e.id, { status: 'Declined' }, 'Skip'), 'Skipped.')}>Skip</button></>}
+            : e.going ? <><span className="vt-pill">Going</span><button className="vt-btn quiet" onClick={() => act(() => api.patch('planned_event', e.id, { status: 'Research' }, 'Not going'), 'Not going.', async () => { await api.patch('planned_event', e.id, { status: e.status }, 'Going again'); })}>Not going</button></>
+            : <><button className="vt-btn primary" onClick={() => act(() => api.patch('planned_event', e.id, { status: 'Booked', owner: actor || 'Barry' }, 'Going'), 'Going. Book your place on the event page.', async () => { await api.patch('planned_event', e.id, { status: e.status }, 'Undid going'); })}>Go</button><button className="vt-btn" onClick={() => act(() => api.patch('planned_event', e.id, { status: 'Declined' }, 'Skip'), 'Skipped.', async () => { await api.patch('planned_event', e.id, { status: e.status }, 'Undid skip'); })}>Skip</button></>}
         </div>
       </div></li>)}</ul> : <p className="vt-clear">No events in the next four weeks. Monday's run adds the best few.</p>}
   </section>;
@@ -262,7 +262,7 @@ function SheetView({ sheet, close, data, today, actor, api, act, decide, setShee
         {confirm === 'won' ? <><span>Mark {p.name} won?</span><button className="vt-btn primary" onClick={() => act(() => api.patch('work', p.id, { state: 'won', outcome: 'Won', wonOn: today, ask: null }, 'Won'), `${p.name} won.`, async () => { await api.patch('work', p.id, { state: p.state, outcome: '', wonOn: '' }, 'Undid won'); })}>Yes, won</button><button className="vt-btn quiet" onClick={() => setConfirm('')}>Cancel</button></>
           : <><button className="vt-btn" onClick={() => setConfirm('won')}>Won</button><button className="vt-btn" onClick={() => setSheet({ kind: 'lost', id: p.id })}>Lost</button>
             <button className="vt-btn" onClick={() => act(() => api.patch('work', p.id, { state: 'parked', parkedAt: new Date().toISOString(), parkedBy: actor, parkedFrom: p.state || 'watch', ask: null }, 'Parked'), `${p.name} parked.`, async () => { await api.patch('work', p.id, { state: p.state || 'watch', parkedAt: '' }, 'Unparked'); })}>Park</button>
-            {p.state !== 'table' ? <button className="vt-btn" onClick={() => act(() => api.patch('work', p.id, { state: 'table', issuedOn: p.issuedOn || today, nextAction: p.nextAction || 'Ask for a yes, a no or a date', dueBy: p.dueBy && p.dueBy > today ? p.dueBy : addWorkingDays(today, 5) }, 'Priced'), `${p.name}: proposal out.`, async () => { await api.patch('work', p.id, { state: p.state || 'watch' }, 'Undid priced'); })}>Proposal out</button> : null}</>}
+            {p.state !== 'table' ? <button className="vt-btn" onClick={() => setSheet({ kind: 'priced', id: p.id })}>Proposal out</button> : null}</>}
       </div> : null}
       {p.claudePrev ? <p className="vt-muted small">Claude updated this {short(String(p.claudePrev.at))}: {p.claudePrev.why} <button className="vt-link small" onClick={() => act(() => api.undoClaude(p.id), 'Undone.')}>Undo</button></p> : null}
       {(p.history || []).length ? <details className="vt-hist"><summary>History</summary><ul>{(p.history as Item[]).slice(0, 8).map((h, i) => <li key={i}><span className="vt-muted">{short(String(h.at))} {h.by}</span> {h.change}</li>)}</ul></details> : null}
@@ -284,6 +284,20 @@ function SheetView({ sheet, close, data, today, actor, api, act, decide, setShee
       <button className="vt-btn primary" onClick={() => { const nx = field('next', sheet.chased ? (p.nextAction || 'Ask for a yes, a no or a date') : '').trim(); if (!nx) return; const when = field('when', def);
         const prev = { nextAction: p.nextAction || '', dueBy: p.dueBy || '', chaseOn: p.chaseOn || '', latest: p.latest || '' };
         return act(() => api.patch('work', p.id, { nextAction: nx, dueBy: when, ...(p.state === 'table' ? { chaseOn: when } : {}), latest: `${short(today)}: ${sheet.chased ? 'chased' : 'done'}, ${p.nextAction || ''}`.slice(0, 200) }, sheet.chased ? 'Chased' : 'Done'), `Next: ${nx}, ${short(when)}.`, async () => { await api.patch('work', p.id, prev, 'Undid'); }); }}>Save</button></>;
+  } else if (sheet.kind === 'priced') {
+    const p = byId(sheet.id); if (!p) return null;
+    title = `Proposal out: ${p.name}`;
+    const def = addWorkingDays(today, 5);
+    body = <><div className="vt-two"><label className="vt-field">Fee (£)<input autoFocus inputMode="numeric" value={field('amount', p.amount ?? '')} onChange={set('amount')} placeholder="e.g. 18000" /></label>
+      <label className="vt-field">Fee is<select value={field('type', p.type || 'one-off')} onChange={set('type')}><option value="one-off">one-off</option><option value="monthly">monthly</option></select></label></div>
+      <div className="vt-two"><label className="vt-field">Sent on<input type="date" value={field('issuedOn', p.issuedOn || today)} onChange={set('issuedOn')} /></label>
+      <label className="vt-field">Client's decision date (if they gave one)<input type="date" value={field('decisionDate', p.decisionDate || '')} onChange={set('decisionDate')} /></label></div>
+      <label className="vt-field">Next step<input value={field('next', p.nextAction || 'Ask for a yes, a no or a date')} onChange={set('next')} /></label>
+      <label className="vt-field">Next touch<input type="date" value={field('when', def)} onChange={set('when')} /></label>
+      <button className="vt-btn primary" onClick={() => { const amt = String(field('amount', p.amount ?? '')).replace(/[£,\s]/g, '');
+        const fields: Record<string, unknown> = { state: 'table', ask: null, amount: amt === '' ? null : Number(amt), type: field('type', p.type || 'one-off'), issuedOn: field('issuedOn', p.issuedOn || today), decisionDate: field('decisionDate', p.decisionDate || ''), nextAction: field('next', p.nextAction || 'Ask for a yes, a no or a date'), dueBy: field('when', def), chaseOn: field('when', def) };
+        const prev = { state: p.state || 'watch', amount: p.amount ?? null, issuedOn: p.issuedOn || '', decisionDate: p.decisionDate || '', nextAction: p.nextAction || '', dueBy: p.dueBy || '', chaseOn: p.chaseOn || '', ask: p.ask || null };
+        return act(() => api.patch('work', p.id, fields, 'Proposal out'), `${p.name}: priced.`, async () => { await api.patch('work', p.id, prev, 'Undid priced'); }); }}>Save</button></>;
   } else if (sheet.kind === 'lost') {
     const p = byId(sheet.id); if (!p) return null;
     title = `Lost: ${p.name}`;
