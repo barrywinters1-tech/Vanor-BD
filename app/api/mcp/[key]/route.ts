@@ -250,7 +250,7 @@ function createServer() {
   }, async ({ items }) => {
     const done: string[] = [], notes: { id: string; note: string }[] = [], failed: { id: string; why: string }[] = [];
     for (const it of items) {
-      try { const src = await getOne('source', it.id); if (!src) throw new Error('No contact with id ' + it.id); if (isPlaceholder(src)) throw new Error('Not a real person (placeholder)');
+      try { const src = await getOne('source', it.id); if (!src) throw new Error('No contact with id ' + it.id); if (isPlaceholder(src)) throw new Error('Not a real person (placeholder)'); const dd = await getOne('decision', it.id); if (dd?.mergedInto) throw new Error('Merged into ' + dd.mergedInto + ': use that id');
         const { id, ...p } = it; const r = await setRelationship(id, p as any); done.push(id); if (r.note) notes.push({ id, note: r.note }); }
       catch (e) { failed.push({ id: it.id, why: e instanceof Error ? e.message : String(e) }); }
     }
@@ -261,7 +261,7 @@ function createServer() {
     description: 'One line per item: dir gave | received; kind proposal | introduction | referral | advice | lead | work | other; note (what, with whom); date. Received referrals, leads, introductions or work mark the person as an introducer. Use when an email or meeting shows it ("introducing you to...", "I\'ve passed your name to...", a proposal sent).',
     inputSchema: { id: z.string(), dir: z.enum(['gave', 'received']), kind: z.enum(['proposal', 'introduction', 'referral', 'advice', 'lead', 'work', 'other']), note: z.string().min(5).max(200), date: date.optional() },
     annotations: { readOnlyHint: false, destructiveHint: false },
-  }, async ({ id, ...p }) => { if (!(await getOne('source', id))) throw new Error('No contact with id ' + id); return out(await giveGet(id, p), 'Recorded.'); });
+  }, async ({ id, ...p }) => { const src = await getOne('source', id); if (!src) throw new Error('No contact with id ' + id); if (isPlaceholder(src)) throw new Error('Not a real person (placeholder)'); const dd = await getOne('decision', id); if (dd?.mergedInto) throw new Error('Merged into ' + dd.mergedInto + ': use that id'); return out(await giveGet(id, p), 'Recorded.'); });
   server.registerTool('person_set', {
     title: 'People: set a person\'s rung, lane, buying stage or note',
     description: 'Rungs set the meeting rhythm: partner and active every 2 weeks, referrer every 6 weeks, contact every 8 weeks, target = not met yet. Promote to active the first time someone puts a named job in front of us.',

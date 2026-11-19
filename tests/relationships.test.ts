@@ -88,3 +88,13 @@ test('Today: a person already on a money row or a to-do is not listed twice; sno
   const d = buildToday({ work, people, now: NOW });
   assert.deepEqual(d.rows.map(r => r.ref), ['todo:x']);
 });
+
+test('last contact is the latest of the three dates; a same-day partner move beats Claude', async () => {
+  assert.equal(V.lastContactOf({ lastContact: '2026-05-01', lastMet: '2026-11-10', lastEmailed: '2026-09-01' }), '2026-11-10');
+  await saveEntity('decision', { id: 'R-4', stage: 'warm', lastContact: daysAgo(300), lastMet: daysAgo(5) }, 0);
+  await setRelationship('R-4', { stage: 'met', evidenceOn: today });
+  assert.equal((await getOne('decision', 'R-4'))!.stage, 'warm', 'met last week: not silent');
+  await setRelationship('R-4', { nextMove: { type: 'send', text: 'Partner promise', due: today } } as any, 'Graeme');
+  await setRelationship('R-4', { nextMove: { type: 'follow', text: 'Claude same day', due: today }, evidenceOn: today } as any);
+  assert.equal((await getOne('decision', 'R-4'))!.nextMove.text, 'Partner promise');
+});

@@ -75,11 +75,13 @@
   ];
   const NEXT_TYPE = Object.fromEntries(NEXT_TYPES.map(x => [x.key, x]));
   /** Old rung to stage, for people the new model has not touched yet. */
+  /** The latest of the three contact dates (a partner's tap, a meeting, a two-way email). */
+  function lastContactOf(d) { return [d && d.lastContact, d && d.lastMet, d && d.lastEmailed].map(x => String(x || '').slice(0, 10)).sort().pop() || ''; }
   function stageFromRung(d) {
     const r = d && d.rung;
     if (!r) return d && d.lastMet ? 'met' : 'known';
     if (r === 'target') return d.lastMet ? 'met' : 'known';
-    if (r === 'contact') return Number(d.metCount || 0) >= 2 || d.lastEmailed ? 'warm' : (d.lastMet ? 'met' : 'known');
+    if (r === 'contact') return Number(d.metCount || 0) >= 2 ? 'warm' : (d.lastMet ? 'met' : 'known');
     return 'warm'; // referrer, active, partner
   }
   /** A person's stage: linked work decides Proposal / Instructed; otherwise the stored stage, else the old rung. */
@@ -106,7 +108,7 @@
       return { due, reason: 'move' };
     }
     if (stage === 'known' || stage === 'instructed') return { due: '', reason: '' };
-    const last = String((d && (d.lastContact || d.lastMet || d.lastEmailed)) || '').slice(0, 10);
+    const last = lastContactOf(d);
     if (!last) return { due: today, reason: 'rhythm' };
     const days = Math.min(STAGE[stage].days || 90, introducer ? INTRODUCER_DAYS : 9999);
     return { due: addDays(last, days), reason: 'rhythm' };
@@ -242,6 +244,6 @@
     return { next, days, overdue: days < 0, dueSoon: days >= 0 && days <= DUE_SOON_DAYS };
   }
 
-  root.VanorPursuits = { STAGES, STAGE, INTRODUCER_DAYS, SILENT_DAYS, NEXT_TYPES, NEXT_TYPE, stageFromRung, stageOf, introducerOf, rungFor, relationshipDue, addWorkdays, PEOPLE_LANES, PEOPLE_LANE, followMode, POOL_WEEKLY, weekKey, reconnectPick, late, theirMove, overdueOurs, FUNDER_PROPOSAL_DAYS, lapsedProposal, proposalDays, DUE_SOON_DAYS, TARGET_FIRST_DAYS, touched, TYPES, IN_HOUSE, PROPOSAL_DAYS, STALE_DAYS, value, isMonthly, liveProposal, stale, money, daysBetween, LANES, LANE, STATES, STATE, CLOSED, GATE, RUNGS, RUNG, BUYING, isPursuit, isOpen, laneOf, stateOf, gateMissing, validate, pounds, sortRows, board, nextMeeting, meetingStatus, addDays };
+  root.VanorPursuits = { lastContactOf, STAGES, STAGE, INTRODUCER_DAYS, SILENT_DAYS, NEXT_TYPES, NEXT_TYPE, stageFromRung, stageOf, introducerOf, rungFor, relationshipDue, addWorkdays, PEOPLE_LANES, PEOPLE_LANE, followMode, POOL_WEEKLY, weekKey, reconnectPick, late, theirMove, overdueOurs, FUNDER_PROPOSAL_DAYS, lapsedProposal, proposalDays, DUE_SOON_DAYS, TARGET_FIRST_DAYS, touched, TYPES, IN_HOUSE, PROPOSAL_DAYS, STALE_DAYS, value, isMonthly, liveProposal, stale, money, daysBetween, LANES, LANE, STATES, STATE, CLOSED, GATE, RUNGS, RUNG, BUYING, isPursuit, isOpen, laneOf, stateOf, gateMissing, validate, pounds, sortRows, board, nextMeeting, meetingStatus, addDays };
   if (typeof module !== 'undefined') module.exports = root.VanorPursuits;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

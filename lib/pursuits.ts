@@ -277,14 +277,14 @@ export async function setRelationship(id: string, p: PersonRel, actor = 'Claude'
     if (p.stage) {
       const cur = V.stageOf(d);
       const back = STAGE_ORDER.indexOf(p.stage) < STAGE_ORDER.indexOf(cur);
-      const last = String(d.lastContact || d.lastMet || d.lastEmailed || '').slice(0, 10);
+      const last = V.lastContactOf(d);
       const silent = !last || V.daysBetween(last, today()) >= V.SILENT_DAYS;
       if (back && !(actor !== 'Claude' || (cur === 'warm' && p.stage === 'met' && silent))) notes.push(`Stage left at ${cur}: Claude only moves people forward (or Warm to Met after six months' silence).`);
       else if (p.stage !== cur) { next.stagePrev = { stage: cur, at: now, by: actor }; next.stage = p.stage; next.stageWhy = String(p.why || '').slice(0, 200); next.stageAt = now; }
     }
     if (p.nextMove !== undefined) {
       const cur = d.nextMove;
-      const partnerNewer = cur && cur.setBy && cur.setBy !== 'Claude' && String(cur.setAt || '').slice(0, 10) > evidence;
+      const partnerNewer = cur && cur.setBy && cur.setBy !== 'Claude' && String(cur.setAt || '').slice(0, 10) >= evidence;
       if (actor === 'Claude' && partnerNewer) notes.push('Next move left as the partner set it after this evidence.');
       else if (p.nextMove === null) next.nextMove = null;
       else { next.nextMovePrev = cur || null; next.nextMove = { type: p.nextMove.type, text: p.nextMove.text.slice(0, 200), owner: p.nextMove.owner || d.owner || 'Barry', owes: p.nextMove.owes || 'us', due: p.nextMove.due, setBy: actor, setAt: now, why: String(p.why || '').slice(0, 200) }; next.nextStep = p.nextMove.text.slice(0, 160); }

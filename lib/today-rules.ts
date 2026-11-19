@@ -70,7 +70,7 @@ export function buildToday({ work, events = [], people = [], owner = 'Both', now
   // Dead items never show, whether or not the 06:10 tidy has closed them yet.
   // A chase tied to a priced pursuit never drops off: money is the partners' call.
   const pricedP = pursuits.filter(p => isOpenPursuit(p) && isPriced(p));
-  const tiedToMoney = (t: Item) => pricedP.some(p => (t.pursuitId && t.pursuitId === p.id) || (t.recordId && t.recordId === p.recordId) || (t.toEmail && p.email && String(t.toEmail).toLowerCase() === String(p.email).toLowerCase()));
+  const tiedToMoney = (t: Item) => t.type === 'followup' && pricedP.some(p => (t.pursuitId && t.pursuitId === p.id) || (t.recordId && t.recordId === p.recordId) || (t.toEmail && p.email && String(t.toEmail).toLowerCase() === String(p.email).toLowerCase()));
   const openTodos = todos.filter(t => t.status === 'open' && (tiedToMoney(t) || !expiryReason(t, now.toISOString())));
   const draftFor = (pid: string) => openTodos.find(t => t.pursuitId === pid && /^https:\/\//.test(t.link || ''));
 

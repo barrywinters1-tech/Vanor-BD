@@ -24,7 +24,7 @@ function personView(r: Entity, d: Entity, links: { proposal: boolean; instructed
   const trade = d.trade || d.tradeSuggested || (met ? suggestTrade(r.company || '', r.jobTitle || '') : '');
   return { id: r.id, name: r.name || '', company: r.company || '', jobTitle: r.jobTitle || '', email: r.email || '', phone: r.phone || '', linkedin: r.linkedin || '',
     stage, introducer: PVg.introducerOf(d), nextMove: d.nextMove || null, trade, tradeConfirmed: !!d.trade, introducible: d.introducible || 'ask',
-    lastMet: d.lastMet || '', lastContact: String(d.lastContact || d.lastEmailed || d.lastMet || '').slice(0, 10), metCount: d.metCount || 0, metBy: d.metBy || [],
+    lastMet: d.lastMet || '', lastContact: PVg.lastContactOf(d), metCount: d.metCount || 0, metBy: d.metBy || [],
     lastNote: d.lastNote || '', owner: d.owner || r.sourceOwner || '', givenN: d.givenN || 0, receivedN: d.receivedN || 0, lastReceivedAt: d.lastReceivedAt || '', thankedAt: d.thankedAt || '',
     ledger: ((d.ledger as unknown[]) || []).slice(0, 8), work: links.work, snoozedUntil: d.snoozedUntil || '', notes: String(r.notes || r.context || '').slice(0, 300), _rev: d._rev || 0 };
 }
@@ -238,7 +238,7 @@ export async function GET(request: NextRequest, context: Context) {
         || (w.kind === 'todo' && (w.status === 'open' || String(w.doneAt || '') >= cutoff));
       const dm = new Map(decisions.map(d => [d.id, d]));
       const links = workLinks(work);
-      const people = records.filter(r => { const d = dm.get(r.id); return !!d && (d.rung || d.lastMet || d.stage || d.nextMove) && realPerson(r, d); })
+      const people = records.filter(r => { const d = dm.get(r.id); return !!d && (d.rung || d.lastMet || d.stage || d.nextMove || d.lastReceivedAt) && realPerson(r, d); })
         .map(r => personView(r, dm.get(r.id)!, links(r)));
       const since = new Date(Date.now() - 14 * 864e5).toISOString().slice(0, 10);
       return reply({ work: work.filter(keep), events: plannedEvents.filter(e => !e.archived && String(e.date || '') >= since), people, contacts: records.length });
@@ -256,7 +256,7 @@ export async function GET(request: NextRequest, context: Context) {
         .map(r => personView(r, dm.get(r.id) || ({} as Entity), links(r)))
         .filter(x => (!stage || x.stage === stage) && (!trade || x.trade === trade) && (!metOnly || x.stage !== 'known') && (!introducer || x.introducer));
       rows.sort((a, b) => (a.stage === 'known' ? 1 : 0) - (b.stage === 'known' ? 1 : 0) || String(b.lastContact).localeCompare(String(a.lastContact)) || a.name.localeCompare(b.name));
-      return reply({ items: rows.slice(0, 200), total: rows.length, knownNotMet: trade ? records.filter(r => realPerson(r, dm.get(r.id)) && !(dm.get(r.id)?.lastMet) && suggestTrade(r.company || '', r.jobTitle || '') === trade).length : 0 });
+      return reply({ items: rows.slice(0, 200), total: rows.length, knownNotMet: trade ? records.filter(r => { const d = dm.get(r.id); return realPerson(r, d) && PV.stageOf(d || {}, links(r)) === 'known' && (d?.trade || suggestTrade(r.company || '', r.jobTitle || '')) === trade; }).length : 0 });
     }
     const [records, decisions, work, events, plannedEvents, meta] = await Promise.all([
       list(access, 'source'), list(access, 'decision'), list(access, 'work'),
@@ -339,9 +339,9 @@ export async function POST(request: NextRequest, context: Context) {
           if (rest.lastContact && !/^\d{4}-\d{2}-\d{2}$/.test(String(rest.lastContact))) return reply({ error: 'lastContact must be a date' }, 400);
           if (!(await one(access, 'source', id))) return reply({ error: 'Person not found.' }, 404);
           if (Object.keys(rel).length) await setRelationship(id, rel as any, actor);
-          if (Object.keys(rest).length) { const c2 = await one(access, 'decision', id); const merged: Entity = { ...(c2 || { id }), ...rest, id };
+          if (Object.keys(rest).length) for (let tryN = 0; tryN < 2; tryN++) { const c2 = await one(access, 'decision', id); const merged: Entity = { ...(c2 || { id }), ...rest, id };
             if (rest.lastMet) { const dates = [...new Set([...((c2?.metDates as string[]) || []), String(rest.lastMet)])].sort().slice(-12); merged.metDates = dates; merged.lastMet = dates[dates.length - 1]; merged.metCount = dates.length; }
-            await save(access, 'decision', merged, c2?._rev || 0, { type: note || 'Person updated', actor, recordId: id, note: Object.keys(rest).join(', ') }); }
+            try { await save(access, 'decision', merged, c2?._rev || 0, { type: note || 'Person updated', actor, recordId: id, note: Object.keys(rest).join(', ') }); break; } catch (e: any) { if (e?.status !== 409 || tryN === 1) throw e; } }
           return reply(await one(access, 'decision', id) || { id });
         }
         if (!cur && kind !== 'setting') return reply({ error: 'Record not found.' }, 404);
