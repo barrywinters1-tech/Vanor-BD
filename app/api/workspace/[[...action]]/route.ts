@@ -12,7 +12,41 @@ import { runIntel } from '../../../../lib/intel-ingest';
 import { lookupPerson, searchPeople } from '../../../../lib/rocketreach';
 import { logEvent, saveEntity as storeSave, updateEntity as storeUpdate } from '../../../../lib/bd-store';
 import { runBackup } from '../../../../lib/backup-job';
-import { undoClaudeUpdate } from '../../../../lib/pursuits';
+import { undoClaudeUpdate, setRelationship, giveGet } from '../../../../lib/pursuits';
+import { suggestTrade, isPlaceholder, TRADE_KEYS } from '../../../../lib/trades';
+
+/** One person as the new screens see them (18 Nov 2026): stage from the record plus their linked work, the next move,
+ *  trade (confirmed, or suggested for people we have met), what we have given and received. No ledger detail here. */
+function personView(r: Entity, d: Entity, links: { proposal: boolean; instructed: boolean; work: string[] }) {
+  const PVg = (globalThis as any).VanorPursuits;
+  const stage = PVg.stageOf(d, links);
+  const met = !!(d.lastMet || stage !== 'known');
+  const trade = d.trade || d.tradeSuggested || (met ? suggestTrade(r.company || '', r.jobTitle || '') : '');
+  return { id: r.id, name: r.name || '', company: r.company || '', jobTitle: r.jobTitle || '', email: r.email || '', phone: r.phone || '', linkedin: r.linkedin || '',
+    stage, introducer: PVg.introducerOf(d), nextMove: d.nextMove || null, trade, tradeConfirmed: !!d.trade, introducible: d.introducible || 'ask',
+    lastMet: d.lastMet || '', lastContact: String(d.lastContact || d.lastEmailed || d.lastMet || '').slice(0, 10), metCount: d.metCount || 0, metBy: d.metBy || [],
+    lastNote: d.lastNote || '', owner: d.owner || r.sourceOwner || '', givenN: d.givenN || 0, receivedN: d.receivedN || 0, lastReceivedAt: d.lastReceivedAt || '', thankedAt: d.thankedAt || '',
+    ledger: ((d.ledger as unknown[]) || []).slice(0, 8), work: links.work, snoozedUntil: d.snoozedUntil || '', notes: String(r.notes || r.context || '').slice(0, 300), _rev: d._rev || 0 };
+}
+function workLinks(work: Entity[]) {
+  const by = new Map<string, { proposal: boolean; instructed: boolean; work: string[] }>();
+  const since = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
+  for (const w of work) {
+    if (w.kind !== 'pursuit') continue;
+    const keys = [w.recordId, w.email ? 'mail:' + String(w.email).toLowerCase() : ''].filter(Boolean) as string[];
+    for (const k of keys) {
+      const cur = by.get(k) || { proposal: false, instructed: false, work: [] };
+      const open = !w.archived && !['won', 'lost', 'parked'].includes(w.state);
+      if (open && w.state === 'table') cur.proposal = true;
+      if (w.state === 'won' && String(w.wonOn || w.closedAt || w.updatedAt || '').slice(0, 10) >= since) cur.instructed = true;
+      if (open || w.state === 'won') cur.work.push(w.id);
+      by.set(k, cur);
+    }
+  }
+  return (r: Entity) => { const a = by.get(r.id), b = r.email ? by.get('mail:' + String(r.email).toLowerCase()) : undefined;
+    return { proposal: !!(a?.proposal || b?.proposal), instructed: !!(a?.instructed || b?.instructed), work: [...new Set([...(a?.work || []), ...(b?.work || [])])] }; };
+}
+const realPerson = (r: Entity, d?: Entity) => !isPlaceholder(r) && d?.status !== 'Archive' && !d?.mergedInto && !/@vanoradvisory\.co\.uk$/i.test(String(r.email || '')) && !/vanor advisory/i.test(String(r.company || ''));
 import '../../../../public/vanor-pursuits.js';
 
 const PV = (globalThis as any).VanorPursuits;
@@ -23,7 +57,7 @@ const PATCHABLE: Record<string, string[]> = {
   todo: ['status', 'doneAt', 'doneBy', 'doneReason', 'doneNote', 'snoozedUntil', 'reopenedAt', 'sentOn'],
   setting: ['on'],
 };
-const PATCHABLE_SCOPE: Record<string, string[]> = { decision: ['lastMet', 'lastNote', 'rung', 'snoozedUntil', 'owner'], planned_event: ['status', 'owner', 'targets', 'notes'] };
+const PATCHABLE_SCOPE: Record<string, string[]> = { decision: ['lastMet', 'lastContact', 'lastNote', 'snoozedUntil', 'owner', 'introducible', 'thankedAt', 'stage', 'nextMove', 'trade', 'metBy'], planned_event: ['status', 'owner', 'targets', 'notes'] };
 const actorOf = async (access: Access) => { const { data } = await access.db.auth.getUser(); const e = data.user?.email || ''; return /graeme/i.test(e) ? 'Graeme' : /barry/i.test(e) ? 'Barry' : e || 'Unassigned'; };
 
 export const runtime = 'nodejs';
@@ -203,19 +237,26 @@ export async function GET(request: NextRequest, context: Context) {
       const keep = (w: Entity) => (w.kind === 'pursuit' && (!['won', 'lost', 'parked'].includes(w.state) || String(w.closedAt || w.updatedAt || w.parkedAt || '') >= cutoff)) || w.kind === 'job' || w.kind === 'setting' || (w.kind === 'capture' && w.status === 'open')
         || (w.kind === 'todo' && (w.status === 'open' || String(w.doneAt || '') >= cutoff));
       const dm = new Map(decisions.map(d => [d.id, d]));
-      const people = records.map(r => ({ r, d: dm.get(r.id) || {} as Entity })).filter(x => (x.d.rung || x.d.lastMet) && x.d.status !== 'Archive' && !x.d.mergedInto && !/@vanoradvisory\.co\.uk$/i.test(String(x.r.email || '')))
-        .map(({ r, d }) => ({ id: r.id, name: r.name || '', company: r.company || '', jobTitle: r.jobTitle || '', email: r.email || '', rung: d.rung || 'contact', lastMet: d.lastMet || '', lastNote: d.lastNote || '', owner: r.sourceOwner || '', snoozedUntil: d.snoozedUntil || '', _rev: d._rev || 0 }));
+      const links = workLinks(work);
+      const people = records.filter(r => { const d = dm.get(r.id); return !!d && (d.rung || d.lastMet || d.stage || d.nextMove) && realPerson(r, d); })
+        .map(r => personView(r, dm.get(r.id)!, links(r)));
       const since = new Date(Date.now() - 14 * 864e5).toISOString().slice(0, 10);
       return reply({ work: work.filter(keep), events: plannedEvents.filter(e => !e.archived && String(e.date || '') >= since), people, contacts: records.length });
     }
     if (action === 'people') {
-      const q = String(request.nextUrl.searchParams.get('q') || '').trim().toLowerCase();
-      if (q.length < 2) return reply({ items: [] });
-      const [records, decisions] = await Promise.all([list(access, 'source'), list(access, 'decision')]);
+      // Search and black book. q may be empty when a filter is set. Placeholders never appear. Max 200 rows, with the total.
+      const sp = request.nextUrl.searchParams;
+      const q = String(sp.get('q') || '').trim().toLowerCase();
+      const stage = sp.get('stage') || '', trade = sp.get('trade') || '', metOnly = sp.get('met') === '1', introducer = sp.get('introducer') === '1';
+      if (q.length < 2 && !stage && !trade && !metOnly && !introducer) return reply({ items: [], total: 0 });
+      const [records, decisions, work] = await Promise.all([list(access, 'source'), list(access, 'decision'), list(access, 'work')]);
       const dm = new Map(decisions.map(d => [d.id, d]));
-      const items = records.filter(r => !dm.get(r.id)?.mergedInto && dm.get(r.id)?.status !== 'Archive' && [r.name, r.company, r.email, r.jobTitle].join(' ').toLowerCase().includes(q)).slice(0, 60)
-        .map(r => { const d = dm.get(r.id) || {} as Entity; return { id: r.id, name: r.name || '', company: r.company || '', jobTitle: r.jobTitle || '', email: r.email || '', phone: r.phone || '', linkedin: r.linkedin || '', rung: d.rung || '', lastMet: d.lastMet || '', lastNote: d.lastNote || '', notes: String(r.notes || r.context || '').slice(0, 400) }; });
-      return reply({ items });
+      const links = workLinks(work);
+      const rows = records.filter(r => realPerson(r, dm.get(r.id)) && (!q || [r.name, r.company, r.email, r.jobTitle].join(' ').toLowerCase().includes(q)))
+        .map(r => personView(r, dm.get(r.id) || ({} as Entity), links(r)))
+        .filter(x => (!stage || x.stage === stage) && (!trade || x.trade === trade) && (!metOnly || x.stage !== 'known') && (!introducer || x.introducer));
+      rows.sort((a, b) => (a.stage === 'known' ? 1 : 0) - (b.stage === 'known' ? 1 : 0) || String(b.lastContact).localeCompare(String(a.lastContact)) || a.name.localeCompare(b.name));
+      return reply({ items: rows.slice(0, 200), total: rows.length, knownNotMet: trade ? records.filter(r => realPerson(r, dm.get(r.id)) && !(dm.get(r.id)?.lastMet) && suggestTrade(r.company || '', r.jobTitle || '') === trade).length : 0 });
     }
     const [records, decisions, work, events, plannedEvents, meta] = await Promise.all([
       list(access, 'source'), list(access, 'decision'), list(access, 'work'),
@@ -289,6 +330,20 @@ export async function POST(request: NextRequest, context: Context) {
         if (!allowed) return reply({ error: 'That record cannot be changed here.' }, 400);
         const bad = Object.keys(fields).filter(k => !allowed.includes(k));
         if (bad.length) return reply({ error: 'Not changeable here: ' + bad.join(', ') }, 400);
+        if (scope === 'decision') {
+          // Relationship fields go through the same rules as Claude's writes, with the partner as the actor.
+          const rel: Record<string, unknown> = {}; const rest: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(fields)) (['stage', 'nextMove', 'trade', 'metBy'].includes(k) ? rel : rest)[k] = v;
+          if (rest.introducible && !['yes', 'ask', 'no'].includes(String(rest.introducible))) return reply({ error: 'introducible must be yes, ask or no' }, 400);
+          if (rest.lastMet && !/^\d{4}-\d{2}-\d{2}$/.test(String(rest.lastMet))) return reply({ error: 'lastMet must be a date' }, 400);
+          if (rest.lastContact && !/^\d{4}-\d{2}-\d{2}$/.test(String(rest.lastContact))) return reply({ error: 'lastContact must be a date' }, 400);
+          if (!(await one(access, 'source', id))) return reply({ error: 'Person not found.' }, 404);
+          if (Object.keys(rel).length) await setRelationship(id, rel as any, actor);
+          if (Object.keys(rest).length) { const c2 = await one(access, 'decision', id); const merged: Entity = { ...(c2 || { id }), ...rest, id };
+            if (rest.lastMet) { const dates = [...new Set([...((c2?.metDates as string[]) || []), String(rest.lastMet)])].sort().slice(-12); merged.metDates = dates; merged.lastMet = dates[dates.length - 1]; merged.metCount = dates.length; }
+            await save(access, 'decision', merged, c2?._rev || 0, { type: note || 'Person updated', actor, recordId: id, note: Object.keys(rest).join(', ') }); }
+          return reply(await one(access, 'decision', id) || { id });
+        }
         if (!cur && kind !== 'setting') return reply({ error: 'Record not found.' }, 404);
         const now = new Date().toISOString();
         let next: Entity = { ...(cur || { id, kind: 'setting' }), ...fields, id };
@@ -307,6 +362,11 @@ export async function POST(request: NextRequest, context: Context) {
         try { return reply(await save(access, scope, next, cur?._rev || 0, { type: note || 'Changed on the board', actor, recordId: next.recordId || '', note: String(next.title || next.name || id).slice(0, 120) })); }
         catch (e: any) { if (e?.status !== 409 || attempt === 1) throw e; }
       }
+    }
+    if (action === 'give-get') {
+      const { id, dir, kind, note } = body as { id: string; dir: 'gave' | 'received'; kind: string; note: string };
+      if (!id || !(await one(access, 'source', id))) return reply({ error: 'Person not found.' }, 404);
+      return reply(await giveGet(id, { dir, kind, note }, await actorOf(access)));
     }
     if (action === 'undo-claude') {
       const id = String(body?.id || ''); if (!id.startsWith('pursuit:')) return reply({ error: 'Invalid pursuit.' }, 400);

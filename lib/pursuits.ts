@@ -4,6 +4,7 @@
 import '../public/vanor-pursuits.js';
 import { findByEmail, getOne, listScope, updateEntity, logEvent, type Entity } from './bd-store';
 import { today } from './bd-logic';
+import { TRADE_KEYS } from './trades';
 
 const V = (globalThis as any).VanorPursuits;
 export const PURSUIT_RULES = { lanes: V.LANES, states: V.STATES, closed: V.CLOSED, gate: V.GATE, rungs: V.RUNGS, buying: V.BUYING };
@@ -186,7 +187,11 @@ type Met = { email?: string; name?: string; date: string; note?: string; lane?: 
 async function resolveByEmail(m: Met): Promise<Entity | null> {
   if (!m.email) return null;
   const hits = await findByEmail(m.email);
-  return hits.length === 1 ? hits[0] : null;
+  if (hits.length <= 1) return hits[0] || null;
+  // After a merge two records share an email: the one merged away does not count (18 Nov 2026).
+  const live = [];
+  for (const h of hits) { const d = await getOne('decision', h.id); if (!d?.mergedInto) live.push(h); }
+  return live.length === 1 ? live[0] : null;
 }
 
 /** Record meetings that have happened. Auto-records only on an exact email match, a past date and an unseen calendar event id.
@@ -244,21 +249,91 @@ export async function setPerson(id: string, p: { rung?: string; lane?: string; l
   return { id, ...p };
 }
 
+// ---------- Relationships (18 Nov 2026) ----------
+export type NextMove = { type: string; text: string; owner?: string; owes?: 'us' | 'them'; due: string };
+export type PersonRel = { stage?: string; nextMove?: NextMove | null; trade?: string; tradeSuggested?: string; metBy?: string[]; evidenceOn?: string; why?: string };
+const STAGE_ORDER = ['known', 'met', 'warm'];
+/** Claude's relationship write for one person. Stage: Known, Met or Warm only (Proposal and Instructed come from work);
+ *  never backwards except Warm -> Met after six months with no two-way contact. A next move a partner set after the
+ *  evidence date is never overwritten. The old rung is kept in step so the old board and jobs keep working. */
+export async function setRelationship(id: string, p: PersonRel, actor = 'Claude') {
+  if (p.stage && !STAGE_ORDER.includes(p.stage)) throw new Error('Stage must be known, met or warm (proposal and instructed follow the work)');
+  if (p.nextMove) {
+    const m = p.nextMove;
+    if (!V.NEXT_TYPE[m.type]) throw new Error('Next move type must be one of ' + Object.keys(V.NEXT_TYPE).join(', '));
+    if (!m.text || m.text.length < 3) throw new Error('Next move needs a line of text');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(m.due || '')) throw new Error('Next move needs a due date (YYYY-MM-DD)');
+    if (m.owes && !['us', 'them'].includes(m.owes)) throw new Error('owes must be us or them');
+    if (m.owner && !['Barry', 'Graeme', 'Both'].includes(m.owner)) throw new Error('owner must be Barry, Graeme or Both');
+  }
+  if (p.trade && !TRADE_KEYS.includes(p.trade)) throw new Error('Unknown trade ' + p.trade);
+  if (p.tradeSuggested && !TRADE_KEYS.includes(p.tradeSuggested)) throw new Error('Unknown trade ' + p.tradeSuggested);
+  const evidence = p.evidenceOn || today();
+  const notes: string[] = [];
+  await updateEntity('decision', id, d => {
+    const next: Entity = { ...d };
+    const now = new Date().toISOString();
+    if (p.stage) {
+      const cur = V.stageOf(d);
+      const back = STAGE_ORDER.indexOf(p.stage) < STAGE_ORDER.indexOf(cur);
+      const last = String(d.lastContact || d.lastMet || d.lastEmailed || '').slice(0, 10);
+      const silent = !last || V.daysBetween(last, today()) >= V.SILENT_DAYS;
+      if (back && !(actor !== 'Claude' || (cur === 'warm' && p.stage === 'met' && silent))) notes.push(`Stage left at ${cur}: Claude only moves people forward (or Warm to Met after six months' silence).`);
+      else if (p.stage !== cur) { next.stagePrev = { stage: cur, at: now, by: actor }; next.stage = p.stage; next.stageWhy = String(p.why || '').slice(0, 200); next.stageAt = now; }
+    }
+    if (p.nextMove !== undefined) {
+      const cur = d.nextMove;
+      const partnerNewer = cur && cur.setBy && cur.setBy !== 'Claude' && String(cur.setAt || '').slice(0, 10) > evidence;
+      if (actor === 'Claude' && partnerNewer) notes.push('Next move left as the partner set it after this evidence.');
+      else if (p.nextMove === null) next.nextMove = null;
+      else { next.nextMovePrev = cur || null; next.nextMove = { type: p.nextMove.type, text: p.nextMove.text.slice(0, 200), owner: p.nextMove.owner || d.owner || 'Barry', owes: p.nextMove.owes || 'us', due: p.nextMove.due, setBy: actor, setAt: now, why: String(p.why || '').slice(0, 200) }; next.nextStep = p.nextMove.text.slice(0, 160); }
+    }
+    if (p.tradeSuggested && !d.trade) next.tradeSuggested = p.tradeSuggested;
+    if (p.trade) { if (actor === 'Claude' && d.trade && d.tradeBy && d.tradeBy !== 'Claude') notes.push('Trade left as the partner confirmed it.'); else { next.trade = p.trade; next.tradeBy = actor; } }
+    if (p.metBy?.length) next.metBy = [...new Set([...(d.metBy as string[] || []), ...p.metBy.filter(x => ['Barry', 'Graeme'].includes(x))])];
+    const stage = V.stageOf(next);
+    const rung = V.rungFor(stage, V.introducerOf(next), d.rung || '');
+    if (rung && rung !== d.rung) next.rung = rung;
+    return next;
+  }, true);
+  return { id, note: notes.join(' ') };
+}
+
+/** One line of what we gave or received (proposal, introduction, referral, advice, lead, work), with counts on the person. */
+export const GIVE_KINDS = ['proposal', 'introduction', 'referral', 'advice', 'lead', 'work', 'other'] as const;
+export async function giveGet(id: string, p: { dir: 'gave' | 'received'; kind: string; note: string; date?: string }, actor = 'Claude') {
+  if (!['gave', 'received'].includes(p.dir)) throw new Error('dir must be gave or received');
+  if (!(GIVE_KINDS as readonly string[]).includes(p.kind)) throw new Error('kind must be one of ' + GIVE_KINDS.join(', '));
+  if (!p.note || p.note.length < 5) throw new Error('note needs a few words');
+  const date = p.date && /^\d{4}-\d{2}-\d{2}$/.test(p.date) ? p.date : today();
+  await updateEntity('decision', id, d => {
+    const next: Entity = { ...d };
+    const log = [{ dir: p.dir, kind: p.kind, note: p.note.slice(0, 200), date, by: actor }, ...((d.ledger as unknown[]) || [])].slice(0, 30);
+    next.ledger = log;
+    next.givenN = log.filter((x: any) => x.dir === 'gave').length;
+    next.receivedN = log.filter((x: any) => x.dir === 'received').length;
+    if (p.dir === 'received') { next.lastReceivedAt = date; if (['referral', 'lead', 'introduction', 'work'].includes(p.kind)) next.introducer = true; }
+    return next;
+  }, true);
+  await logEvent({ entityId: id, recordId: id, type: p.dir === 'gave' ? 'We gave' : 'We received', actor, note: `${p.kind}: ${p.note}`.slice(0, 200) });
+  return { id, ok: true };
+}
+
 /** People on a rung or with a meeting on record, with next meeting due. Overdue first. */
-export async function peopleDue({ limit = 20, onlyDue = true }: { limit?: number; onlyDue?: boolean } = {}) {
+export async function peopleDue({ limit = 20, onlyDue = true, offset = 0 }: { limit?: number; onlyDue?: boolean; offset?: number } = {}) {
   const [records, decisions, work] = await Promise.all([listScope('source'), listScope('decision'), listScope('work')]);
   const dm = new Map(decisions.map(d => [d.id, d]));
   const onPursuit = new Set(work.filter(w => V.isPursuit(w) && V.isOpen(w) && w.recordId).map(w => w.recordId));
   const t = today();
   // Same rule as the board (followMode): partners, actives, referrers, anyone on a pursuit or met recently get individual
   // follow-ups; the rest are the pool, paced a few a week, so they never flood the strip or this list.
-  const rows = records.map(r => ({ r, d: dm.get(r.id) || {} as Entity })).filter(x => (x.d.rung || x.d.lastMet) && x.d.status !== 'Archive' && !/@vanoradvisory\.co\.uk$/i.test(String(x.r.email || ''))).map(({ r, d }) => {
+  const rows = records.map(r => ({ r, d: dm.get(r.id) || {} as Entity })).filter(x => (x.d.rung || x.d.lastMet) && x.d.status !== 'Archive' && !x.d.mergedInto && !/@vanoradvisory\.co\.uk$/i.test(String(x.r.email || ''))).map(({ r, d }) => {
     const s = V.meetingStatus(d, t);
     const mode = V.followMode(d, t, onPursuit.has(r.id));
-    return { id: r.id, name: r.name, company: r.company, email: r.email || '', rung: d.rung || 'contact', lane: d.lane || '', lastMet: d.lastMet || '', metCount: d.metCount || 0, lastNote: d.lastNote || '', buyingStage: d.buyingStage || '', nextMeeting: s.next, overdueDays: s.overdue ? -s.days : 0, mode, due: mode === 'individual' && (s.overdue || s.dueSoon) };
+    return { id: r.id, name: r.name, company: r.company, email: r.email || '', rung: d.rung || 'contact', lane: d.lane || '', lastMet: d.lastMet || '', metCount: d.metCount || 0, lastNote: d.lastNote || '', buyingStage: d.buyingStage || '', stage: V.stageOf(d), nextMove: d.nextMove || null, trade: d.trade || d.tradeSuggested || '', metBy: d.metBy || [], nextMeeting: s.next, overdueDays: s.overdue ? -s.days : 0, mode, due: mode === 'individual' && (s.overdue || s.dueSoon) };
   });
   const order = (k: string) => V.RUNGS.findIndex((x: { key: string }) => x.key === k);
   rows.sort((a, b) => b.overdueDays - a.overdueDays || order(a.rung) - order(b.rung) || a.nextMeeting.localeCompare(b.nextMeeting));
   const list = onlyDue ? rows.filter(r => r.due) : rows;
-  return { today: t, total: rows.length, due: rows.filter(r => r.due).length, pool: rows.filter(r => r.mode === 'pool').length, rows: list.slice(0, limit) };
+  return { today: t, total: rows.length, due: rows.filter(r => r.due).length, pool: rows.filter(r => r.mode === 'pool').length, offset, rows: list.slice(offset, offset + limit) };
 }

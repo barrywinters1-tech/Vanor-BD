@@ -60,15 +60,18 @@ export function meetingOf(t: Item, today: string): { date: string; time: string;
   return { date: new Date(best).toISOString().slice(0, 10), time: m[3] ? `${m[3].padStart(2, '0')}:${m[4]}` : '', who };
 }
 
-export type Row = { key: string; kind: 'decide' | 'money' | 'todo' | 'pursuit'; title: string; why: string; ref: string; link?: string; money?: number; monthly?: boolean; ask?: string; due?: string; late?: boolean; owner?: string };
+export type Row = { key: string; kind: 'decide' | 'money' | 'todo' | 'pursuit' | 'move' | 'chase' | 'thank' | 'catchup'; person?: string; title: string; why: string; ref: string; link?: string; money?: number; monthly?: boolean; ask?: string; due?: string; late?: boolean; owner?: string };
 
-export function buildToday({ work, events = [], owner = 'Both', now = new Date() }: { work: Item[]; events?: Item[]; owner?: Owner; now?: Date }) {
+export function buildToday({ work, events = [], people = [], owner = 'Both', now = new Date() }: { work: Item[]; events?: Item[]; people?: Item[]; owner?: Owner; now?: Date }) {
   const today = londonDate(now);
   const pursuits = work.filter(w => w.kind === 'pursuit');
   const open = pursuits.filter(isOpenPursuit);
   const todos = work.filter(w => w.kind === 'todo');
   // Dead items never show, whether or not the 06:10 tidy has closed them yet.
-  const openTodos = todos.filter(t => t.status === 'open' && !expiryReason(t, now.toISOString()));
+  // A chase tied to a priced pursuit never drops off: money is the partners' call.
+  const pricedP = pursuits.filter(p => isOpenPursuit(p) && isPriced(p));
+  const tiedToMoney = (t: Item) => pricedP.some(p => (t.pursuitId && t.pursuitId === p.id) || (t.recordId && t.recordId === p.recordId) || (t.toEmail && p.email && String(t.toEmail).toLowerCase() === String(p.email).toLowerCase()));
+  const openTodos = todos.filter(t => t.status === 'open' && (tiedToMoney(t) || !expiryReason(t, now.toISOString())));
   const draftFor = (pid: string) => openTodos.find(t => t.pursuitId === pid && /^https:\/\//.test(t.link || ''));
 
   // 1. Decide: questions only a partner can answer (price, won, lost, park), asked by Claude with the evidence.
@@ -89,7 +92,24 @@ export function buildToday({ work, events = [], owner = 'Both', now = new Date()
   const pursuitRows: Row[] = open.filter(p => !isPriced(p) && stateOf(p) !== 'waiting' && mine(owner, p.owner) && !snoozed(p, today) && p.nextAction && p.dueBy && p.dueBy <= today && !openTodos.some(t => t.pursuitId === p.id) && !asked.has(p.id))
     .sort((a, b) => String(a.dueBy).localeCompare(String(b.dueBy)))
     .map(p => ({ key: 'next:' + p.id, kind: 'pursuit', title: p.name, why: p.nextAction, ref: p.id, due: p.dueBy, owner: p.owner }));
-  const all = [...decide, ...money, ...todoRows, ...pursuitRows];
+  // Relationships (18 Nov 2026): our promises due, chases (their date + 3 working days), thank-yous, then people over
+  // their rhythm. A person who already has a row above (a draft, a money row) is not listed twice.
+  const covered = new Set<string>([...openTodos.map(t => t.recordId).filter(Boolean), ...open.filter(p => moneyIds.has(p.id) || asked.has(p.id)).map(p => p.recordId).filter(Boolean)] as string[]);
+  const live = people.filter(x => !covered.has(x.id) && mine(owner, (x.nextMove && x.nextMove.owner) || x.owner) && !snoozed(x, today));
+  const label = (x: Item) => [x.name, x.company].filter(Boolean).join(' · ');
+  const moveRows: Row[] = live.filter(x => x.nextMove && x.nextMove.due && x.nextMove.owes !== 'them' && x.nextMove.due <= today)
+    .sort((a, b) => a.nextMove.due.localeCompare(b.nextMove.due))
+    .map(x => ({ key: 'move:' + x.id, kind: 'move', person: x.id, ref: x.id, title: label(x), why: x.nextMove.text, due: x.nextMove.due, late: x.nextMove.due < today, owner: x.nextMove.owner }));
+  const chaseRows: Row[] = live.filter(x => x.nextMove && x.nextMove.owes === 'them' && x.nextMove.due && addWorkingDays(x.nextMove.due, 3) <= today)
+    .map(x => ({ key: 'chase:' + x.id, kind: 'chase', person: x.id, ref: x.id, title: label(x), why: `They owe us: ${x.nextMove.text} (was due ${x.nextMove.due.slice(8, 10)}/${x.nextMove.due.slice(5, 7)})`, due: x.nextMove.due, owner: x.nextMove.owner }));
+  const thankRows: Row[] = live.filter(x => x.lastReceivedAt && (!x.thankedAt || x.thankedAt < x.lastReceivedAt))
+    .map(x => ({ key: 'thank:' + x.id, kind: 'thank', person: x.id, ref: x.id, title: label(x), why: 'They sent something our way: thank them and tell them how it went' }));
+  // Backlog: people over their rhythm, most recently met first, at most five a day.
+  const catchRows: Row[] = live.filter(x => !x.nextMove && ['met', 'warm', 'proposal'].includes(x.stage) && x.lastContact)
+    .map(x => ({ x, due: addDays(x.lastContact, x.stage === 'proposal' ? 14 : x.introducer ? 42 : x.stage === 'warm' ? 56 : 90) }))
+    .filter(y => y.due <= today).sort((a, b) => String(b.x.lastContact).localeCompare(String(a.x.lastContact))).slice(0, 5)
+    .map(({ x }) => ({ key: 'catchup:' + x.id, kind: 'catchup', person: x.id, ref: x.id, title: label(x), why: `${x.introducer ? 'Introducer' : x.stage === 'warm' ? 'Warm' : 'Met'}, last contact ${x.lastContact.slice(8, 10)}/${x.lastContact.slice(5, 7)}${x.lastNote ? ': ' + x.lastNote : ''}` }));
+  const all = [...decide, ...money, ...moveRows, ...todoRows, ...chaseRows, ...thankRows, ...pursuitRows, ...catchRows];
   const rows = all.slice(0, MAX_ROWS);
 
   // Meetings: to-dos carrying a meeting, today and the next 7 days.
