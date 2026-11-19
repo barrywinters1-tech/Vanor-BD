@@ -221,7 +221,7 @@ function MoneyTab({ view, today, open, setOpen, onPursuit, onDirect, onSuggestio
 }
 
 const STAGE_LABEL: Record<string, string> = { known: 'Known, not met', met: 'Met', warm: 'Warm', proposal: 'Proposal out', instructed: 'Instructed' };
-const MOVE_TYPES: [string, string][] = [['follow', 'Follow up'], ['meet', 'Meet (coffee, breakfast, golf, event)'], ['send', 'Send (scope, proposal, info)'], ['chase', 'Chase: they owe us'], ['introduce', 'Introduce / ask for an intro'], ['checkback', 'Check back on a date']];
+const MOVE_TYPES: [string, string][] = [['call', 'Call them'], ['follow', 'Follow up'], ['meet', 'Meet (coffee, breakfast, golf, event)'], ['send', 'Send (scope, proposal, info)'], ['chase', 'Chase: they owe us'], ['introduce', 'Introduce / ask for an intro'], ['checkback', 'Check back on a date'], ['capability', 'Send capability document']];
 const tradeLabel = (k: string) => TRADES.find(t => t.key === k)?.label || k;
 const moveLine = (m: Item | null, today: string) => !m ? '' : `${m.owes === 'them' ? 'They owe: ' : ''}${m.text}${m.due ? ` · ${m.due < today ? 'was due ' : ''}${short(m.due)}` : ''}${m.owner ? ` · ${m.owner}` : ''}`;
 const csvCell = (v: unknown) => { const t = String(v ?? ''); return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };

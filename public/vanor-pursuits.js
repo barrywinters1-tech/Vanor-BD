@@ -72,6 +72,7 @@
   const NEXT_TYPES = [
     { key: 'follow', label: 'Follow up' }, { key: 'meet', label: 'Meet' }, { key: 'send', label: 'Send' },
     { key: 'chase', label: 'Chase (they owe us)' }, { key: 'introduce', label: 'Introduce' }, { key: 'checkback', label: 'Check back' },
+    { key: 'call', label: 'Call' }, { key: 'capability', label: 'Send capability document' },
   ];
   const NEXT_TYPE = Object.fromEntries(NEXT_TYPES.map(x => [x.key, x]));
   /** Old rung to stage, for people the new model has not touched yet. */
