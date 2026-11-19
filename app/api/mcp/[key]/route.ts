@@ -25,7 +25,8 @@ import { addTodos, listTodos, todoDone, jobRan } from '../../../../lib/todos';
 import { proposePeople } from '../../../../lib/people-tray';
 import { openCaptures, captureDone, captureImages } from '../../../../lib/captures';
 import { researchBatch, saveIntel, signalContacts } from '../../../../lib/company-intel-store';
-import { listPursuits, savePursuits, proposeNext, parkPursuit, recordMeetings, setPerson, peopleDue } from '../../../../lib/pursuits';
+import { TRADE_KEYS, isPlaceholder } from '../../../../lib/trades';
+import { listPursuits, savePursuits, proposeNext, parkPursuit, setRelationship, giveGet, recordMeetings, setPerson, peopleDue } from '../../../../lib/pursuits';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -88,7 +89,7 @@ function createServer() {
   }, async ({ unassessedOnly, missingEmailOnly, offset, limit }) => {
     const [records, decisions] = await Promise.all([listScope('source'), listScope('decision')]);
     const byId = new Map(decisions.map(d => [d.id, d]));
-    const pool = records.filter(r => r.kind !== 'opportunity' && byId.get(r.id)?.status !== 'Archive')
+    const pool = records.filter(r => r.kind !== 'opportunity' && byId.get(r.id)?.status !== 'Archive' && !byId.get(r.id)?.mergedInto)
       .filter(r => !unassessedOnly || !r.assessedAt).filter(r => !missingEmailOnly || !r.email);
     const start = offset || 0, size = limit || 25;
     const rows = pool.slice(start, start + size).map(r => ({
@@ -241,6 +242,26 @@ function createServer() {
     inputSchema: { meetings: z.array(z.object({ email: z.string().optional(), name: z.string().optional(), date, eventId: z.string().max(200).optional(), note: z.string().max(300).optional(), rung: z.enum(['target', 'contact', 'referrer', 'active', 'partner']).optional(), lane: z.enum(PERSON_LANES).optional(), buyingStage: z.enum(['Aware', 'Understands', 'Interested', 'Respects', 'Trusts', 'Able', 'Ready']).optional() })).min(1).max(100) },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ meetings }) => out(await recordMeetings(meetings), 'Meetings recorded.'));
+  server.registerTool('people_set', {
+    title: 'Relationships: set stage, next move, trade or who met them (batch)',
+    description: 'For people we have met. stage: known, met or warm only (Proposal and Instructed follow the person\'s work; the partners decide those). Moves people forward only, except warm -> met after six months with no two-way contact. nextMove = the one live next move: type follow | meet | send | chase (they owe us) | introduce | checkback, text (one line), owes us|them, due (YYYY-MM-DD; for checkback the date they gave), owner Barry|Graeme|Both. A next move a partner set after evidenceOn is never overwritten. tradeSuggested = your best guess from signature or title; trade only when the evidence states it. metBy = which partners were in the meeting. evidenceOn = date of the evidence; why = the evidence in one line. Never a placeholder name.',
+    inputSchema: { items: z.array(z.object({ id: z.string(), restoreArchived: z.boolean().optional().describe('Only when a partner has said this archived person is a live relationship'), stage: z.enum(['known', 'met', 'warm']).optional(), nextMove: z.object({ type: z.enum(['follow', 'meet', 'send', 'chase', 'introduce', 'checkback']), text: z.string().min(3).max(200), owes: z.enum(['us', 'them']).optional(), due: date, owner: z.enum(['Barry', 'Graeme', 'Both']).optional() }).optional(), trade: z.enum(TRADE_KEYS as [string, ...string[]]).optional(), tradeSuggested: z.enum(TRADE_KEYS as [string, ...string[]]).optional(), metBy: z.array(z.enum(['Barry', 'Graeme'])).optional(), evidenceOn: date.optional(), why: z.string().max(200).optional() })).min(1).max(100) },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ items }) => {
+    const done: string[] = [], notes: { id: string; note: string }[] = [], failed: { id: string; why: string }[] = [];
+    for (const it of items) {
+      try { const src = await getOne('source', it.id); if (!src) throw new Error('No contact with id ' + it.id); if (isPlaceholder(src)) throw new Error('Not a real person (placeholder)'); const dd = await getOne('decision', it.id); if (dd?.mergedInto) throw new Error('Merged into ' + dd.mergedInto + ': use that id');
+        const { id, ...p } = it; const r = await setRelationship(id, p as any); done.push(id); if (r.note) notes.push({ id, note: r.note }); }
+      catch (e) { failed.push({ id: it.id, why: e instanceof Error ? e.message : String(e) }); }
+    }
+    return out({ updated: done.length, notes, failed }, `${done.length} updated${failed.length ? `, ${failed.length} refused` : ''}.`);
+  });
+  server.registerTool('give_get', {
+    title: 'Relationships: record something we gave or received',
+    description: 'One line per item: dir gave | received; kind proposal | introduction | referral | advice | lead | work | other; note (what, with whom); date. Received referrals, leads, introductions or work mark the person as an introducer. Use when an email or meeting shows it ("introducing you to...", "I\'ve passed your name to...", a proposal sent).',
+    inputSchema: { id: z.string(), dir: z.enum(['gave', 'received']), kind: z.enum(['proposal', 'introduction', 'referral', 'advice', 'lead', 'work', 'other']), note: z.string().min(5).max(200), date: date.optional() },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  }, async ({ id, ...p }) => { const src = await getOne('source', id); if (!src) throw new Error('No contact with id ' + id); if (isPlaceholder(src)) throw new Error('Not a real person (placeholder)'); const dd = await getOne('decision', id); if (dd?.mergedInto) throw new Error('Merged into ' + dd.mergedInto + ': use that id'); return out(await giveGet(id, p), 'Recorded.'); });
   server.registerTool('person_set', {
     title: 'People: set a person\'s rung, lane, buying stage or note',
     description: 'Rungs set the meeting rhythm: partner and active every 2 weeks, referrer every 6 weeks, contact every 8 weeks, target = not met yet. Promote to active the first time someone puts a named job in front of us.',
@@ -301,9 +322,9 @@ function createServer() {
   }, async ({ id, note }) => out(await captureDone(id, note), 'Capture processed.'));
   server.registerTool('people_due', {
     title: 'People due a meeting (by rung cadence), overdue first',
-    inputSchema: { limit: z.number().int().min(1).max(200).optional(), all: z.boolean().optional() },
+    inputSchema: { limit: z.number().int().min(1).max(200).optional(), all: z.boolean().optional(), offset: z.number().int().min(0).optional().describe('Page through with offset (rows come back with total)') },
     annotations: { readOnlyHint: true },
-  }, async ({ limit, all }) => out(await peopleDue({ limit: limit || 20, onlyDue: !all }), 'People due.'));
+  }, async ({ limit, all, offset }) => out(await peopleDue({ limit: limit || 20, onlyDue: !all, offset: offset || 0 }), 'People due.'));
   server.registerTool('price_list', {
     title: 'Vanor price list and the first step to offer a lead',
     description: 'The fixed price list (from the pricing workbook, 16 Oct 2026) and, for a given contact id, the first-step product to offer, options A/B/C, a decision date ten working days out and the two sentences to put in the follow-up email in Barry\'s voice. Read-only. Use it when drafting any follow-up to a buyer meeting: every buyer follow-up carries a priced first step and a decision date.',

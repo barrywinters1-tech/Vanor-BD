@@ -3,7 +3,8 @@
 // Plan: four goldfish reviews -> plan v2 (Musk's five steps). Only things we owe on Today, at most seven rows.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { buildToday, seeThisWeek, addWorkingDays, addDays, londonDate, daysBetween, type Item, type Owner, type Row } from '../../lib/today-rules';
+import { buildToday, addWorkingDays, addDays, londonDate, type Item, type Owner, type Row } from '../../lib/today-rules';
+import { TRADES } from '../../lib/trades';
 
 export type Api = {
   load(): Promise<{ work: Item[]; events: Item[]; people: Item[]; contacts: number }>;
@@ -12,6 +13,8 @@ export type Api = {
   create(entity: Item, note: string): Promise<Item>;
   undoClaude(id: string): Promise<unknown>;
   search(q: string): Promise<Item[]>;
+  people(params: Record<string, string>): Promise<{ items: Item[]; total: number; knownNotMet: number }>;
+  giveGet(id: string, dir: 'gave' | 'received', kind: string, note: string): Promise<unknown>;
   opened(): Promise<unknown>;
 };
 
@@ -28,6 +31,8 @@ export const liveApi: Api = {
   create: (entity, note) => call('/entity', { method: 'POST', body: JSON.stringify({ scope: 'work', entity, expectedRev: 0, event: { type: note, recordId: '', note: String(entity.text || '').slice(0, 80) } }) }),
   undoClaude: id => call('/undo-claude', { method: 'POST', body: JSON.stringify({ id }) }),
   search: q => call('/people?q=' + encodeURIComponent(q)).then(r => r.items),
+  people: params => call('/people?' + new URLSearchParams(params).toString()),
+  giveGet: (id, dir, kind, note) => call('/give-get', { method: 'POST', body: JSON.stringify({ id, dir, kind, note }) }),
   opened: () => call('/opened', { method: 'POST', body: '{}' }),
 };
 
@@ -37,7 +42,7 @@ const nice = (iso: string) => { if (!iso) return ''; const d = new Date(iso.slic
 const short = (iso: string) => iso ? new Date(iso.slice(0, 10) + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
 const ASK: Record<string, string> = { table: 'Priced: a proposal is out', won: 'Won', lost: 'Lost', parked: 'Park it' };
 type Tab = 'today' | 'money' | 'people' | 'events';
-type Sheet = { kind: 'pursuit'; id: string } | { kind: 'todo'; id: string } | { kind: 'person'; person: Item } | { kind: 'note'; about?: { label: string; pursuitId?: string; recordId?: string; eventId?: string; eventTitle?: string } } | { kind: 'step'; id: string; chased: boolean } | { kind: 'lost'; id: string; fromAsk?: boolean } | { kind: 'priced'; id: string } | { kind: 'list'; title: string; rows: Row[] } | null;
+type Sheet = { kind: 'pursuit'; id: string } | { kind: 'todo'; id: string } | { kind: 'person'; person: Item } | { kind: 'note'; about?: { label: string; pursuitId?: string; recordId?: string; eventId?: string; eventTitle?: string } } | { kind: 'step'; id: string; chased: boolean } | { kind: 'lost'; id: string; fromAsk?: boolean } | { kind: 'priced'; id: string } | { kind: 'list'; title: string; rows: Row[] } | { kind: 'move'; person: Item; mode: 'done' | 'chased' | 'set' } | null;
 
 export default function TodayApp({ api = liveApi, initialTab = 'today' as Tab }: { api?: Api; initialTab?: Tab }) {
   const [data, setData] = useState<{ work: Item[]; events: Item[]; people: Item[]; contacts: number } | null>(null);
@@ -65,7 +70,7 @@ export default function TodayApp({ api = liveApi, initialTab = 'today' as Tab }:
 
   const now = new Date();
   const today = londonDate(now);
-  const view = useMemo(() => data ? buildToday({ work: data.work, events: data.events, owner, now }) : null, [data, owner]); // eslint-disable-line react-hooks/exhaustive-deps
+  const view = useMemo(() => data ? buildToday({ work: data.work, events: data.events, people: data.people, owner, now }) : null, [data, owner]); // eslint-disable-line react-hooks/exhaustive-deps
   const byId = (id: string) => data?.work.find(w => w.id === id);
 
   async function act(run: () => Promise<unknown>, text: string, undo?: () => Promise<void>) {
@@ -98,15 +103,25 @@ export default function TodayApp({ api = liveApi, initialTab = 'today' as Tab }:
     <div className="vt-owner" role="group" aria-label="Whose list">{(['Barry', 'Graeme', 'Both'] as Owner[]).map(o => <button key={o} className={owner === o ? 'on' : ''} onClick={() => pickOwner(o)}>{o}</button>)}</div>
   </header>;
 
+  const personOf = (id: string) => data?.people.find(x => x.id === id);
+  const PERSON_ROW = ['move', 'chase', 'thank', 'catchup'];
+  const openRow = (r: Row) => { if (PERSON_ROW.includes(r.kind)) { const x = personOf(r.ref); if (x) setSheet({ kind: 'person', person: x }); return; } setSheet(r.kind === 'todo' ? { kind: 'todo', id: r.ref } : { kind: 'pursuit', id: r.ref }); };
+  const personActs = (r: Row) => { const x = personOf(r.ref); if (!x) return null;
+    const later = (days: number, label: string) => <button className="vt-btn quiet" onClick={() => act(() => api.patch('decision', x.id, { snoozedUntil: addDays(today, days) }, label), days === 1 ? 'Back tomorrow.' : `Back ${short(addDays(today, days))}.`, async () => { await api.patch('decision', x.id, { snoozedUntil: '' }, 'Back on'); })}>{label}</button>;
+    if (r.kind === 'move') return <><button className="vt-btn primary" onClick={() => setSheet({ kind: 'move', person: x, mode: 'done' })}>Done</button>{later(1, 'Not today')}</>;
+    if (r.kind === 'chase') return <><button className="vt-btn primary" onClick={() => setSheet({ kind: 'move', person: x, mode: 'chased' })}>Chased</button>{later(1, 'Not today')}</>;
+    if (r.kind === 'thank') return <><button className="vt-btn primary" onClick={() => act(() => api.patch('decision', x.id, { thankedAt: new Date().toISOString() }, 'Thanked'), 'Noted: thanked.', async () => { await api.patch('decision', x.id, { thankedAt: x.thankedAt || '' }, 'Undid thanked'); })}>Thanked</button>{later(1, 'Not today')}</>;
+    return <><button className="vt-btn primary" onClick={() => setSheet({ kind: 'move', person: x, mode: 'set' })}>Plan a catch-up</button>{later(28, 'In a month')}</>;
+  };
   const rowView = (r: Row) => {
-    const p = r.kind !== 'todo' ? byId(r.ref) : null;
+    const p = r.kind !== 'todo' && !PERSON_ROW.includes(r.kind) ? byId(r.ref) : null;
     return <li key={r.key} className={`vt-row ${r.kind}`}>
-      <button className="vt-row-main" onClick={() => setSheet(r.kind === 'todo' ? { kind: 'todo', id: r.ref } : { kind: 'pursuit', id: r.ref })}>
-        <span className="vt-row-title"><span>{r.kind === 'decide' ? <span className="vt-tag">Decide</span> : null}{r.title}</span>{r.money ? <span className="vt-fee">{fee(r.money, r.monthly)}</span> : null}</span>
+      <button className="vt-row-main" onClick={() => openRow(r)}>
+        <span className="vt-row-title"><span>{r.kind === 'decide' ? <span className="vt-tag">Decide</span> : r.kind === 'chase' ? <span className="vt-tag them">They owe</span> : r.kind === 'thank' ? <span className="vt-tag them">Thank</span> : r.kind === 'catchup' ? <span className="vt-tag them">Catch up</span> : null}{r.title}</span>{r.money ? <span className="vt-fee">{fee(r.money, r.monthly)}</span> : null}</span>
         <span className="vt-row-why">{r.kind === 'decide' ? <><b>{ASK[r.ask || ''] || r.ask}?</b> {r.why}</> : r.why}{r.late ? <span className="vt-late"> · decision date passed</span> : null}</span>
       </button>
       <div className="vt-row-acts">
-        {r.kind === 'decide' && p ? <><button className="vt-btn primary" onClick={() => decide(p, true)}>Yes</button><button className="vt-btn" onClick={() => decide(p, false)}>No</button></> : <>
+        {PERSON_ROW.includes(r.kind) ? personActs(r) : r.kind === 'decide' && p ? <><button className="vt-btn primary" onClick={() => decide(p, true)}>Yes</button><button className="vt-btn" onClick={() => decide(p, false)}>No</button></> : <>
           {r.link ? <a className="vt-btn primary" href={r.link} target="_blank" rel="noopener">Open draft</a> : null}
           {r.kind === 'todo' ? <button className="vt-btn" onClick={() => todoDone(r.ref)}>Done</button> : <button className="vt-btn" onClick={() => setSheet({ kind: 'step', id: r.ref, chased: r.kind === 'money' })}>{r.kind === 'money' ? 'Chased' : 'Done'}</button>}
           <button className="vt-btn quiet" onClick={() => notToday('work', r.ref)}>Not today</button>
@@ -134,8 +149,7 @@ export default function TodayApp({ api = liveApi, initialTab = 'today' as Tab }:
     onUndo={(c) => c.kind === 'pursuit' ? act(() => api.undoClaude(c.id), 'Claude\'s change undone.') : act(() => api.patch('work', c.id, { status: 'open', doneAt: '', doneBy: '', doneReason: '', doneNote: '', reopenedAt: new Date().toISOString() }, 'Reopened'), 'Back on the list.')}
     onUnpark={id => { const p = byId(id)!; return act(() => api.patch('work', id, { state: ['watch', 'waiting', 'act'].includes(p.parkedFrom) ? p.parkedFrom : 'watch', parkedAt: '', parkedBy: '', parkedReason: '', nextAction: p.nextAction || 'Decide the next step' }, 'Unparked'), `${p.name} is back.`); }} />;
 
-  const peopleTab = <PeopleTab api={api} people={data.people} contacts={data.contacts} owner={owner} now={now} onPerson={person => setSheet({ kind: 'person', person })}
-    onNotThisWeek={id => notToday('decision', id)} />;
+  const peopleTab = <PeopleTab api={api} people={data.people} contacts={data.contacts} owner={owner} today={today} onPerson={person => setSheet({ kind: 'person', person })} />;
 
   const eventsTab = <section>
     <h2 className="vt-h">Events <span>next four weeks</span></h2>
@@ -206,22 +220,57 @@ function MoneyTab({ view, today, open, setOpen, onPursuit, onDirect, onSuggestio
   </section>;
 }
 
-function PeopleTab({ api, people, contacts, owner, now, onPerson, onNotThisWeek }: { api: Api; people: Item[]; contacts: number; owner: Owner; now: Date; onPerson(p: Item): void; onNotThisWeek(id: string): void }) {
-  const [q, setQ] = useState(''); const [hits, setHits] = useState<Item[] | null>(null); const [busy, setBusy] = useState(false);
-  useEffect(() => { if (q.trim().length < 2) { setHits(null); return; } setBusy(true); const t = setTimeout(() => { api.search(q.trim()).then(setHits).catch(() => setHits([])).finally(() => setBusy(false)); }, 250); return () => clearTimeout(t); }, [q, api]);
-  const see = seeThisWeek(people, { owner, now });
-  const today = londonDate(now);
-  const groups = useMemo(() => { const m = new Map<string, Item[]>(); for (const h of hits || []) { const k = h.company || 'No company'; m.set(k, [...(m.get(k) || []), h]); } return [...m.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0])); }, [hits]);
+const STAGE_LABEL: Record<string, string> = { known: 'Known, not met', met: 'Met', warm: 'Warm', proposal: 'Proposal out', instructed: 'Instructed' };
+const MOVE_TYPES: [string, string][] = [['follow', 'Follow up'], ['meet', 'Meet (coffee, breakfast, golf, event)'], ['send', 'Send (scope, proposal, info)'], ['chase', 'Chase: they owe us'], ['introduce', 'Introduce / ask for an intro'], ['checkback', 'Check back on a date']];
+const tradeLabel = (k: string) => TRADES.find(t => t.key === k)?.label || k;
+const moveLine = (m: Item | null, today: string) => !m ? '' : `${m.owes === 'them' ? 'They owe: ' : ''}${m.text}${m.due ? ` · ${m.due < today ? 'was due ' : ''}${short(m.due)}` : ''}${m.owner ? ` · ${m.owner}` : ''}`;
+const csvCell = (v: unknown) => { const t = String(v ?? ''); return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+
+function PeopleTab({ api, people, contacts, owner, today, onPerson }: { api: Api; people: Item[]; contacts: number; owner: Owner; today: string; onPerson(p: Item): void }) {
+  const [q, setQ] = useState(''); const [stage, setStage] = useState(''); const [trade, setTrade] = useState('');
+  const [res, setRes] = useState<{ items: Item[]; total: number; knownNotMet: number } | null>(null); const [busy, setBusy] = useState(false); const [copied, setCopied] = useState('');
+  const searching = q.trim().length >= 2 || !!stage || !!trade;
+  useEffect(() => {
+    if (!searching) { setRes(null); return; }
+    setBusy(true);
+    const params: Record<string, string> = {};
+    if (q.trim().length >= 2) params.q = q.trim();
+    if (stage === 'introducer') params.introducer = '1'; else if (stage === 'metany') params.met = '1'; else if (stage) params.stage = stage;
+    if (trade) { params.trade = trade; if (!stage) params.met = '1'; }
+    const t = setTimeout(() => { api.people(params).then(setRes).catch(() => setRes({ items: [], total: 0, knownNotMet: 0 })).finally(() => setBusy(false)); }, 250);
+    return () => clearTimeout(t);
+  }, [q, stage, trade, api, searching]);
+  const mineOnly = (x: Item) => owner === 'Both' || !x.nextMove?.owner || x.nextMove.owner === owner || x.nextMove.owner === 'Both';
+  const upcoming = people.filter(x => x.nextMove && x.nextMove.due && mineOnly(x)).sort((a, b) => String(a.nextMove.due).localeCompare(String(b.nextMove.due))).slice(0, 25);
+  const counts = people.reduce((m, x) => { m[x.stage] = (m[x.stage] || 0) + 1; if (x.introducer) m.introducer = (m.introducer || 0) + 1; return m; }, {} as Record<string, number>);
+  const items = res?.items || [];
+  const book = trade ? items.filter(x => x.stage !== 'known') : [];
+  const exportRows = (trade ? book : items).map(x => ({ name: x.name, firm: x.company, trade: x.trade ? tradeLabel(x.trade) + (x.tradeConfirmed ? '' : ' (suggested)') : '', stage: STAGE_LABEL[x.stage] || x.stage, knows: (x.metBy || []).join(' & ') || 'not recorded', met: x.lastMet || '', introduce: x.introducible === 'yes' ? 'yes' : x.introducible === 'no' ? 'no' : 'ask first' }));
+  const copyList = async () => { const text = exportRows.map(r => `${r.name}, ${r.firm}${r.trade ? ` (${r.trade})` : ''}; knows them: ${r.knows}; introduce: ${r.introduce}`).join('\n'); try { await navigator.clipboard.writeText(text); setCopied(`Copied ${exportRows.length}.`); } catch { setCopied('Could not copy. Use the CSV.'); } };
+  const csv = () => { const head = ['Name', 'Firm', 'Trade', 'Stage', 'Who at Vanor knows them', 'Last met', 'Introduce']; const body = exportRows.map(r => [r.name, r.firm, r.trade, r.stage, r.knows, r.met, r.introduce].map(csvCell).join(','));
+    const url = URL.createObjectURL(new Blob([[head.join(','), ...body].join('\n')], { type: 'text/csv' })); const a = document.createElement('a'); a.href = url; a.download = `vanor-${(trade || 'people').replace(/[^a-z0-9]+/gi, '-')}-${today}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 2000); };
+  const card = (x: Item) => <li key={x.id}><button className="vt-card" onClick={() => onPerson(x)}>
+    <span className="vt-card-top"><b>{x.name}</b><span className={x.stage === 'known' ? 'vt-pill grey' : 'vt-pill'}>{x.introducer ? 'Introducer · ' : ''}{STAGE_LABEL[x.stage] || x.stage}</span></span>
+    <span className="vt-muted">{[x.company, x.trade ? tradeLabel(x.trade) + (x.tradeConfirmed ? '' : '?') : '', x.lastContact ? 'last ' + short(x.lastContact) : ''].filter(Boolean).join(' · ')}</span>
+    {x.nextMove ? <span>Next: {moveLine(x.nextMove, today)}</span> : null}</button></li>;
   return <section>
-    <input className="vt-search" type="search" placeholder={`Search ${contacts.toLocaleString('en-GB')} contacts: name, company, email`} value={q} onChange={e => setQ(e.target.value)} aria-label="Search contacts" />
-    {hits ? <>{busy ? <p className="vt-muted">Searching…</p> : null}{!hits.length && !busy ? <p className="vt-clear">No one matches.</p> : null}
-      {groups.map(([co, list]) => <div key={co} className="vt-group"><h3>{co} <span>{list.length}</span></h3><ul className="vt-list">{list.map(h => <li key={h.id}><button className="vt-card" onClick={() => onPerson(h)}>
-        <span className="vt-card-top"><b>{h.name || h.company}</b>{h.lastMet ? <span className="vt-pill">met {short(h.lastMet)}</span> : null}</span><span className="vt-muted">{h.jobTitle}</span></button></li>)}</ul></div>)}</>
-    : <>
-      <h2 className="vt-h">See this week <span>{see.length}</span></h2>
-      <p className="vt-muted">Partners, active contacts and referrers you have not seen for longest. Five a week is plenty.</p>
-      <ul className="vt-list">{see.map(x => <li key={x.id} className="vt-sugg"><button className="vt-card plain" onClick={() => onPerson(x)}><b>{x.name}</b><span className="vt-muted">{x.company} · {x.lastMet ? `last met ${short(x.lastMet)} (${Math.round(daysBetween(x.lastMet, today) / 7)} weeks)` : 'not met yet'}</span></button>
-        <button className="vt-btn quiet" onClick={() => onNotThisWeek(x.id)}>Not this week</button></li>)}</ul>
+    <input className="vt-search" type="search" placeholder={`Search ${contacts.toLocaleString('en-GB')} contacts: name, firm, email`} value={q} onChange={e => setQ(e.target.value)} aria-label="Search contacts" />
+    <div className="vt-two">
+      <label className="vt-field">Who<select value={stage} onChange={e => setStage(e.target.value)}><option value="">Everyone</option><option value="metany">Everyone we've met</option><option value="warm">Warm</option><option value="met">Met</option><option value="proposal">Proposal out</option><option value="instructed">Instructed</option><option value="introducer">Introducers</option><option value="known">Known, not met</option></select></label>
+      <label className="vt-field">Trade (black book)<select value={trade} onChange={e => setTrade(e.target.value)}><option value="">Any trade</option>{TRADES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}</select></label>
+    </div>
+    {searching ? <>
+      {busy && !res ? <p className="vt-muted">Searching…</p> : null}
+      {res && trade ? <div className="vt-book"><p className="vt-big">{tradeLabel(trade)}s we've met: {book.length}</p>
+        <p className="vt-muted">{res.knownNotMet ? `${res.knownNotMet} more known, not met (LinkedIn and lists). ` : ''}Trades marked ? are Claude's suggestion until you confirm. Introductions default to "ask first".</p>
+        {book.length ? <div className="vt-row-acts"><button className="vt-btn primary" onClick={copyList}>Copy list</button><button className="vt-btn" onClick={csv}>Download CSV</button>{copied ? <span className="vt-muted">{copied}</span> : null}</div> : null}</div> : null}
+      {res && !trade ? <p className="vt-muted">{res.total > items.length ? `Showing ${items.length} of ${res.total}.` : `${res.total} found.`}{items.length ? <> <button className="vt-link small" onClick={csv}>Download CSV</button></> : null}</p> : null}
+      {res && !items.length ? <p className="vt-clear">No one matches.</p> : null}
+      <ul className="vt-list">{(trade ? book : items).map(card)}</ul>
+    </> : <>
+      <p className="vt-muted">{counts.warm || 0} warm · {counts.met || 0} met · {counts.proposal || 0} with a proposal out · {counts.introducer || 0} introducers. Pick a trade above for the black book.</p>
+      <h2 className="vt-h">Next moves <span>{upcoming.length}</span></h2>
+      {upcoming.length ? <ul className="vt-list">{upcoming.map(card)}</ul> : <p className="vt-clear">No next moves set yet. Open a person and set one, or add a note after a meeting and Claude sets it.</p>}
     </>}
   </section>;
 }
@@ -308,17 +357,56 @@ function SheetView({ sheet, close, data, today, actor, api, act, decide, setShee
       <label className="vt-field">One line (optional)<input value={field('line', '')} onChange={set('line')} /></label>
       <button className="vt-btn primary" onClick={() => { const why = [field('why', 'Price'), field('line', '')].filter(Boolean).join(': '); return act(() => api.patch('work', p.id, { state: 'lost', lostReason: why, outcome: /withdrawn/i.test(why) ? 'Withdrawn' : /no decision/i.test(why) ? 'No decision' : 'Lost', ask: null }, 'Lost: ' + why), `${p.name} marked lost.`, async () => { await api.patch('work', p.id, { state: p.state || 'watch', lostReason: '', outcome: '' }, 'Undid lost'); }); }}>Mark lost</button></>;
   } else if (sheet.kind === 'person') {
-    const x = sheet.person; title = x.name || x.company;
+    const x = data.people.find(y => y.id === sheet.person.id) || sheet.person; title = x.name || x.company;
+    const first = String(x.name || x.company).split(' ')[0];
     const theirs = data.work.filter(w => w.kind === 'pursuit' && !['won', 'lost', 'parked'].includes(w.state) && (w.recordId === x.id || (x.email && String(w.email || '').toLowerCase() === String(x.email).toLowerCase())));
+    const derived = ['proposal', 'instructed'].includes(x.stage);
+    const setStage = (st: string) => act(() => api.patch('decision', x.id, { stage: st }, 'Stage: ' + st), `${first}: ${STAGE_LABEL[st]}.`, async () => { await api.patch('decision', x.id, { stage: x.stage }, 'Undid stage'); });
+    const gg = field('gg', '');
     body = <><p className="vt-muted">{[x.jobTitle, x.company].filter(Boolean).join(' · ')}</p>
       <p>{x.email ? <a href={`mailto:${x.email}`}>{x.email}</a> : null}{x.phone ? <> · <a href={`tel:${x.phone}`}>{x.phone}</a></> : null}{x.linkedin ? <> · <a href={x.linkedin} target="_blank" rel="noopener">LinkedIn</a></> : null}</p>
-      <p>{x.lastMet ? `Last met ${nice(x.lastMet)}.` : 'Not met yet.'} {x.lastNote ? `“${x.lastNote}”` : ''}</p>
-      {x.notes ? <p className="vt-muted">{x.notes}</p> : null}
-      {theirs.length ? <><b>Open pursuits</b><ul className="vt-list">{theirs.map(p => <li key={p.id}><button className="vt-card plain" onClick={() => setSheet({ kind: 'pursuit', id: p.id })}>{p.name}</button></li>)}</ul></> : null}
-      <button className="vt-btn primary" onClick={() => setSheet({ kind: 'note', about: { label: x.name || x.company, recordId: x.id } })}>+ Note about {String(x.name || x.company).split(' ')[0]}</button></>;
+      <div className="vt-row-acts" role="group" aria-label="Where we stand">
+        {(['known', 'met', 'warm'] as const).map(st => <button key={st} className={'vt-btn' + (x.stage === st ? ' primary' : '')} disabled={derived} onClick={() => x.stage !== st && setStage(st)}>{STAGE_LABEL[st].split(',')[0]}</button>)}
+        {derived ? <span className="vt-pill">{STAGE_LABEL[x.stage]} (from the work)</span> : null}{x.introducer ? <span className="vt-pill">Introducer</span> : null}
+      </div>
+      <p className="vt-muted small">{x.lastMet ? `Last met ${nice(x.lastMet)}` : 'Not met yet'}{x.lastContact && x.lastContact !== x.lastMet ? ` · last contact ${short(x.lastContact)}` : ''}{(x.metBy || []).length ? ` · knows them: ${(x.metBy as string[]).join(' & ')}` : ''}{x.lastNote ? ` · “${x.lastNote}”` : ''}</p>
+      <div className="vt-ask"><b>Next move</b><p>{x.nextMove ? moveLine(x.nextMove, today) : 'None set.'}</p>
+        <div className="vt-row-acts"><button className="vt-btn primary" onClick={() => setSheet({ kind: 'move', person: x, mode: x.nextMove ? 'done' : 'set' })}>{x.nextMove ? 'Done / change' : 'Set next move'}</button>
+          <button className="vt-btn" onClick={() => act(() => api.patch('decision', x.id, { lastMet: today, lastContact: today }, 'Met today'), `Met ${first} today.`)}>Met today</button></div></div>
+      <div className="vt-two"><label className="vt-field">Trade{x.trade && !x.tradeConfirmed ? ' (suggested)' : ''}<select value={field('trade', x.trade || '')} onChange={e => { const v = e.target.value; setF(o => ({ ...o, trade: v })); if (v) act(() => api.patch('decision', x.id, { trade: v }, 'Trade confirmed'), `Trade: ${tradeLabel(v)}.`); }}><option value="">Not set</option>{TRADES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}</select></label>
+        <label className="vt-field">Introduce them?<select value={field('introducible', x.introducible || 'ask')} onChange={e => { const v = e.target.value; setF(o => ({ ...o, introducible: v })); act(() => api.patch('decision', x.id, { introducible: v }, 'Introducible'), 'Saved.'); }}><option value="ask">Ask first</option><option value="yes">Yes</option><option value="no">No</option></select></label></div>
+      {x.trade && !x.tradeConfirmed && !f.trade ? <button className="vt-link small" onClick={() => act(() => api.patch('decision', x.id, { trade: x.trade }, 'Trade confirmed'), `Confirmed: ${tradeLabel(x.trade)}.`)}>Yes, {tradeLabel(x.trade).toLowerCase()} is right</button> : null}
+      <h3 className="vt-sub">Given and received <span>{x.givenN || 0} given · {x.receivedN || 0} received</span></h3>
+      {gg ? <div className="vt-ask"><div className="vt-two"><label className="vt-field">{gg === 'gave' ? 'We gave' : 'They gave us'}<select value={field('ggKind', 'introduction')} onChange={set('ggKind')}>{['introduction', 'referral', 'lead', 'proposal', 'advice', 'work', 'other'].map(k => <option key={k}>{k}</option>)}</select></label>
+        <label className="vt-field">One line<input autoFocus value={field('ggNote', '')} onChange={set('ggNote')} placeholder={gg === 'gave' ? 'e.g. introduced to Pat at Acme' : 'e.g. passed us the Leeds hotel'} /></label></div>
+        <div className="vt-row-acts"><button className="vt-btn primary" disabled={field('ggNote', '').trim().length < 5} onClick={() => act(() => api.giveGet(x.id, gg as 'gave' | 'received', field('ggKind', 'introduction'), field('ggNote', '').trim()), gg === 'gave' ? 'Logged what we gave.' : `Logged. Thank ${first} and tell them how it goes.`)}>Save</button><button className="vt-btn quiet" onClick={() => setF(o => ({ ...o, gg: '' }))}>Cancel</button></div></div>
+        : <div className="vt-row-acts"><button className="vt-btn" onClick={() => setF(o => ({ ...o, gg: 'gave' }))}>+ We gave</button><button className="vt-btn" onClick={() => setF(o => ({ ...o, gg: 'received' }))}>+ They gave us</button></div>}
+      {(x.ledger || []).length ? <ul className="vt-ledger">{(x.ledger as Item[]).map((l, i) => <li key={i}><span className="vt-muted">{short(String(l.date || l.at || ''))}</span> {l.dir === 'gave' ? 'We gave' : 'They gave'} {l.kind}{l.note ? `: ${l.note}` : ''}</li>)}</ul> : null}
+      {theirs.length ? <><h3 className="vt-sub">Work</h3><ul className="vt-list">{theirs.map(p => <li key={p.id}><button className="vt-card plain" onClick={() => setSheet({ kind: 'pursuit', id: p.id })}><b>{p.name}</b><span className="vt-muted">{p.nextAction}</span></button></li>)}</ul></> : null}
+      {x.notes ? <p className="vt-muted small">{x.notes}</p> : null}
+      <button className="vt-btn" onClick={() => setSheet({ kind: 'note', about: { label: x.name || x.company, recordId: x.id } })}>+ Note about {first}</button></>;
+  } else if (sheet.kind === 'move') {
+    const x = sheet.person; const m = x.nextMove || {}; const first = String(x.name || x.company).split(' ')[0];
+    title = sheet.mode === 'done' ? `Done: ${first}` : sheet.mode === 'chased' ? `Chased: ${first}` : `Next move: ${first}`;
+    const presetType = sheet.mode === 'chased' ? 'chase' : sheet.mode === 'set' ? 'meet' : 'follow';
+    const presetText = sheet.mode === 'chased' ? (m.text || '') : sheet.mode === 'set' ? 'Coffee or breakfast' : '';
+    const presetDue = sheet.mode === 'chased' ? addWorkingDays(today, 5) : sheet.mode === 'set' ? addWorkingDays(today, 5) : addDays(today, 28);
+    const ty = field('type', presetType); const owes = field('owes', ty === 'chase' ? 'them' : 'us');
+    const prev = { nextMove: x.nextMove || null };
+    const save = (nm: Record<string, string> | null) => act(() => api.patch('decision', x.id, sheet.mode === 'set' ? { nextMove: nm } : { nextMove: nm, lastContact: today } as any, nm ? 'Next move' : 'Next move cleared'), nm ? `Next: ${nm.text}, ${short(String(nm.due))}.` : `${first}: nothing owed. Back on the usual rhythm.`, async () => { await api.patch('decision', x.id, prev, 'Undid next move'); });
+    body = <>{sheet.mode !== 'set' && m.text ? <p className="vt-muted">{sheet.mode === 'done' ? 'Done' : 'Chased'}: {m.text}</p> : null}
+      <label className="vt-field">What next?<select value={ty} onChange={set('type')}>{MOVE_TYPES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+      <label className="vt-field">One line<input autoFocus value={field('text', presetText)} onChange={set('text')} placeholder={ty === 'checkback' ? 'e.g. Ask about the March refurbs' : ty === 'chase' ? 'e.g. Counter-proposal, then the PO' : 'e.g. Send the peer-review scope'} /></label>
+      <div className="vt-two"><label className="vt-field">Who owes it<select value={owes} onChange={set('owes')}><option value="us">We do</option><option value="them">They do</option></select></label>
+        <label className="vt-field">Whose<select value={field('owner', m.owner || actor || 'Barry')} onChange={set('owner')}><option>Barry</option><option>Graeme</option><option>Both</option></select></label></div>
+      <label className="vt-field">By<input type="date" value={field('due', presetDue)} onChange={set('due')} /></label>
+      <div className="vt-row-acts">{[['1 week', addWorkingDays(today, 5)], ['2 weeks', addWorkingDays(today, 10)], ['1 month', addDays(today, 28)], ['3 months', addDays(today, 91)]].map(([l, d]) => <button key={l} className="vt-btn quiet" onClick={() => setF(o => ({ ...o, due: d }))}>{l}</button>)}</div>
+      <div className="vt-row-acts"><button className="vt-btn primary" disabled={field('text', presetText).trim().length < 3} onClick={() => save({ type: ty, text: field('text', presetText).trim(), owes, owner: field('owner', m.owner || actor || 'Barry'), due: field('due', presetDue) })}>Save</button>
+        {sheet.mode !== 'set' ? <button className="vt-btn" onClick={() => save(null)}>Nothing more for now</button> : null}</div>
+      <p className="vt-muted small">A "Meet" move: Claude puts a hold in your diary and drafts the invite the next morning (drafts only).</p></>;
   } else if (sheet.kind === 'list') {
     title = sheet.title;
-    body = <ul className="vt-list">{sheet.rows.map(r => <li key={r.key}><button className="vt-card plain" onClick={() => setSheet(r.kind === 'todo' ? { kind: 'todo', id: r.ref } : { kind: 'pursuit', id: r.ref })}><b>{r.title}</b><span className="vt-muted">{r.why}</span></button></li>)}</ul>;
+    body = <ul className="vt-list">{sheet.rows.map(r => <li key={r.key}><button className="vt-card plain" onClick={() => { const px = data.people.find(y => y.id === r.ref); setSheet(px && r.person ? { kind: 'person', person: px } : r.kind === 'todo' ? { kind: 'todo', id: r.ref } : { kind: 'pursuit', id: r.ref }); }}><b>{r.title}</b><span className="vt-muted">{r.why}</span></button></li>)}</ul>;
   } else if (sheet.kind === 'note') {
     const a = sheet.about;
     title = a ? `Note: ${a.label}` : 'Note';

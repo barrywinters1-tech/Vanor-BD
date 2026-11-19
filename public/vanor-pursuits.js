@@ -55,6 +55,66 @@
   const DUE_SOON_DAYS = 7;
   const TARGET_FIRST_DAYS = 14;
 
+  // Relationship stages (18 Nov 2026, relationship-led refresh). Moved by what the other person DID, never by feel.
+  // Proposal and Instructed come from the person's linked work, never set by hand on the person.
+  // Rhythm = longest gap before they appear on Today. OWNER SETTING (Barry, 31 Oct): 2 / 6 / 8 weeks; Met 3 months (judgement);
+  // a date the person gave (next move) always wins. Instructed: no chasing while the job is live.
+  const STAGES = [
+    { key: 'known', label: 'Known', days: 0, hint: 'In the address book; not met' },
+    { key: 'met', label: 'Met', days: 90, hint: 'We have met or spoken' },
+    { key: 'warm', label: 'Warm', days: 56, hint: 'Two-way: told us about a project or need, replied, or met again' },
+    { key: 'proposal', label: 'Proposal', days: 14, hint: 'Asked for a scope or price, or we sent one' },
+    { key: 'instructed', label: 'Instructed', days: 0, hint: 'Paid work agreed' },
+  ];
+  const STAGE = Object.fromEntries(STAGES.map(x => [x.key, x]));
+  const INTRODUCER_DAYS = 42;
+  const SILENT_DAYS = 182; // Dunbar: a good contact fades after about six months without contact
+  const NEXT_TYPES = [
+    { key: 'follow', label: 'Follow up' }, { key: 'meet', label: 'Meet' }, { key: 'send', label: 'Send' },
+    { key: 'chase', label: 'Chase (they owe us)' }, { key: 'introduce', label: 'Introduce' }, { key: 'checkback', label: 'Check back' },
+  ];
+  const NEXT_TYPE = Object.fromEntries(NEXT_TYPES.map(x => [x.key, x]));
+  /** Old rung to stage, for people the new model has not touched yet. */
+  /** The latest of the three contact dates (a partner's tap, a meeting, a two-way email). */
+  function lastContactOf(d) { return [d && d.lastContact, d && d.lastMet, d && d.lastEmailed].map(x => String(x || '').slice(0, 10)).sort().pop() || ''; }
+  function stageFromRung(d) {
+    const r = d && d.rung;
+    if (!r) return d && d.lastMet ? 'met' : 'known';
+    if (r === 'target') return d.lastMet ? 'met' : 'known';
+    if (r === 'contact') return Number(d.metCount || 0) >= 2 ? 'warm' : (d.lastMet ? 'met' : 'known');
+    return 'warm'; // referrer, active, partner
+  }
+  /** A person's stage: linked work decides Proposal / Instructed; otherwise the stored stage, else the old rung. */
+  function stageOf(d, work) {
+    const w = work || {};
+    if (w.instructed) return 'instructed';
+    if (w.proposal) return 'proposal';
+    const s = d && d.stage;
+    return STAGE[s] && !['proposal', 'instructed'].includes(s) ? s : stageFromRung(d || {});
+  }
+  function introducerOf(d) { return !!(d && (d.introducer || Number(d.receivedN || 0) > 0 || ['referrer', 'partner'].includes(d.rung))); }
+  /** The rung the old board and jobs read, kept in step with the stage. Known never gets a rung. */
+  function rungFor(stage, introducer, currentRung) {
+    if (stage === 'known') return currentRung || '';
+    if (currentRung === 'partner' || currentRung === 'active') return currentRung;
+    if (introducer) return 'referrer';
+    return 'contact';
+  }
+  /** When this person next needs us. A dated next move wins; else the stage rhythm from the last two-way contact. */
+  function relationshipDue(d, stage, introducer, today) {
+    const nm = d && d.nextMove;
+    if (nm && nm.due) {
+      const due = nm.owes === 'them' && nm.type === 'chase' ? addWorkdays(nm.due, 3) : nm.due;
+      return { due, reason: 'move' };
+    }
+    if (stage === 'known' || stage === 'instructed') return { due: '', reason: '' };
+    const last = lastContactOf(d);
+    if (!last) return { due: today, reason: 'rhythm' };
+    const days = Math.min(STAGE[stage].days || 90, introducer ? INTRODUCER_DAYS : 9999);
+    return { due: addDays(last, days), reason: 'rhythm' };
+  }
+  function addWorkdays(iso, n) { let d = new Date(iso + 'T12:00:00Z'); let left = n; while (left > 0) { d.setUTCDate(d.getUTCDate() + 1); const w = d.getUTCDay(); if (w && w !== 6) left--; } return d.toISOString().slice(0, 10); }
+
   // McMakin, How Clients Buy: where a buyer is after this meeting.
   const BUYING = ['Aware', 'Understands', 'Interested', 'Respects', 'Trusts', 'Able', 'Ready'];
 
@@ -184,6 +244,6 @@
     return { next, days, overdue: days < 0, dueSoon: days >= 0 && days <= DUE_SOON_DAYS };
   }
 
-  root.VanorPursuits = { PEOPLE_LANES, PEOPLE_LANE, followMode, POOL_WEEKLY, weekKey, reconnectPick, late, theirMove, overdueOurs, FUNDER_PROPOSAL_DAYS, lapsedProposal, proposalDays, DUE_SOON_DAYS, TARGET_FIRST_DAYS, touched, TYPES, IN_HOUSE, PROPOSAL_DAYS, STALE_DAYS, value, isMonthly, liveProposal, stale, money, daysBetween, LANES, LANE, STATES, STATE, CLOSED, GATE, RUNGS, RUNG, BUYING, isPursuit, isOpen, laneOf, stateOf, gateMissing, validate, pounds, sortRows, board, nextMeeting, meetingStatus, addDays };
+  root.VanorPursuits = { lastContactOf, STAGES, STAGE, INTRODUCER_DAYS, SILENT_DAYS, NEXT_TYPES, NEXT_TYPE, stageFromRung, stageOf, introducerOf, rungFor, relationshipDue, addWorkdays, PEOPLE_LANES, PEOPLE_LANE, followMode, POOL_WEEKLY, weekKey, reconnectPick, late, theirMove, overdueOurs, FUNDER_PROPOSAL_DAYS, lapsedProposal, proposalDays, DUE_SOON_DAYS, TARGET_FIRST_DAYS, touched, TYPES, IN_HOUSE, PROPOSAL_DAYS, STALE_DAYS, value, isMonthly, liveProposal, stale, money, daysBetween, LANES, LANE, STATES, STATE, CLOSED, GATE, RUNGS, RUNG, BUYING, isPursuit, isOpen, laneOf, stateOf, gateMissing, validate, pounds, sortRows, board, nextMeeting, meetingStatus, addDays };
   if (typeof module !== 'undefined') module.exports = root.VanorPursuits;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

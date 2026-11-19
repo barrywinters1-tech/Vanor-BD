@@ -97,3 +97,9 @@
   .vt-shade { align-items: center; }
   .vt-sheet { border-radius: 16px; }
 }
+.vt-tag.them { background: var(--teal); }
+.vt-sub { margin: 16px 0 6px; font-size: 15px; display: flex; gap: 8px; align-items: baseline; }
+.vt-sub span { color: var(--muted); font-weight: 500; font-size: 13px; }
+.vt-ledger { margin: 6px 0; padding-left: 16px; font-size: 14px; }
+.vt-book { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 6px 0 10px; }
+.vt-book .vt-big { margin: 0 0 4px; font-size: 17px; }
