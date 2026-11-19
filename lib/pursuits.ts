@@ -251,7 +251,7 @@ export async function setPerson(id: string, p: { rung?: string; lane?: string; l
 
 // ---------- Relationships (18 Nov 2026) ----------
 export type NextMove = { type: string; text: string; owner?: string; owes?: 'us' | 'them'; due: string };
-export type PersonRel = { stage?: string; nextMove?: NextMove | null; trade?: string; tradeSuggested?: string; metBy?: string[]; evidenceOn?: string; why?: string };
+export type PersonRel = { stage?: string; nextMove?: NextMove | null; trade?: string; tradeSuggested?: string; metBy?: string[]; evidenceOn?: string; why?: string; restoreArchived?: boolean };
 const STAGE_ORDER = ['known', 'met', 'warm'];
 /** Claude's relationship write for one person. Stage: Known, Met or Warm only (Proposal and Instructed come from work);
  *  never backwards except Warm -> Met after six months with no two-way contact. A next move a partner set after the
@@ -273,6 +273,7 @@ export async function setRelationship(id: string, p: PersonRel, actor = 'Claude'
   await updateEntity('decision', id, d => {
     const next: Entity = { ...d };
     const now = new Date().toISOString();
+    if (p.restoreArchived && d.status === 'Archive') { next.status = ''; next.restoredAt = now; next.restoredBy = actor; notes.push('Restored from the archive.'); }
     if (p.stage) {
       const cur = V.stageOf(d);
       const back = STAGE_ORDER.indexOf(p.stage) < STAGE_ORDER.indexOf(cur);
