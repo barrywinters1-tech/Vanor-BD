@@ -171,9 +171,9 @@ export default function TodayApp({ api = liveApi, initialTab = 'today' as Tab }:
   return <div className="vt">
     {header}
     <main className="vt-main">{tab === 'today' ? todayTab : tab === 'money' ? moneyTab : tab === 'people' ? peopleTab : eventsTab}</main>
-    <button className="vt-note-btn" onClick={() => setSheet({ kind: 'note' })} aria-label="Add a note">+ Note</button>
     <nav className="vt-tabs" aria-label="Screens">{([['today', 'Today'], ['money', 'Money'], ['people', 'People'], ['events', 'Events']] as [Tab, string][]).map(([k, l]) =>
       <button key={k} className={tab === k ? 'on' : ''} onClick={() => { setTab(k); window.scrollTo(0, 0); }}>{l}{k === 'today' && view.rows.length ? <span className="vt-badge">{view.rows.length}</span> : null}</button>)}
+      <button className="vt-tab-note" onClick={() => setSheet({ kind: 'note' })} aria-label="Add a note">+ Note</button>
       <a className="vt-old" href="/board">Old board</a></nav>
     {sheet ? <SheetView sheet={sheet} close={() => setSheet(null)} data={data} today={today} actor={actor} api={api} act={act} decide={decide} setSheet={setSheet} todoDone={todoDone} /> : null}
     {toast ? <div className="vt-toast" role="status">{toast.text}{toast.undo ? <button onClick={() => { const u = toast.undo!; setToast(null); u(); }}>Undo</button> : null}</div> : null}
@@ -365,6 +365,7 @@ function SheetView({ sheet, close, data, today, actor, api, act, decide, setShee
     const gg = field('gg', '');
     body = <><p className="vt-muted">{[x.jobTitle, x.company].filter(Boolean).join(' · ')}</p>
       <p>{x.email ? <a href={`mailto:${x.email}`}>{x.email}</a> : null}{x.phone ? <> · <a href={`tel:${x.phone}`}>{x.phone}</a></> : null}{x.linkedin ? <> · <a href={x.linkedin} target="_blank" rel="noopener">LinkedIn</a></> : null}</p>
+      <p className="vt-label">Where we stand</p>
       <div className="vt-row-acts" role="group" aria-label="Where we stand">
         {(['known', 'met', 'warm'] as const).map(st => <button key={st} className={'vt-btn' + (x.stage === st ? ' primary' : '')} disabled={derived} onClick={() => x.stage !== st && setStage(st)}>{STAGE_LABEL[st].split(',')[0]}</button>)}
         {derived ? <span className="vt-pill">{STAGE_LABEL[x.stage]} (from the work)</span> : null}{x.introducer ? <span className="vt-pill">Introducer</span> : null}
@@ -400,7 +401,7 @@ function SheetView({ sheet, close, data, today, actor, api, act, decide, setShee
       <div className="vt-two"><label className="vt-field">Who owes it<select value={owes} onChange={set('owes')}><option value="us">We do</option><option value="them">They do</option></select></label>
         <label className="vt-field">Whose<select value={field('owner', m.owner || actor || 'Barry')} onChange={set('owner')}><option>Barry</option><option>Graeme</option><option>Both</option></select></label></div>
       <label className="vt-field">By<input type="date" value={field('due', presetDue)} onChange={set('due')} /></label>
-      <div className="vt-row-acts">{[['1 week', addWorkingDays(today, 5)], ['2 weeks', addWorkingDays(today, 10)], ['1 month', addDays(today, 28)], ['3 months', addDays(today, 91)]].map(([l, d]) => <button key={l} className="vt-btn quiet" onClick={() => setF(o => ({ ...o, due: d }))}>{l}</button>)}</div>
+      <div className="vt-row-acts">{[['1 week', addWorkingDays(today, 5)], ['2 weeks', addWorkingDays(today, 10)], ['1 month', addDays(today, 28)], ['3 months', addDays(today, 91)]].map(([l, d]) => <button key={l} className={'vt-btn quiet' + (field('due', presetDue) === d ? ' on' : '')} onClick={() => setF(o => ({ ...o, due: d }))}>{l}</button>)}</div>
       <div className="vt-row-acts"><button className="vt-btn primary" disabled={field('text', presetText).trim().length < 3} onClick={() => save({ type: ty, text: field('text', presetText).trim(), owes, owner: field('owner', m.owner || actor || 'Barry'), due: field('due', presetDue) })}>Save</button>
         {sheet.mode !== 'set' ? <button className="vt-btn" onClick={() => save(null)}>Nothing more for now</button> : null}</div>
       <p className="vt-muted small">A "Meet" move: Claude puts a hold in your diary and drafts the invite the next morning (drafts only).</p></>;
