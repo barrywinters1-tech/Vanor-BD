@@ -22,6 +22,7 @@ import { signalFeed, setHeadline } from '../../../../lib/signals-feed';
 import { researchCompany, normCompany } from '../../../../lib/company-intel';
 import { bolsterPeople } from '../../../../lib/people-bolster';
 import { addTodos, listTodos, todoDone, jobRan } from '../../../../lib/todos';
+import { listClients, saveClients, addNote } from '../../../../lib/clients';
 import { proposePeople } from '../../../../lib/people-tray';
 import { openCaptures, captureDone, captureImages } from '../../../../lib/captures';
 import { researchBatch, saveIntel, signalContacts } from '../../../../lib/company-intel-store';
@@ -207,7 +208,7 @@ function createServer() {
     atStake: z.string().max(120).optional(), amount: z.number().min(0).max(5e7).optional().describe('Fee in pounds, a number'), type: z.enum(['one-off', 'monthly']).optional(), latest: z.string().max(300).optional(), nextAction: z.string().max(200).optional(),
     owner: z.enum(['Barry', 'Graeme', 'Both']).optional(), dueBy: date.optional(), org: z.string().max(120).optional(),
     person: z.string().max(160).optional(), email: z.string().max(160).optional(), recordId: z.string().optional(),
-    source: z.string().max(200).optional(), notes: z.string().max(600).optional(),
+    source: z.string().max(200).optional(), notes: z.string().max(600).optional(), clientId: z.string().max(80).optional().describe('The client record this deal sits under (client:<slug>, from clients_save)'),
     issuedOn: date.optional().describe('Date the proposal was sent'), validUntil: date.optional(), decisionDate: date.optional().describe('Only a date the client stated; quote it in latest'), chaseOn: date.optional(),
     energisedBy: date.optional().describe('Data centres: grid energisation date'), capital: z.string().max(200).optional().describe('Data centres: sponsor, equity and lenders'), keyContractors: z.string().max(200).optional().describe('Data centres: main, M&E and commissioning contractors'),
     gate: z.object({ asset: z.boolean().optional(), problem: z.boolean().optional(), capital: z.boolean().optional(), route: z.boolean().optional() }).optional(),
@@ -236,6 +237,31 @@ function createServer() {
     inputSchema: { id: z.string(), instructedBy: z.enum(['Barry', 'Graeme']), instruction: z.string().min(10).max(300).describe('The founder\'s words, quoted'), reason: z.string().min(5).max(200) },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async (p) => { const r = await parkPursuit(p); return out(r, r.parked ? 'Parked (was ' + r.from + ').' : 'Not parked: ' + r.why); });
+  // Vanor Live (23 Nov 2026): client relationship records and deal timelines.
+  server.registerTool('clients_list', {
+    title: 'Client relationship records (Vanor Live)',
+    description: 'Read-only. Every client record: who they are, the people, what they care about, what each side owes, past work, warmth, and the timeline (history, newest first). Deals link to a client by clientId on the pursuit.',
+    inputSchema: {},
+    annotations: { readOnlyHint: true },
+  }, async () => { const items = await listClients(); return out({ items }, `${items.length} clients.`); });
+  server.registerTool('clients_save', {
+    title: 'Create or update client relationship records (batch)',
+    description: 'Matches by id, else exact name; a new id is client:<slug of name>. type: Lender, Fund, Developer, Owner, Operator, Contractor, Consultant, Council, Other. warmth: New, Warm, Strong, Cooling. people = the named people at the client (name, role, email, recordId = board contact id). cares = what they care about in their words; theyOwe / weOwe = open promises; work = past or current work with us; personal = rapport notes they shared (no sensitive details); whoElse = competitors or other advisers in the picture. Only facts from mail, meetings or a partner; never invented. Notes go through timeline_note, not here. Link a deal with pursuits_save { id, clientId }.',
+    inputSchema: { items: z.array(z.object({ id: z.string().optional(), name: z.string().min(2).max(120).optional(), type: z.string().max(40).optional(), owner: z.enum(['Barry', 'Graeme', 'Both']).optional(), warmth: z.enum(['New', 'Warm', 'Strong', 'Cooling']).optional(),
+      people: z.array(z.object({ name: z.string().min(2).max(120), role: z.string().max(120).optional(), email: z.string().max(160).optional(), recordId: z.string().optional() })).max(30).optional(),
+      cares: z.string().max(600).optional(), theyOwe: z.string().max(400).optional(), weOwe: z.string().max(400).optional(), work: z.string().max(600).optional(), personal: z.string().max(400).optional(), whoElse: z.string().max(300).optional() })).min(1).max(50) },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ items }) => out(await saveClients(items, 'Claude'), 'Clients saved.'));
+  server.registerTool('timeline_note', {
+    title: 'Add a dated note to a deal or client timeline (batch)',
+    description: 'id = pursuit:<slug> or client:<slug>. date = when it happened (YYYY-MM-DD). kind: Note, Call, Meeting, Email, Proposal, Intro. text = one or two lines of what happened, with the evidence. The same date and text twice is ignored, so a retry is safe. Notes never change stage, next action or money.',
+    inputSchema: { notes: z.array(z.object({ id: z.string().regex(/^(pursuit|client):/), text: z.string().min(2).max(1000), date: date.optional(), kind: z.enum(['Note', 'Call', 'Meeting', 'Email', 'Proposal', 'Intro']).optional() })).min(1).max(100) },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ notes }) => {
+    const done: string[] = [], failed: { id: string; why: string }[] = [];
+    for (const n of notes) { try { await addNote({ ...n, by: 'Claude' }); done.push(n.id); } catch (e: any) { failed.push({ id: n.id, why: e?.message || 'failed' }); } }
+    return out({ done: done.length, failed }, `${done.length} notes added.`);
+  });
   server.registerTool('people_met', {
     title: 'People: record meetings from the calendar (batch)',
     description: 'One item per external person per meeting that actually happened. Matches by exact email only; a name alone is never auto-recorded. Pass eventId (the calendar event id) so a meeting is never counted twice. Future dates are refused. Returns toConfirm (names with no email, bad dates) and unmatched emails for the founders. Sets last met, counts meetings, and optionally the one-line note from the meeting, the rung (target/contact/referrer/active/partner), lane and the McMakin buying stage reached (Aware, Understands, Interested, Respects, Trusts, Able, Ready). Returns the unmatched so they can be added.',

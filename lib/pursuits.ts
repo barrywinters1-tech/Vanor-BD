@@ -10,14 +10,14 @@ const V = (globalThis as any).VanorPursuits;
 export const PURSUIT_RULES = { lanes: V.LANES, states: V.STATES, closed: V.CLOSED, gate: V.GATE, rungs: V.RUNGS, buying: V.BUYING };
 
 const slug = (s: string) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
-const FIELDS = ['name', 'lane', 'state', 'atStake', 'amount', 'type', 'invoicedOn', 'lostReason', 'issuedOn', 'validUntil', 'decisionDate', 'chaseOn', 'outcome', 'contract', 'energisedBy', 'capital', 'keyContractors', 'latest', 'nextAction', 'owner', 'dueBy', 'org', 'person', 'email', 'recordId', 'source', 'notes'] as const;
+const FIELDS = ['name', 'lane', 'state', 'atStake', 'amount', 'type', 'invoicedOn', 'lostReason', 'issuedOn', 'validUntil', 'decisionDate', 'chaseOn', 'outcome', 'contract', 'energisedBy', 'capital', 'keyContractors', 'latest', 'nextAction', 'owner', 'dueBy', 'org', 'person', 'email', 'recordId', 'source', 'notes', 'clientId'] as const;
 // Money and outcome decisions belong to the founders: Claude never sets them, new or existing (31 Oct 2026).
 const FOUNDER_ONLY = ['invoicedOn', 'lostReason', 'outcome', 'contract'] as const;
 const CLAUDE_NEW_PER_DAY = 5;
 
 export type PursuitInput = {
   id?: string; name?: string; lane?: string; state?: string; atStake?: string; latest?: string; nextAction?: string;
-  owner?: string; dueBy?: string; org?: string; person?: string; email?: string; recordId?: string; source?: string; notes?: string;
+  owner?: string; dueBy?: string; org?: string; clientId?: string; person?: string; email?: string; recordId?: string; source?: string; notes?: string;
   amount?: number; type?: string; invoicedOn?: string; lostReason?: string;
   issuedOn?: string; validUntil?: string; decisionDate?: string; chaseOn?: string; outcome?: string; contract?: Record<string, boolean>;
   energisedBy?: string; capital?: string; keyContractors?: string;
@@ -30,7 +30,7 @@ export async function listPursuits({ lane = 'all', includeClosed = false }: { la
   const b = V.board(all, { lane, today: t });
   const strip = (p: Entity) => ({ id: p.id, name: p.name, lane: V.laneOf(p), state: V.stateOf(p), atStake: p.atStake || '', latest: p.latest || '',
     nextAction: p.nextAction || '', owner: p.owner || '', dueBy: p.dueBy || '', late: !!(p.dueBy && p.dueBy < t), org: p.org || '', person: p.person || '',
-    email: p.email || '', recordId: p.recordId || '', gateMissing: V.gateMissing(p), amount: p.amount ?? null, type: p.type || 'one-off', invoicedOn: p.invoicedOn || '', stale: V.stale(p, t), proposed: V.liveProposal(p, t) ? p.proposed : null });
+    email: p.email || '', recordId: p.recordId || '', gateMissing: V.gateMissing(p), amount: p.amount ?? null, type: p.type || 'one-off', invoicedOn: p.invoicedOn || '', stale: V.stale(p, t), proposed: V.liveProposal(p, t) ? p.proposed : null, clientId: p.clientId || '' });
   return {
     today: t, total: b.total, onTable: b.onTable, onTableMonthly: b.onTableMonthly, overdue: b.overdue, stale: b.stale, counts: b.counts, money: V.money(all, t),
     byState: Object.fromEntries(Object.entries(b.by).map(([k, rows]) => [k, (rows as Entity[]).map(strip)])),

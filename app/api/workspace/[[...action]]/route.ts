@@ -12,7 +12,10 @@ import { runIntel } from '../../../../lib/intel-ingest';
 import { lookupPerson, searchPeople } from '../../../../lib/rocketreach';
 import { logEvent, saveEntity as storeSave, updateEntity as storeUpdate } from '../../../../lib/bd-store';
 import { runBackup } from '../../../../lib/backup-job';
-import { undoClaudeUpdate, setRelationship, giveGet } from '../../../../lib/pursuits';
+import { undoClaudeUpdate, setRelationship, giveGet, savePursuits } from '../../../../lib/pursuits';
+import { addTodos } from '../../../../lib/todos';
+import { saveClients, addNote, addPerson } from '../../../../lib/clients';
+import { CLIENT_FIELDS, STAGE, stateForStage, type Stage } from '../../../../lib/live-rules';
 import { suggestTrade, isPlaceholder, TRADE_KEYS } from '../../../../lib/trades';
 
 /** One person as the new screens see them (18 Nov 2026): stage from the record plus their linked work, the next move,
@@ -53,7 +56,8 @@ const PV = (globalThis as any).VanorPursuits;
 // Fields the new screens may change, per kind (18 Nov 2026). Anything else is refused, so a partial screen never
 // overwrites fields it does not show; the server merges onto the current record.
 const PATCHABLE: Record<string, string[]> = {
-  pursuit: ['nextAction', 'dueBy', 'chaseOn', 'decisionDate', 'state', 'amount', 'type', 'owner', 'latest', 'notes', 'snoozedUntil', 'ask', 'proposed', 'outcome', 'lostReason', 'wonOn', 'parkedAt', 'parkedBy', 'parkedFrom', 'parkedReason', 'issuedOn'],
+  pursuit: ['nextAction', 'dueBy', 'chaseOn', 'decisionDate', 'state', 'amount', 'type', 'owner', 'latest', 'notes', 'snoozedUntil', 'ask', 'proposed', 'outcome', 'lostReason', 'wonOn', 'parkedAt', 'parkedBy', 'parkedFrom', 'parkedReason', 'issuedOn', 'stage', 'clientId', 'name', 'atStake', 'lane', 'person', 'email', 'org'],
+  client: CLIENT_FIELDS.filter(k => k !== 'history'),
   todo: ['status', 'doneAt', 'doneBy', 'doneReason', 'doneNote', 'snoozedUntil', 'reopenedAt', 'sentOn'],
   setting: ['on'],
 };
@@ -234,7 +238,7 @@ export async function GET(request: NextRequest, context: Context) {
       // Light load for the new screens: no contact list, no history log.
       const [records, decisions, work, plannedEvents] = await Promise.all([list(access, 'source'), list(access, 'decision'), list(access, 'work'), list(access, 'planned_event')]);
       const cutoff = new Date(Date.now() - 45 * 864e5).toISOString();
-      const keep = (w: Entity) => (w.kind === 'pursuit' && (!['won', 'lost', 'parked'].includes(w.state) || String(w.closedAt || w.updatedAt || w.parkedAt || '') >= cutoff)) || w.kind === 'job' || w.kind === 'setting' || (w.kind === 'capture' && w.status === 'open')
+      const keep = (w: Entity) => (w.kind === 'pursuit' && (!['won', 'lost', 'parked'].includes(w.state) || String(w.closedAt || w.updatedAt || w.parkedAt || '') >= cutoff)) || w.kind === 'job' || w.kind === 'setting' || w.kind === 'client' || (w.kind === 'capture' && w.status === 'open')
         || (w.kind === 'todo' && (w.status === 'open' || String(w.doneAt || '') >= cutoff));
       const dm = new Map(decisions.map(d => [d.id, d]));
       const links = workLinks(work);
@@ -349,19 +353,68 @@ export async function POST(request: NextRequest, context: Context) {
         let next: Entity = { ...(cur || { id, kind: 'setting' }), ...fields, id };
         if (kind === 'pursuit') {
           // A partner moving a pursuit forward asserts the four conditions themselves; the screens no longer ask them one by one.
-          if ('state' in fields && !['watch', ...PV.CLOSED].includes(String(next.state))) next.gate = { asset: true, problem: true, capital: true, route: true, ...Object.fromEntries(Object.entries(cur?.gate || {}).filter(([, v]) => v === true)) };
+          // Vanor Live (23 Nov 2026): a stage tap sets the matching board state; a plain state change drops a stage that no longer fits.
+          if ('stage' in fields) {
+            if (!STAGE[String(fields.stage)]) return reply({ error: 'Unknown stage.' }, 400);
+            if ('state' in fields) return reply({ error: 'Change the stage or the state, not both.' }, 400);
+            next.state = stateForStage(fields.stage as Stage, PV.CLOSED.includes(cur?.state) ? 'watch' : String(cur?.state || 'watch'));
+            next.stageState = next.state;
+          } else if ('state' in fields) { next.stage = ''; next.stageState = ''; }
+          const stateChanged = next.state !== cur?.state;
+          if (stateChanged && !['watch', ...PV.CLOSED].includes(String(next.state))) next.gate = { asset: true, problem: true, capital: true, route: true, ...Object.fromEntries(Object.entries(cur?.gate || {}).filter(([, v]) => v === true)) };
           const why = PV.validate(next); if (why) return reply({ error: why }, 400);
           next.archived = PV.CLOSED.includes(next.state);
           const changes = Object.keys(fields).map(k => `${k}: ${String((fields as any)[k] ?? '').slice(0, 60)}`).join('; ');
           next.history = [{ at: now, by: actor, change: note || changes }, ...((cur?.history as unknown[]) || [])].slice(0, 30);
           next.founderTouchedAt = now; next.updatedBy = actor; next.updatedAt = now;
-          if ('state' in fields) next.closedAt = PV.CLOSED.includes(next.state) ? (cur?.closedAt && PV.CLOSED.includes(cur?.state) ? cur.closedAt : now) : '';
-          if (('nextAction' in fields || 'dueBy' in fields || 'state' in fields) && !('proposed' in fields)) next.proposed = null;
+          if (stateChanged) next.closedAt = PV.CLOSED.includes(next.state) ? (cur?.closedAt && PV.CLOSED.includes(cur?.state) ? cur.closedAt : now) : '';
+          if (('nextAction' in fields || 'dueBy' in fields || stateChanged) && !('proposed' in fields)) next.proposed = null;
         }
         if (kind === 'setting') { next = { ...next, kind: 'setting', updatedBy: actor }; }
+        if (kind === 'client') { if ('people' in fields && !Array.isArray(fields.people)) return reply({ error: 'people must be a list.' }, 400);
+          next.partnerEdited = [...new Set([...((cur?.partnerEdited as string[]) || []), ...Object.keys(fields)])];
+          if ('warmth' in fields && !['New', 'Warm', 'Strong', 'Cooling'].includes(String(fields.warmth))) return reply({ error: 'Unknown warmth.' }, 400); next = { ...next, updatedBy: actor, updatedAt: now }; }
         try { return reply(await save(access, scope, next, cur?._rev || 0, { type: note || 'Changed on the board', actor, recordId: next.recordId || '', note: String(next.title || next.name || id).slice(0, 120) })); }
         catch (e: any) { if (e?.status !== 409 || attempt === 1) throw e; }
       }
+    }
+    if (action === 'note') {
+      // Timeline note on a deal or client (Vanor Live). Appended server-side, newest first.
+      const { id, text, date, kind } = body as { id: string; text: string; date?: string; kind?: string };
+      if (!/^(pursuit|client):/.test(String(id || ''))) return reply({ error: 'Invalid record.' }, 400);
+      try { return reply(await addNote({ id, text, date, kind: kind || 'Note', by: await actorOf(access) })); }
+      catch (e: any) { return reply({ error: e?.message || 'That note did not save.' }, 400); }
+    }
+    if (action === 'deal') {
+      // A partner adds a deal on Vanor Live: a new pursuit at the stage they picked (they assert the four conditions).
+      const b = (body || {}) as Record<string, any>; const actor = await actorOf(access);
+      const name = String(b.name || '').trim(); if (name.length < 2) return reply({ error: 'Give the deal a name.' }, 400);
+      if (!STAGE[String(b.stage || 'lead')]) return reply({ error: 'Unknown stage.' }, 400);
+      const sl = 'pursuit:' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+      const taken = (await list(access, 'work')).some(w => w.id === sl || (w.kind === 'pursuit' && String(w.name).toLowerCase() === name.toLowerCase()));
+      if (taken) return reply({ error: 'A deal with that name already exists. Open it instead.' }, 409);
+      const stage = String(b.stage || 'lead') as Stage, state = stateForStage(stage, 'watch');
+      const item: Record<string, any> = { name, lane: b.lane || 'other', state, owner: b.owner || actor, source: 'Added on Vanor Live by ' + actor };
+      for (const k of ['nextAction', 'dueBy', 'amount', 'type', 'atStake', 'person', 'email', 'org', 'clientId']) if (b[k] !== undefined && b[k] !== '') item[k] = b[k];
+      if (state !== 'watch') item.gate = { asset: true, problem: true, capital: true, route: true };
+      const r = await savePursuits([item], actor);
+      if (r.rejected.length) return reply({ error: r.rejected[0].reason }, 400);
+      if (r.saved[0] !== sl) return reply({ error: 'That deal name clashes with an existing record. Pick another name.' }, 409);
+      await storeUpdate('work', r.saved[0], c => ({ ...c, stage, stageState: state }));
+      return reply({ id: r.saved[0] });
+    }
+    if (action === 'todo') {
+      const b = (body || {}) as Record<string, any>; const actor = await actorOf(access);
+      const r = await addTodos([{ type: 'action', title: String(b.title || '').trim(), due: b.due || undefined, owner: b.owner || actor, pursuitId: b.pursuitId || undefined, meetingAt: b.meetingAt || undefined, source: 'Vanor Live, ' + actor } as any]);
+      return r.added ? reply({ ok: true }) : reply({ error: r.skipped[0]?.why || 'That to-do did not save.' }, 400);
+    }
+    if (action === 'person') {
+      try { await addPerson(String(body?.id || ''), body?.person || {}, await actorOf(access)); return reply({ ok: true }); }
+      catch (e: any) { return reply({ error: e?.message || 'That person did not save.' }, 400); }
+    }
+    if (action === 'client') {
+      const r = await saveClients([body || {}], await actorOf(access));
+      return r.rejected.length ? reply({ error: r.rejected[0].reason }, 400) : reply({ id: r.saved[0] });
     }
     if (action === 'give-get') {
       const { id, dir, kind, note } = body as { id: string; dir: 'gave' | 'received'; kind: string; note: string };
