@@ -137,5 +137,5 @@ export async function workspaceRevision() {
 
 /** The older engine's work items, without the Pursuits board's items (kind 'pursuit'). */
 export async function listWork(): Promise<Entity[]> {
-  return (await listScope('work')).filter(w => !['pursuit', 'todo', 'job', 'stripstate', 'candidate', 'capture', 'captureimg', 'snapshot', 'scanstats', 'setting', 'client'].includes(w.kind));
+  return (await listScope('work')).filter(w => !['pursuit', 'todo', 'job', 'stripstate', 'candidate', 'capture', 'captureimg', 'snapshot', 'scanstats', 'setting', 'client', 'calendar'].includes(w.kind));
 }

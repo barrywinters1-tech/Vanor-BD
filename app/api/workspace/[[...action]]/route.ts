@@ -238,7 +238,7 @@ export async function GET(request: NextRequest, context: Context) {
       // Light load for the new screens: no contact list, no history log.
       const [records, decisions, work, plannedEvents] = await Promise.all([list(access, 'source'), list(access, 'decision'), list(access, 'work'), list(access, 'planned_event')]);
       const cutoff = new Date(Date.now() - 45 * 864e5).toISOString();
-      const keep = (w: Entity) => (w.kind === 'pursuit' && (!['won', 'lost', 'parked'].includes(w.state) || String(w.closedAt || w.updatedAt || w.parkedAt || '') >= cutoff)) || w.kind === 'job' || w.kind === 'setting' || w.kind === 'client' || (w.kind === 'capture' && w.status === 'open')
+      const keep = (w: Entity) => (w.kind === 'pursuit' && (!['won', 'lost', 'parked'].includes(w.state) || String(w.closedAt || w.updatedAt || w.parkedAt || '') >= cutoff)) || w.kind === 'job' || w.kind === 'setting' || w.kind === 'client' || w.kind === 'calendar' || (w.kind === 'capture' && w.status === 'open')
         || (w.kind === 'todo' && (w.status === 'open' || String(w.doneAt || '') >= cutoff));
       const dm = new Map(decisions.map(d => [d.id, d]));
       const links = workLinks(work);

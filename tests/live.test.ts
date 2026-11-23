@@ -107,3 +107,15 @@ test('people merge, never replace; Claude never overwrites a field a partner typ
   c = await getOne('work', 'client:acme-lending');
   assert.equal(c!.cares, 'Barry wrote this'); assert.equal(c!.weOwe, 'Deck');
 });
+
+test('calendar mirror: released and free holds dropped, tentative holds kept, sync replaces', async () => {
+  const { syncCalendar } = await import('../lib/calendar.ts');
+  const ev = (id: string, subject: string, showAs = 'busy') => ({ id, subject, start: '2026-11-24T12:30:00.0000000', showAs, attendees: [{ name: 'Pat Example', email: 'PAT@example.com' }] });
+  const r = await syncCalendar('Barry', '2026-11-23', '2026-12-07', [ev('1', 'Coffee with Pat'), ev('2', 'Vanor hold released: Pat E', 'free'), ev('3', 'Vanor hold: Kim S', 'tentative'), ev('1', 'Coffee with Pat')]);
+  assert.deepEqual(r, { owner: 'Barry', kept: 2, dropped: 2 });
+  let c = await getOne('work', 'calendar:barry');
+  assert.equal(c!.kind, 'calendar'); assert.equal(c!.events[1].hold, true); assert.equal(c!.events[0].attendees[0].email, 'pat@example.com');
+  await syncCalendar('Barry', '2026-11-23', '2026-12-07', [ev('9', 'Lunch')]);
+  c = await getOne('work', 'calendar:barry');
+  assert.deepEqual(c!.events.map((e: any) => e.subject), ['Lunch']);
+});
