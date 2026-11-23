@@ -211,7 +211,7 @@ export default function LiveApp() {
     return <><div className="kpis" style={{ maxWidth: 520 }}><div className="kpi"><span>Won (last 45 days)</span><strong>{money(won)}</strong></div><div className="kpi"><span>Closed deals</span><strong>{list.length}</strong></div></div>
       <div className="tablewrap"><table><thead><tr><th scope="col">Deal</th><th scope="col">Outcome</th><th scope="col">Value</th><th scope="col">Closed</th><th scope="col">Why</th></tr></thead><tbody>
         {list.length ? list.map(d => <tr key={d.id}><td><button type="button" className="btn link" onClick={() => setDealId(d.id)}>{d.name}</button><br /><span className="small">{clientName(d)}</span></td><td><span className={'badge ' + (d.state === 'won' ? 'good' : d.state === 'lost' ? 'late' : 'quiet')}>{CLOSED_LABEL[d.state] || d.state}</span></td><td className="num">{valueLine(d)}</td><td className="num">{fmtDate(closedOn(d))}</td><td>{closeWhy(d)}</td></tr>) : <tr><td colSpan={5}>Nothing closed in the last 45 days.</td></tr>}
-      </tbody></table></div><p className="small">Older closed deals stay on the <a href="/board">full board</a>.</p></>;
+      </tbody></table></div><p className="small">Shows deals closed in the last 45 days.</p></>;
   }
 
   useEffect(() => { document.body.style.overflow = dealId ? 'hidden' : ''; return () => { document.body.style.overflow = ''; }; }, [dealId]);
@@ -227,7 +227,7 @@ export default function LiveApp() {
   return <div className="vl" data-theme={theme === 'auto' ? undefined : theme}>
     <header className="bar">
       <span className="brand">Vanor Live</span>
-      <nav className="nav" aria-label="Sections">{(['today', 'pipeline', 'clients', 'closed'] as View[]).map(v => <a key={v} href={'#' + v} aria-current={view === v ? 'page' : undefined}>{v[0].toUpperCase() + v.slice(1)}</a>)}<a className="out" href="/today">Board</a></nav>
+      <nav className="nav" aria-label="Sections">{(['today', 'pipeline', 'clients', 'closed'] as View[]).map(v => <a key={v} href={'#' + v} aria-current={view === v ? 'page' : undefined}>{v[0].toUpperCase() + v.slice(1)}</a>)}</nav>
       <div className="tools">
         <label htmlFor="vl-q" className="sr">Search deals and clients</label>
         <input id="vl-q" type="search" placeholder="Search deals, clients, people" value={q} onChange={e => setQ(e.target.value)} />
