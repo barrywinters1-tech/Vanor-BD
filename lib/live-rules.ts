@@ -24,11 +24,11 @@ export function stateForStage(stage: Stage, current = 'watch'): string {
   return 'table';
 }
 
-/** A stored stage counts only while it still agrees with the board state; if Claude or the old screens moved the
- *  state, the stage follows the state. */
+/** A stored stage counts only while the board state is still the one it was set against (stageState). If Claude or
+ *  the old screens moved the state, even away and back, the stage follows the state. */
 export function stageOf(p: Item): Stage {
   const state = p.state || 'watch';
-  if (p.stage && STAGE[p.stage] && stateForStage(p.stage, state) === state) return p.stage;
+  if (p.stage && STAGE[p.stage] && p.stageState === state && stateForStage(p.stage, state) === state) return p.stage;
   if (state === 'table') return 'proposal';
   if (state === 'act' || state === 'waiting') return 'conversation';
   return 'lead';
@@ -67,7 +67,8 @@ export function kpis(deals: Item[], today: string) {
 
 /** What a partner's stage tap changes on the pursuit. */
 export function stageChange(p: Item, stage: Stage) {
-  return { stage, state: stateForStage(stage, p.state) };
+  const state = stateForStage(stage, p.state);
+  return { stage, state, stageState: state };
 }
 
 /** Client timeline: the client's own history plus every note on its deals, newest first. */

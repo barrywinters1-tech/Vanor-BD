@@ -4,7 +4,7 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { _memReset, saveEntity, getOne } from '../lib/bd-store.ts';
 import { stageOf, stateForStage, stageChange, kpis, isQuiet, lateDays, score, clientTimeline } from '../lib/live-rules.ts';
-import { saveClients, addNote } from '../lib/clients.ts';
+import { saveClients, addNote, addPerson } from '../lib/clients.ts';
 import { savePursuits } from '../lib/pursuits.ts';
 
 beforeEach(() => _memReset());
@@ -15,9 +15,9 @@ test('stage follows the board state, and a stored stage counts only while it fit
   assert.equal(stageOf({ id: 'a', state: 'act' }), 'conversation');
   assert.equal(stageOf({ id: 'a', state: 'waiting' }), 'conversation');
   assert.equal(stageOf({ id: 'a', state: 'table' }), 'proposal');
-  assert.equal(stageOf({ id: 'a', state: 'table', stage: 'negotiating' }), 'negotiating');
-  assert.equal(stageOf({ id: 'a', state: 'act', stage: 'negotiating' }), 'conversation', 'Claude or the old board moved it back');
-  assert.equal(stageOf({ id: 'a', state: 'waiting', stage: 'conversation' }), 'conversation');
+  assert.equal(stageOf({ id: 'a', state: 'table', stage: 'negotiating', stageState: 'table' }), 'negotiating');
+  assert.equal(stageOf({ id: 'a', state: 'act', stage: 'negotiating', stageState: 'table' }), 'conversation', 'Claude or the old board moved it back');
+  assert.equal(stageOf({ id: 'a', state: 'table', stage: 'negotiating' }), 'proposal', 'a stage without the state it was set against does not count');
 });
 
 test('a stage tap maps to a board state Claude\'s jobs understand', () => {
@@ -25,13 +25,13 @@ test('a stage tap maps to a board state Claude\'s jobs understand', () => {
   assert.equal(stateForStage('conversation', 'waiting'), 'waiting');
   assert.equal(stateForStage('conversation', 'watch'), 'act');
   assert.equal(stateForStage('proposal', 'act'), 'table');
-  assert.deepEqual(stageChange({ id: 'a', state: 'act' }, 'negotiating'), { stage: 'negotiating', state: 'table' });
+  assert.deepEqual(stageChange({ id: 'a', state: 'act' }, 'negotiating'), { stage: 'negotiating', state: 'table', stageState: 'table' });
 });
 
 test('money, late and quiet', () => {
   const deals = [
     { id: 'p1', kind: 'pursuit', state: 'table', amount: 10000, dueBy: '2026-11-20', log: [{ date: '2026-11-01', text: 'sent' }] },
-    { id: 'p2', kind: 'pursuit', state: 'table', stage: 'negotiating', amount: 3000, type: 'monthly', founderTouchedAt: '2026-11-22T10:00:00Z' },
+    { id: 'p2', kind: 'pursuit', state: 'table', stage: 'negotiating', stageState: 'table', amount: 3000, type: 'monthly', founderTouchedAt: '2026-11-22T10:00:00Z' },
     { id: 'p3', kind: 'pursuit', state: 'act', amount: 8000, createdAt: '2026-11-20T09:00:00Z' },
     { id: 'p4', kind: 'pursuit', state: 'won', amount: 99999 },
   ];
@@ -87,4 +87,23 @@ test('Claude can link a deal to a client but still cannot move it', async () => 
   assert.deepEqual(r.saved, ['pursuit:acme']);
   const p = await getOne('work', 'pursuit:acme');
   assert.equal(p!.clientId, 'client:acme-lending'); assert.equal(p!.state, 'watch');
+});
+
+test('notes: future or impossible dates are refused', async () => {
+  await saveEntity('work', { id: 'pursuit:acme', kind: 'pursuit', name: 'Acme', lane: 'funder', state: 'watch' }, 0);
+  await assert.rejects(addNote({ id: 'pursuit:acme', text: 'later', date: '2099-01-01' }));
+  await assert.rejects(addNote({ id: 'pursuit:acme', text: 'bad', date: '2026-02-31' }));
+});
+
+test('people merge, never replace; Claude never overwrites a field a partner typed', async () => {
+  await saveClients([{ name: 'Acme Lending', people: [{ name: 'Pat Example', email: 'pat@example.com' }] }]);
+  await addPerson('client:acme-lending', { name: 'Kim Sample' }, 'Barry');
+  await saveClients([{ name: 'Acme Lending', people: [{ name: 'Lee Demo' }, { name: 'Pat Example', role: 'Credit' }], cares: 'Claude view' }]);
+  let c = await getOne('work', 'client:acme-lending');
+  assert.deepEqual(c!.people.map((p: any) => p.name), ['Pat Example', 'Kim Sample', 'Lee Demo']);
+  assert.equal(c!.people[0].role, 'Credit'); assert.equal(c!.cares, 'Claude view');
+  await saveEntity('work', { ...c!, cares: 'Barry wrote this', partnerEdited: ['cares'] }, c!._rev!);
+  await saveClients([{ name: 'Acme Lending', cares: 'Claude again', weOwe: 'Deck' }]);
+  c = await getOne('work', 'client:acme-lending');
+  assert.equal(c!.cares, 'Barry wrote this'); assert.equal(c!.weOwe, 'Deck');
 });

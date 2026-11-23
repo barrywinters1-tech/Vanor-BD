@@ -17,27 +17,57 @@ export async function saveClients(items: ClientInput[], actor = 'Claude') {
   const byName = new Map(existing.map(c => [String(c.name).toLowerCase(), c]));
   const saved: string[] = [], rejected: { name: string; reason: string }[] = [];
   for (const item of items) {
-    const prior = item.id ? existing.find(c => c.id === item.id) : byName.get(String(item.name || '').toLowerCase());
+    const prior = (item.id ? existing.find(c => c.id === item.id) : undefined) || byName.get(String(item.name || '').toLowerCase());
     const id = prior?.id || item.id || 'client:' + slug(item.name || '');
     if (!id.startsWith('client:')) { rejected.push({ name: item.name || id, reason: 'A client id starts client:' }); continue; }
     if (!prior && (!item.name || item.name.trim().length < 2)) { rejected.push({ name: id, reason: 'A new client needs a name.' }); continue; }
     if (!prior && await getOne('work', id)) { rejected.push({ name: item.name || id, reason: 'That id is not free for a new client.' }); continue; }
     if (item.warmth && !WARMTH.includes(item.warmth as any)) { rejected.push({ name: item.name || id, reason: 'warmth must be ' + WARMTH.join(', ') }); continue; }
     const patch: Entity = { id };
-    for (const k of CLIENT_FIELDS) if (k !== 'history' && (item as any)[k] !== undefined) patch[k] = (item as any)[k];
-    await updateEntity('work', id, cur => ({ ...cur, ...patch, kind: 'client', history: cur.history || [], ...(cur.createdAt ? {} : { createdAt: new Date().toISOString(), createdBy: actor }), updatedAt: new Date().toISOString(), updatedBy: actor }), true);
+    for (const k of CLIENT_FIELDS) if (k !== 'history' && k !== 'people' && (item as any)[k] !== undefined) patch[k] = (item as any)[k];
+    await updateEntity('work', id, cur => {
+      // Claude never overwrites a field a partner typed (partnerEdited); people are merged, never replaced.
+      const keep = actor === 'Claude' ? new Set<string>((cur.partnerEdited as string[]) || []) : new Set<string>();
+      const p2 = Object.fromEntries(Object.entries(patch).filter(([k]) => !keep.has(k) || !cur[k]));
+      return { ...cur, ...p2, people: mergePeople(cur.people, item.people || []), kind: 'client', history: cur.history || [], ...(cur.createdAt ? {} : { createdAt: new Date().toISOString(), createdBy: actor }), updatedAt: new Date().toISOString(), updatedBy: actor };
+    }, true);
     saved.push(id);
   }
   return { saved, rejected };
 }
 
+const pkey = (p: Record<string, any>) => String(p.email || '').toLowerCase() || String(p.name || '').toLowerCase().replace(/\s+/g, ' ').trim();
+/** People merge by email, else by name; a new detail fills a gap, it never blanks one. */
+export function mergePeople(current: unknown, add: Record<string, any>[]) {
+  const out: Record<string, any>[] = Array.isArray(current) ? current.map(p => ({ ...p })) : [];
+  for (const p of add) {
+    if (!p || String(p.name || '').trim().length < 2) continue;
+    const hit = out.find(o => (p.email && String(o.email || '').toLowerCase() === String(p.email).toLowerCase()) || pkey(o) === pkey(p) || String(o.name || '').toLowerCase() === String(p.name).toLowerCase());
+    if (hit) { for (const [k, v] of Object.entries(p)) if (v && !hit[k]) hit[k] = v; } else out.push({ ...p });
+  }
+  return out.slice(0, 60);
+}
+
+/** Add one person to a client, merged server-side (Vanor Live "Add person"). */
+export async function addPerson(id: string, person: Record<string, any>, actor: string) {
+  const cur = await getOne('work', id);
+  if (!cur || cur.kind !== 'client') throw new Error('No client with id ' + id);
+  if (String(person?.name || '').trim().length < 2) throw new Error('A person needs a name.');
+  const clean = { name: String(person.name).trim().slice(0, 120), role: String(person.role || '').trim().slice(0, 120), email: String(person.email || '').trim().slice(0, 160) };
+  return updateEntity('work', id, c => ({ ...c, people: mergePeople(c.people, [clean]), updatedAt: new Date().toISOString(), updatedBy: actor }));
+}
+
+const realDay = (d: string) => { const t = new Date(d + 'T12:00:00Z'); return !Number.isNaN(+t) && t.toISOString().slice(0, 10) === d; };
 /** Add one timeline note to a deal (pursuit) or client. kind: Note, Call, Meeting, Email, Proposal, Intro. */
 export async function addNote({ id, text, date, kind = 'Note', by = 'Claude' }: { id: string; text: string; date?: string; kind?: string; by?: string }) {
   const clean = String(text || '').trim();
   if (clean.length < 2) throw new Error('A note needs text.');
   const cur = await getOne('work', id);
   if (!cur || !['pursuit', 'client'].includes(cur.kind)) throw new Error('No deal or client with id ' + id);
-  const on = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
+  const todayLondon = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
+  if (date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !realDay(date))) throw new Error('A note date must be a real date (YYYY-MM-DD).');
+  if (date && date > todayLondon) throw new Error('A note cannot be dated in the future.');
+  const on = date || todayLondon;
   const row = { date: on, kind, text: clean.slice(0, 1000), by, at: new Date().toISOString() };
   const field = cur.kind === 'pursuit' ? 'log' : 'history';
   const next = await updateEntity('work', id, c => {

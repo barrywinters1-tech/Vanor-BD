@@ -14,7 +14,7 @@ import { logEvent, saveEntity as storeSave, updateEntity as storeUpdate } from '
 import { runBackup } from '../../../../lib/backup-job';
 import { undoClaudeUpdate, setRelationship, giveGet, savePursuits } from '../../../../lib/pursuits';
 import { addTodos } from '../../../../lib/todos';
-import { saveClients, addNote } from '../../../../lib/clients';
+import { saveClients, addNote, addPerson } from '../../../../lib/clients';
 import { CLIENT_FIELDS, STAGE, stateForStage, type Stage } from '../../../../lib/live-rules';
 import { suggestTrade, isPlaceholder, TRADE_KEYS } from '../../../../lib/trades';
 
@@ -356,8 +356,10 @@ export async function POST(request: NextRequest, context: Context) {
           // Vanor Live (23 Nov 2026): a stage tap sets the matching board state; a plain state change drops a stage that no longer fits.
           if ('stage' in fields) {
             if (!STAGE[String(fields.stage)]) return reply({ error: 'Unknown stage.' }, 400);
-            if (!('state' in fields)) next.state = stateForStage(fields.stage as Stage, PV.CLOSED.includes(cur?.state) ? 'watch' : String(cur?.state || 'watch'));
-          } else if ('state' in fields) next.stage = '';
+            if ('state' in fields) return reply({ error: 'Change the stage or the state, not both.' }, 400);
+            next.state = stateForStage(fields.stage as Stage, PV.CLOSED.includes(cur?.state) ? 'watch' : String(cur?.state || 'watch'));
+            next.stageState = next.state;
+          } else if ('state' in fields) { next.stage = ''; next.stageState = ''; }
           const stateChanged = next.state !== cur?.state;
           if (stateChanged && !['watch', ...PV.CLOSED].includes(String(next.state))) next.gate = { asset: true, problem: true, capital: true, route: true, ...Object.fromEntries(Object.entries(cur?.gate || {}).filter(([, v]) => v === true)) };
           const why = PV.validate(next); if (why) return reply({ error: why }, 400);
@@ -369,7 +371,9 @@ export async function POST(request: NextRequest, context: Context) {
           if (('nextAction' in fields || 'dueBy' in fields || stateChanged) && !('proposed' in fields)) next.proposed = null;
         }
         if (kind === 'setting') { next = { ...next, kind: 'setting', updatedBy: actor }; }
-        if (kind === 'client') { if ('warmth' in fields && !['New', 'Warm', 'Strong', 'Cooling'].includes(String(fields.warmth))) return reply({ error: 'Unknown warmth.' }, 400); next = { ...next, updatedBy: actor, updatedAt: now }; }
+        if (kind === 'client') { if ('people' in fields && !Array.isArray(fields.people)) return reply({ error: 'people must be a list.' }, 400);
+          next.partnerEdited = [...new Set([...((cur?.partnerEdited as string[]) || []), ...Object.keys(fields)])];
+          if ('warmth' in fields && !['New', 'Warm', 'Strong', 'Cooling'].includes(String(fields.warmth))) return reply({ error: 'Unknown warmth.' }, 400); next = { ...next, updatedBy: actor, updatedAt: now }; }
         try { return reply(await save(access, scope, next, cur?._rev || 0, { type: note || 'Changed on the board', actor, recordId: next.recordId || '', note: String(next.title || next.name || id).slice(0, 120) })); }
         catch (e: any) { if (e?.status !== 409 || attempt === 1) throw e; }
       }
@@ -386,7 +390,8 @@ export async function POST(request: NextRequest, context: Context) {
       const b = (body || {}) as Record<string, any>; const actor = await actorOf(access);
       const name = String(b.name || '').trim(); if (name.length < 2) return reply({ error: 'Give the deal a name.' }, 400);
       if (!STAGE[String(b.stage || 'lead')]) return reply({ error: 'Unknown stage.' }, 400);
-      const taken = (await list(access, 'work')).some(w => w.kind === 'pursuit' && String(w.name).toLowerCase() === name.toLowerCase());
+      const sl = 'pursuit:' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+      const taken = (await list(access, 'work')).some(w => w.id === sl || (w.kind === 'pursuit' && String(w.name).toLowerCase() === name.toLowerCase()));
       if (taken) return reply({ error: 'A deal with that name already exists. Open it instead.' }, 409);
       const stage = String(b.stage || 'lead') as Stage, state = stateForStage(stage, 'watch');
       const item: Record<string, any> = { name, lane: b.lane || 'other', state, owner: b.owner || actor, source: 'Added on Vanor Live by ' + actor };
@@ -394,13 +399,18 @@ export async function POST(request: NextRequest, context: Context) {
       if (state !== 'watch') item.gate = { asset: true, problem: true, capital: true, route: true };
       const r = await savePursuits([item], actor);
       if (r.rejected.length) return reply({ error: r.rejected[0].reason }, 400);
-      await storeUpdate('work', r.saved[0], c => ({ ...c, stage }));
+      if (r.saved[0] !== sl) return reply({ error: 'That deal name clashes with an existing record. Pick another name.' }, 409);
+      await storeUpdate('work', r.saved[0], c => ({ ...c, stage, stageState: state }));
       return reply({ id: r.saved[0] });
     }
     if (action === 'todo') {
       const b = (body || {}) as Record<string, any>; const actor = await actorOf(access);
       const r = await addTodos([{ type: 'action', title: String(b.title || '').trim(), due: b.due || undefined, owner: b.owner || actor, pursuitId: b.pursuitId || undefined, meetingAt: b.meetingAt || undefined, source: 'Vanor Live, ' + actor } as any]);
       return r.added ? reply({ ok: true }) : reply({ error: r.skipped[0]?.why || 'That to-do did not save.' }, 400);
+    }
+    if (action === 'person') {
+      try { await addPerson(String(body?.id || ''), body?.person || {}, await actorOf(access)); return reply({ ok: true }); }
+      catch (e: any) { return reply({ error: e?.message || 'That person did not save.' }, 400); }
     }
     if (action === 'client') {
       const r = await saveClients([body || {}], await actorOf(access));

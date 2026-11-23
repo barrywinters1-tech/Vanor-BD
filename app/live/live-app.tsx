@@ -24,6 +24,7 @@ const api = {
   user: (): Promise<{ actor: string }> => call('/user'),
   patch: (id: string, fields: Record<string, unknown>, note?: string) => call('/patch', { scope: 'work', id, fields, note }),
   note: (id: string, text: string, kind = 'Note', date?: string) => call('/note', { id, text, kind, date }),
+  person: (id: string, person: Record<string, string>) => call('/person', { id, person }),
   client: (c: Record<string, unknown>): Promise<{ id: string }> => call('/client', c),
   deal: (d: Record<string, unknown>): Promise<{ id: string }> => call('/deal', d),
   todo: (t: Record<string, unknown>) => call('/todo', t),
@@ -134,7 +135,7 @@ export default function LiveApp() {
             return <div key={t.id} className="li"><label className="task"><input type="checkbox" onChange={e => e.target.checked && run(() => api.patch(t.id, { status: 'done', doneAt: new Date().toISOString(), doneBy: actor, doneReason: past ? 'meeting_held' : undefined }, 'Done'), 'Done.')} />
               <span>{t.link ? <a href={t.link} target="_blank" rel="noreferrer">{past ? 'Log how it went: ' + t.title : t.title}</a> : past ? 'Log how it went: ' + t.title : t.title}<br /><span className="small">{t.due ? 'Due ' + fmtDate(t.due) : 'No date'} · {t.owner || 'Unassigned'}</span>{late > 0 && <> <span className="badge late">{late} day{late > 1 ? 's' : ''} late</span></>}</span></label></div>; })
             : <p className="empty">No open to-dos.</p>}
-          <form className="inline-form" onSubmit={addTodo}><div className="f"><label htmlFor="t-title">New to-do</label><input id="t-title" name="title" required minLength={3} /></div><div className="f" style={{ flex: '0 1 150px' }}><label htmlFor="t-due">Due</label><input id="t-due" name="due" type="date" defaultValue={today} /></div><div className="f" style={{ flex: '0 1 120px' }}><label htmlFor="t-owner">Owner</label><select id="t-owner" name="owner" defaultValue={actor}>{OWNERS.map(o => <option key={o}>{o}</option>)}</select></div><button className="btn primary" type="submit">Add</button></form>
+          <form key={actor} className="inline-form" onSubmit={addTodo}><div className="f"><label htmlFor="t-title">New to-do</label><input id="t-title" name="title" required minLength={3} /></div><div className="f" style={{ flex: '0 1 150px' }}><label htmlFor="t-due">Due</label><input id="t-due" name="due" type="date" defaultValue={today} /></div><div className="f" style={{ flex: '0 1 120px' }}><label htmlFor="t-owner">Owner</label><select id="t-owner" name="owner" defaultValue={actor}>{OWNERS.map(o => <option key={o}>{o}</option>)}</select></div><button className="btn primary" type="submit">Add</button></form>
         </div></section>
         {soon.length > 0 && sec("Coming up this week", soon, "")}
         {sec("Gone quiet", quiet, "Nothing has gone quiet.")}
@@ -177,8 +178,8 @@ export default function LiveApp() {
     const save = (field: string, value: unknown) => { if ((c[field] ?? '') === value) return; run(() => api.patch(c.id, { [field]: value }, 'Client updated'), 'Saved.'); };
     const ta = (field: string, label: string, ph: string) => <div className="f"><label htmlFor={'cf-' + field}>{label}</label><textarea id={'cf-' + field} defaultValue={c[field] || ''} placeholder={ph} onBlur={e => save(field, e.target.value.trim())} /></div>;
     const sel = (field: string, opts: string[], label: string) => <div className="f" style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><label htmlFor={'cs-' + field} className="lbl">{label}</label><select id={'cs-' + field} defaultValue={c[field] || ''} onChange={e => save(field, e.target.value)}><option value="" disabled>Pick</option>{opts.map(o => <option key={o}>{o}</option>)}</select></div>;
-    const addPerson = (e: FormEvent<HTMLFormElement>) => { e.preventDefault(); const f = new FormData(e.currentTarget); const p = { name: String(f.get('name')).trim(), role: String(f.get('role') || '').trim(), email: String(f.get('email') || '').trim() };
-      run(() => api.patch(c.id, { people: [...(c.people || []), p] }, 'Person added'), 'Person added.'); };
+    const addPerson = (e: FormEvent<HTMLFormElement>) => { e.preventDefault(); const form = e.currentTarget; const f = new FormData(form); const p = { name: String(f.get('name')).trim(), role: String(f.get('role') || '').trim(), email: String(f.get('email') || '').trim() };
+      run(() => api.person(c.id, p), 'Person added.').then(ok => ok && form.reset()); };
     const addHistory = (e: FormEvent<HTMLFormElement>) => { e.preventDefault(); const f = new FormData(e.currentTarget); const form = e.currentTarget;
       run(() => api.note(c.id, String(f.get('text')), String(f.get('kind')), String(f.get('date'))), 'Added to history.').then(ok => ok && form.reset()); };
     return <>
@@ -213,7 +214,7 @@ export default function LiveApp() {
       </tbody></table></div><p className="small">Older closed deals stay on the <a href="/board">full board</a>.</p></>;
   }
 
-  useEffect(() => { document.body.style.overflow = dealId ? 'hidden' : ''; }, [dealId]);
+  useEffect(() => { document.body.style.overflow = dealId ? 'hidden' : ''; return () => { document.body.style.overflow = ''; }; }, [dealId]);
   const client = clientId ? clients.get(clientId) : null;
   let body: ReactNode;
   if (error && !data) body = <div className="notice">The pipeline could not be loaded: {error}. <button className="btn link" onClick={reload}>Try again</button></div>;
@@ -260,13 +261,20 @@ function Drawer({ ctx }: { ctx: Ctx }) {
       if (open && stage !== 'lead' && (!g('nextAction') || !g('dueBy') || !g('owner'))) return setErr('Past Lead, every deal needs a next action, a due date and an owner.');
       setBusy(true); setErr('');
       try {
-        const cname = g('client'); let cid = '';
-        if (cname) { const hit = [...clients.values()].find(x => String(x.name).toLowerCase() === cname.toLowerCase()); cid = hit ? hit.id : (await api.client({ name: cname, owner: g('owner') || actor, warmth: 'New' })).id; }
-        const fields: Record<string, unknown> = { name: g('name'), person: g('person'), email: g('email'), lane: g('lane'), atStake: g('atStake'), nextAction: g('nextAction'), dueBy: g('dueBy'), owner: g('owner'), type: g('type') || 'one-off', clientId: cid, org: cname };
+        const cname = g('client'), before = String(c?.name || d.org || '');
+        const linkClient = async () => { if (!cname) return ''; const hit = [...clients.values()].find(x => String(x.name).toLowerCase() === cname.toLowerCase()); return hit ? hit.id : (await api.client({ name: cname, owner: g('owner') || actor, warmth: 'New' })).id; };
+        const fields: Record<string, unknown> = { name: g('name'), person: g('person'), email: g('email'), lane: g('lane'), atStake: g('atStake'), nextAction: g('nextAction'), dueBy: g('dueBy'), owner: g('owner'), type: g('type') || 'one-off' };
         if (amount !== null) fields.amount = amount;
-        if (isNew) { const r = await api.deal({ ...fields, stage }); setDealId(r.id); await reload(); flash('Deal added.'); setBusy(false); return; }
+        if (isNew) {
+          const r = await api.deal({ ...fields, org: cname, ...(d.clientId ? { clientId: d.clientId } : {}), stage });
+          if (cname && !d.clientId) { const cid = await linkClient(); if (cid) await api.patch(r.id, { clientId: cid }, 'Linked to client'); }
+          setDealId(r.id); await reload(); flash('Deal added.'); setBusy(false); return;
+        }
+        // Only a changed Client field links or creates a client, so saving an old deal never invents one.
+        if (cname !== before) { fields.org = cname; fields.clientId = await linkClient(); }
         const changed: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(fields)) if (String(d[k] ?? '') !== String(v ?? '')) changed[k] = v;
+        const cur = (k: string) => (k === 'type' ? d.type || 'one-off' : d[k]);
+        for (const [k, v] of Object.entries(fields)) if (String(cur(k) ?? '') !== String(v ?? '')) changed[k] = v;
         if (amount === null && d.amount != null && d.amount !== '') changed.amount = null;
         if (open && stage !== stageOf(d)) changed.stage = stage;
         if (!Object.keys(changed).length) { setBusy(false); return close(); }
@@ -290,7 +298,7 @@ function Drawer({ ctx }: { ctx: Ctx }) {
         {proposal && <div className="ask"><strong>Claude suggests:</strong> {proposal.nextAction}{proposal.dueBy ? ' by ' + fmtDate(proposal.dueBy) : ''}{proposal.why ? <><br /><span className="small">{proposal.why}</span></> : null}
           <div className="chips" style={{ marginTop: 6 }}><button type="button" className="btn primary" onClick={() => run(() => api.patch(d.id, { nextAction: proposal.nextAction, ...(proposal.dueBy ? { dueBy: proposal.dueBy } : {}), proposed: null }, 'Took Claude\'s next step'), 'Next step updated.')}>Use it</button><button type="button" className="btn" onClick={() => run(() => api.patch(d.id, { proposed: null }, 'Dismissed Claude\'s suggestion'), 'Dismissed.')}>Dismiss</button></div></div>}
         {d.ask?.state && <div className="ask"><strong>Claude asks:</strong> mark this {CLOSED_LABEL[d.ask.state]?.toLowerCase() || 'proposal out'}? {d.ask.why || ''}</div>}
-        <form className="box" onSubmit={submit} noValidate>
+        <form key={String(d.nextAction || '') + '|' + String(d.dueBy || '')} className="box" onSubmit={submit} noValidate>
           {inp("f-name", "name", "Deal name", d.name, 'text', { autoFocus: isNew })}
           <div className="g2">{inp("f-client", "client", "Client", c?.name || d.org, 'text', { list: 'vl-clients', autoComplete: 'off' })}{inp("f-person", "person", "Main contact", d.person, 'text', {})}</div>
           <div className="g2">{inp("f-email", "email", "Email", d.email, "email", {})}<div className="f"><label htmlFor="f-lane">Lane</label><select id="f-lane" name="lane" defaultValue={d.lane || 'other'}>{LANES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div></div>
@@ -313,7 +321,8 @@ function Drawer({ ctx }: { ctx: Ctx }) {
           </section>
           {c && <a className="btn" style={{ textAlign: 'center', textDecoration: 'none' }} href={'#client-' + encodeURIComponent(c.id)} onClick={() => setDealId(null)}>Open the {c.name} relationship record</a>}
           {open ? <section className="box"><div className="f"><label htmlFor="f-reason">Reason (needed for lost, optional for won or park)</label><input id="f-reason" value={reason} onChange={e => setReason(e.target.value)} /></div><div className="foot3"><button type="button" className="btn won" onClick={() => closeDeal('won')}>Won</button><button type="button" className="btn" onClick={() => closeDeal('lost')}>Lost</button><button type="button" className="btn" onClick={() => closeDeal('parked')}>Park</button></div></section>
-            : <button type="button" className="btn primary" onClick={() => run(() => api.patch(d.id, { stage: 'lead', outcome: '', ask: null }, 'Reopened'), 'Reopened as a lead.')}>Reopen this deal</button>}
+            : <button type="button" className="btn primary" onClick={() => { const back: Stage = d.state === 'parked' ? stageOf({ id: d.id, state: d.parkedFrom || 'watch' }) : 'lead';
+              run(() => api.patch(d.id, { stage: back, outcome: '', lostReason: '', wonOn: '', parkedReason: '', ask: null }, 'Reopened'), 'Reopened at ' + STAGE[back].name + '.'); }}>Reopen this deal</button>}
         </>}
       </div></aside></>;
   }
