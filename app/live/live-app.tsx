@@ -10,7 +10,7 @@ import { londonDate } from '../../lib/today-rules';
 import './live.css';
 
 type Data = { work: Item[]; events: Item[]; people: Item[]; contacts: number };
-type View = 'today' | 'pipeline' | 'clients' | 'closed';
+type View = 'today' | 'calendar' | 'pipeline' | 'clients' | 'closed';
 type Owner = 'All' | 'Barry' | 'Graeme';
 
 async function call(path: string, body?: unknown) {
@@ -47,6 +47,11 @@ const money = (n: number) => '£' + Math.round(n || 0).toLocaleString('en-GB');
 const num = (v: unknown) => { const s = String(v ?? '').replace(/[£,\s]/g, ''); if (!s) return null; const n = Number(s); return Number.isFinite(n) && n >= 0 ? n : NaN; };
 const valueLine = (d: Item) => Number(d.amount) > 0 ? money(d.amount) + (d.type === 'monthly' ? '/mo' : '') : d.atStake || '';
 const closedOn = (d: Item) => String(d.closedAt || d.wonOn || d.parkedAt || '').slice(0, 10);
+// Outlook times arrive as London wall-clock strings ("2026-11-24T12:30:00.0000000"); read them as written.
+const wallDay = (s?: string) => String(s || '').slice(0, 10);
+const wallTime = (s?: string) => String(s || '').slice(11, 16);
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const dayLabel = (iso: string, today: string) => { const n = diff(today, iso); const d = new Date(iso + 'T12:00:00Z'); return (n === 0 ? 'Today, ' : n === 1 ? 'Tomorrow, ' : DAYS[d.getUTCDay()] + ' ') + d.getUTCDate() + ' ' + MON[d.getUTCMonth()]; };
 const closeWhy = (d: Item) => d.lostReason || d.parkedReason || (d.outcome && d.outcome !== 'Won' ? d.outcome : '') || '';
 
 export default function LiveApp() {
@@ -66,7 +71,7 @@ export default function LiveApp() {
   useEffect(() => {
     reload(); api.user().then(u => setActor(u.actor)).catch(() => {}); api.opened().catch(() => {});
     try { const o = localStorage.getItem('vl-owner'); if (o === 'Barry' || o === 'Graeme' || o === 'All') setOwnerState(o); const t = localStorage.getItem('vl-theme'); if (t === 'light' || t === 'dark') setThemeState(t); } catch { /* private mode */ }
-    const route = () => { const h = (location.hash || '#today').slice(1); if (h.startsWith('client-')) { setView('clients'); setClientId(decodeURIComponent(h.slice(7))); } else { setClientId(null); setView((['today', 'pipeline', 'clients', 'closed'].includes(h) ? h : 'today') as View); } window.scrollTo(0, 0); };
+    const route = () => { const h = (location.hash || '#today').slice(1); if (h.startsWith('client-')) { setView('clients'); setClientId(decodeURIComponent(h.slice(7))); } else { setClientId(null); setView((['today', 'calendar', 'pipeline', 'clients', 'closed'].includes(h) ? h : 'today') as View); } window.scrollTo(0, 0); };
     route(); window.addEventListener('hashchange', route);
     const onFocus = () => { if (document.visibilityState === 'visible') reload(); };
     document.addEventListener('visibilitychange', onFocus);
@@ -81,6 +86,21 @@ export default function LiveApp() {
   const work = data?.work || [];
   const allDeals = useMemo(() => work.filter(w => w.kind === 'pursuit'), [work]);
   const clients = useMemo(() => new Map(work.filter(w => w.kind === 'client').map(c => [c.id, c])), [work]);
+  // Calendar mirror (Claude syncs Outlook each morning); each meeting is matched to a deal or client by attendee email.
+  const cal = useMemo(() => {
+    const byEmail = new Map<string, { deal?: Item; client?: Item }>();
+    for (const cl of work.filter(w => w.kind === 'client')) for (const p of cl.people || []) if (p.email) byEmail.set(String(p.email).toLowerCase(), { client: cl });
+    for (const d of work.filter(w => w.kind === 'pursuit' && isOpenDeal(w))) if (d.email) { const k = String(d.email).toLowerCase(); byEmail.set(k, { ...byEmail.get(k), deal: d }); }
+    const merged = new Map<string, Item>();
+    for (const c of work.filter(w => w.kind === 'calendar')) for (const e of c.events || []) {
+      const prev = merged.get(e.id);
+      if (prev) { prev.calOwner = 'Both'; continue; }
+      const hit = (e.attendees || []).map((a: Item) => byEmail.get(a.email)).find(Boolean) || {};
+      merged.set(e.id, { ...e, calOwner: c.owner, client: hit.client, deal: hit.deal || (hit.client ? work.find(w => w.kind === 'pursuit' && isOpenDeal(w) && w.clientId === hit.client.id) : undefined) });
+    }
+    return [...merged.values()].sort((a, b) => String(a.start).localeCompare(String(b.start)));
+  }, [work]);
+  const syncedAt = work.filter(w => w.kind === 'calendar').map(w => String(w.syncedAt || '')).sort().pop() || '';
   const todos = useMemo(() => work.filter(w => w.kind === 'todo' && w.status === 'open'), [work]);
   const ql = q.trim().toLowerCase();
   const ownerOk = (o?: string) => owner === 'All' || !o || o === owner || o === 'Both';
@@ -121,6 +141,7 @@ export default function LiveApp() {
     const tasks = todos.filter(t => ownerOk(t.owner) && matchQ(t.title || ''));
     const in7 = addDays(today, 7);
     const meet = tasks.filter(t => { const d = londonDate(new Date(t.meetingAt || 0)); return t.meetingAt && d >= today && d <= in7; }).sort((a, b) => a.meetingAt.localeCompare(b.meetingAt));
+    const calWeek = cal.filter(e => wallDay(e.start) >= today && wallDay(e.start) <= in7 && ownerOk(e.calOwner) && matchQ([e.subject, e.location, ...(e.attendees || []).map((a: Item) => a.name)].join(' ')));
     const todo = tasks.filter(t => !t.meetingAt || londonDate(new Date(t.meetingAt)) < today).sort((a, b) => String(a.due || '9').localeCompare(String(b.due || '9')));
     const sec = (title: string, items: Item[], none: string) => <section aria-label={title}><h2 className="sec">{title}</h2><div className="stack">{items.length ? items.map(d => dealCard(d, true)) : empty(none)}</div></section>;
     const addTodo = (e: FormEvent<HTMLFormElement>) => { e.preventDefault(); const f = new FormData(e.currentTarget); const form = e.currentTarget;
@@ -129,7 +150,7 @@ export default function LiveApp() {
       {kpiStrip(deals)}{ownerChips()}
       <div className="today">
         {sec("Due today or late", dueNow, "Nothing due. Good place to be.")}
-        <section aria-label="Meetings"><h2 className="sec">Meetings in the next 7 days</h2><div className="panel">{meet.length ? meet.map(t => <div key={t.id} className="li"><time>{fmtMeet(t.meetingAt)}</time><span>{t.title}{t.why && <><br /><span className="small">{t.why}</span></>}</span></div>) : <p className="empty">Nothing booked in the next 7 days.</p>}</div></section>
+        <section aria-label="Meetings"><h2 className="sec">Meetings in the next 7 days</h2><div className="panel">{calWeek.length || meet.length ? <>{calWeek.map(meetingRow)}{meet.map(t => <div key={t.id} className="li"><time>{fmtMeet(t.meetingAt)}</time><span>{t.title}{t.why && <><br /><span className="small">{t.why}</span></>}</span></div>)}</> : <p className="empty">{cal.length ? 'Nothing booked in the next 7 days.' : 'Calendar not synced yet. Claude fills it from Outlook each morning.'}</p>}<p className="small" style={{ margin: 0, padding: '6px 12px 10px' }}><a href="#calendar">Full calendar</a>{syncedAt ? ' · synced ' + fmtMeet(syncedAt) : ''}</p></div></section>
         <section aria-label="To-dos"><h2 className="sec">To-dos</h2><div className="panel">
           {todo.length ? todo.map(t => { const past = t.meetingAt && londonDate(new Date(t.meetingAt)) < today; const late = t.due && t.due < today ? diff(t.due, today) : 0;
             return <div key={t.id} className="li"><label className="task"><input type="checkbox" onChange={e => e.target.checked && run(() => api.patch(t.id, { status: 'done', doneAt: new Date().toISOString(), doneBy: actor, doneReason: past ? 'meeting_held' : undefined }, 'Done'), 'Done.')} />
@@ -142,6 +163,26 @@ export default function LiveApp() {
         {missing.length > 0 && sec("Missing a next step", missing, "")}
       </div>
     </>;
+  }
+
+  function meetingRow(e: Item) {
+    const who = (e.attendees || []).filter((a: Item) => !/vanoradvisory/i.test(a.email || '')).map((a: Item) => a.name || a.email).slice(0, 3).join(', ');
+    const lbl = dayLabel(wallDay(e.start), today);
+    return <div key={e.id} className="li"><time>{lbl.startsWith('Today') || lbl.startsWith('Tomorrow') ? lbl.split(',')[0] : lbl}<br />{e.allDay ? 'All day' : wallTime(e.start)}</time>
+      <span style={{ flex: 1 }}>{e.link ? <a href={e.link} target="_blank" rel="noreferrer">{e.subject}</a> : e.subject}{e.hold && <> <span className="badge quiet">Hold</span></>}{e.calOwner && e.calOwner !== 'Barry' && <> <span className="badge info">{e.calOwner}</span></>}
+        {(who || e.location) && <><br /><span className="small">{[who, e.location].filter(Boolean).join(' · ')}</span></>}
+        {e.deal && <><br /><button type="button" className="btn link" onClick={() => setDealId(e.deal.id)}>{e.deal.name}{e.deal.nextAction ? ': ' + e.deal.nextAction : ''}</button></>}
+        {!e.deal && e.client && <><br /><a className="small" href={'#client-' + encodeURIComponent(e.client.id)}>{e.client.name}</a></>}
+      </span></div>;
+  }
+
+  function CalendarView() {
+    const rows = cal.filter(e => wallDay(e.start) >= today && ownerOk(e.calOwner) && matchQ([e.subject, e.location, ...(e.attendees || []).map((a: Item) => a.name)].join(' ')));
+    const days = [...new Set(rows.map(e => wallDay(e.start)))];
+    return <>{ownerChips()}
+      {!cal.length && empty('Calendar not synced yet. Claude fills it from Outlook each morning.')}
+      <div className="stack" style={{ gap: 14 }}>{days.map(d => <section key={d} aria-label={dayLabel(d, today)}><h2 className="sec">{dayLabel(d, today)}</h2><div className="panel">{rows.filter(e => wallDay(e.start) === d).map(meetingRow)}</div></section>)}</div>
+      {syncedAt && <p className="small">From Outlook, synced {fmtMeet(syncedAt)}. Released holds are hidden; tentative holds show as Hold.</p>}</>;
   }
 
   function PipelineView() {
@@ -220,6 +261,7 @@ export default function LiveApp() {
   if (error && !data) body = <div className="notice">The pipeline could not be loaded: {error}. <button className="btn link" onClick={reload}>Try again</button></div>;
   else if (!data) body = <div className="notice">Loading your pipeline…</div>;
   else if (view === 'today') body = TodayView();
+  else if (view === 'calendar') body = CalendarView();
   else if (view === 'pipeline') body = PipelineView();
   else if (view === 'clients') body = clientId ? (client ? <div key={client.id}>{clientView(client)}</div> : <div className="notice">That client is not here. <a href="#clients">Back to clients</a></div>) : ClientsView();
   else body = ClosedView();
@@ -227,7 +269,7 @@ export default function LiveApp() {
   return <div className="vl" data-theme={theme === 'auto' ? undefined : theme}>
     <header className="bar">
       <span className="brand">Vanor Live</span>
-      <nav className="nav" aria-label="Sections">{(['today', 'pipeline', 'clients', 'closed'] as View[]).map(v => <a key={v} href={'#' + v} aria-current={view === v ? 'page' : undefined}>{v[0].toUpperCase() + v.slice(1)}</a>)}</nav>
+      <nav className="nav" aria-label="Sections">{(['today', 'calendar', 'pipeline', 'clients', 'closed'] as View[]).map(v => <a key={v} href={'#' + v} aria-current={view === v ? 'page' : undefined}>{v[0].toUpperCase() + v.slice(1)}</a>)}</nav>
       <div className="tools">
         <label htmlFor="vl-q" className="sr">Search deals and clients</label>
         <input id="vl-q" type="search" placeholder="Search deals, clients, people" value={q} onChange={e => setQ(e.target.value)} />

@@ -23,6 +23,7 @@ import { researchCompany, normCompany } from '../../../../lib/company-intel';
 import { bolsterPeople } from '../../../../lib/people-bolster';
 import { addTodos, listTodos, todoDone, jobRan } from '../../../../lib/todos';
 import { listClients, saveClients, addNote } from '../../../../lib/clients';
+import { syncCalendar } from '../../../../lib/calendar';
 import { proposePeople } from '../../../../lib/people-tray';
 import { openCaptures, captureDone, captureImages } from '../../../../lib/captures';
 import { researchBatch, saveIntel, signalContacts } from '../../../../lib/company-intel-store';
@@ -252,6 +253,12 @@ function createServer() {
       cares: z.string().max(600).optional(), theyOwe: z.string().max(400).optional(), weOwe: z.string().max(400).optional(), work: z.string().max(600).optional(), personal: z.string().max(400).optional(), whoElse: z.string().max(300).optional() })).min(1).max(50) },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ items }) => out(await saveClients(items, 'Claude'), 'Clients saved.'));
+  server.registerTool('calendar_sync', {
+    title: 'Mirror a partner\'s Outlook calendar onto Vanor Live',
+    description: 'Run after reading the partner\'s Outlook calendar (outlook_calendar_search, oldest first, every page) for from..to (normally today to 14 days ahead). Pass every event as Outlook returned it: id, subject, start (ISO, London time), end, location, attendees (name, email), showAs, link (webLink), organizer. Replaces that partner\'s whole mirror for the window, so always send the full list. Released holds and showAs free are dropped; tentative holds are kept and marked. Read-only towards Outlook: nothing is sent or changed there.',
+    inputSchema: { owner: z.enum(['Barry', 'Graeme']), from: date, to: date, events: z.array(z.object({ id: z.string().min(3).max(400), subject: z.string().max(300), start: z.string().min(10).max(40), end: z.string().max(40).optional(), location: z.string().max(400).optional(), attendees: z.array(z.object({ name: z.string().max(160).optional(), email: z.string().max(200).optional() })).max(60).optional(), showAs: z.string().max(20).optional(), link: z.string().max(800).optional(), organizer: z.string().max(200).optional(), allDay: z.boolean().optional() })).max(400) },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async ({ owner, from, to, events }) => { const r = await syncCalendar(owner, from, to, events); return out(r, `Calendar synced: ${r.kept} kept, ${r.dropped} dropped.`); });
   server.registerTool('timeline_note', {
     title: 'Add a dated note to a deal or client timeline (batch)',
     description: 'id = pursuit:<slug> or client:<slug>. date = when it happened (YYYY-MM-DD). kind: Note, Call, Meeting, Email, Proposal, Intro. text = one or two lines of what happened, with the evidence. The same date and text twice is ignored, so a retry is safe. Notes never change stage, next action or money.',
